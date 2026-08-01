@@ -61,6 +61,29 @@ result. The default dim-blue LED state is restored at the end. Use
 physical test remains local because GitHub-hosted runners have no attached
 Forgix hardware.
 
+### USB serial console
+
+Open the board's USB serial port at 115200 baud with terminal local echo
+disabled. The firmware provides device-side echo and a `forgix> ` prompt, maps
+both CR and LF to one command terminator, and supports Backspace/Delete,
+`Ctrl-C` to cancel a line, `Ctrl-U` to erase it, and `Ctrl-L` to redraw it.
+
+After boot, the board reports status once per second until it receives a key.
+Status output is suppressed while a partial command is present. Ten seconds
+after a completed command, idle status reporting resumes at ten-second
+intervals. The following commands control the terminal policy:
+
+```text
+echo on|off             Enable or disable device-side character echo
+watch <1..3600>|off     Report status at that interval, or disable idle reports
+quiet                   Disable echo, prompts, and unsolicited status
+interactive             Restore the default interactive behavior
+```
+
+An active `watch` stops as soon as a key is received so its output cannot
+interrupt the next command. `scripts/test_hardware.sh` selects `quiet` mode
+before parsing responses, keeping the physical smoke test deterministic.
+
 Application behavior can also be exercised without a board. The Ceedling toolchain
 is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools
 run on Windows and in CI:
