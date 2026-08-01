@@ -72,6 +72,7 @@ The documented happy path will be:
 ```bash
 export EFINITY_HOME="/c/Efinix/Efinity/2026.1"
 export PICO_SDK_PATH="/c/RPi/pico-sdk-2.3.0"
+export GHDL_BIN_PATH="/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin"
 
 ./scripts/bootstrap.sh
 ./scripts/test.sh

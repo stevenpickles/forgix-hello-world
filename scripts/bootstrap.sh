@@ -3,9 +3,11 @@ set -u
 
 default_efinity='/c/Efinix/Efinity/2026.1'
 default_pico_sdk='/c/RPi/pico-sdk-2.3.0'
+default_ghdl_bin='/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin'
 
 export EFINITY_HOME="${EFINITY_HOME:-$default_efinity}"
 export PICO_SDK_PATH="${PICO_SDK_PATH:-$default_pico_sdk}"
+export GHDL_BIN_PATH="${GHDL_BIN_PATH:-$default_ghdl_bin}"
 
 failures=0
 
@@ -38,6 +40,7 @@ normalize_dir() {
 printf 'Forgix build environment\n'
 normalize_dir EFINITY_HOME "$EFINITY_HOME"
 normalize_dir PICO_SDK_PATH "$PICO_SDK_PATH"
+normalize_dir GHDL_BIN_PATH "$GHDL_BIN_PATH"
 if command -v cygpath >/dev/null 2>&1; then
   pico_sdk_posix="$(cygpath -u "$PICO_SDK_PATH" 2>/dev/null || printf '%s' "$PICO_SDK_PATH")"
 else
@@ -53,7 +56,17 @@ check_command python 'Install Python 3 and add it to PATH.'
 check_command cmake 'Install CMake and add it to PATH.'
 check_command ninja 'Install Ninja and add it to PATH.'
 check_command arm-none-eabi-gcc 'Install the Arm GNU embedded toolchain and add it to PATH.'
-check_command ghdl 'Install GHDL (mcode is sufficient) and add it to PATH.'
+if command -v cygpath >/dev/null 2>&1; then
+  ghdl_bin_posix="$(cygpath -u "$GHDL_BIN_PATH" 2>/dev/null || printf '%s' "$GHDL_BIN_PATH")"
+else
+  ghdl_bin_posix="$GHDL_BIN_PATH"
+fi
+if [[ -x "$ghdl_bin_posix/ghdl.exe" || -x "$ghdl_bin_posix/ghdl" ]]; then
+  printf 'ok      %-20s %s\n' 'ghdl' "$ghdl_bin_posix/ghdl"
+else
+  printf 'missing %-20s expected ghdl executable under %s\n' 'ghdl' "$GHDL_BIN_PATH"
+  failures=$((failures + 1))
+fi
 check_command picotool 'Build/install Raspberry Pi picotool and add it to PATH.'
 
 if (( failures != 0 )); then
