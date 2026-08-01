@@ -1,0 +1,9 @@
+build/
+.ci/
+fpga/outflow/
+fpga/*.peri.xml
+fpga/work_*/
+fpga/work-obj*.cf
+*.ghw
+__pycache__/
+*.py[cod]
