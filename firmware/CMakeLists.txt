@@ -36,8 +36,13 @@ target_include_directories(forgix_bsp
   PRIVATE ${GENERATED_DIR})
 target_link_libraries(forgix_bsp PUBLIC pico_stdlib hardware_spi)
 
+add_library(forgix_application STATIC src/application/application.c)
+target_include_directories(forgix_application
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
+target_link_libraries(forgix_application PUBLIC forgix_bsp)
+
 add_executable(forgix_hello_world src/main.c)
-target_link_libraries(forgix_hello_world PRIVATE forgix_bsp)
+target_link_libraries(forgix_hello_world PRIVATE forgix_application)
 pico_enable_stdio_usb(forgix_hello_world 1)
 pico_enable_stdio_uart(forgix_hello_world 0)
 pico_add_extra_outputs(forgix_hello_world)
