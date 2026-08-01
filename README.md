@@ -45,6 +45,22 @@ reconnect USB with the jumper fitted. Remove the jumper after the RP2350-family
 boot device appears, then follow the verified load procedure in
 [the picotool guide](docs/picotool-windows.md#first-forgix-flash).
 
+With a flashed Forgix attached as `COM3`, close any serial terminal and run the
+local hardware smoke test from Git Bash:
+
+```bash
+./scripts/test_hardware.sh
+```
+
+The test validates the USB command shell, FPGA design ID, status pin, and
+register readback before presenting RGB heartbeat, color-wheel, and aurora LED
+effects. Press `SW1` during the show to include the FPGA button counter in the
+result. The default dim-blue LED state is restored at the end. Use
+`./scripts/test_hardware.sh -Port COM4` to select another serial port or
+`./scripts/test_hardware.sh -NoDazzle` for a quick functional check. This
+physical test remains local because GitHub-hosted runners have no attached
+Forgix hardware.
+
 Application behavior can also be exercised without a board. The Ceedling toolchain
 is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools
 run on Windows and in CI:
