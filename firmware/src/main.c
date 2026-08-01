@@ -14,10 +14,12 @@ enum {
 };
 enum { CMD_WRITE = 0x02, CMD_READ = 0x03, CMD_RESET = 0x7f, CMD_PING = 0x9f };
 enum {
-    REG_STATUS = 0x01, REG_LED_R = 0x10, REG_LED_G = 0x11,
+    DESIGN_ID = 0xb5, REG_STATUS = 0x01, REG_LED_R = 0x10, REG_LED_G = 0x11,
     REG_LED_B = 0x12, REG_LED_GLOBAL = 0x13, REG_LED_ENABLE = 0x14,
     REG_BUTTON = 0x20, REG_BUTTON_COUNT = 0x21,
 };
+
+static bool fpga_ready;
 
 static void runtime_bus_idle(void) {
     spi_deinit(spi0);
@@ -99,10 +101,30 @@ static void execute(char *line) {
     char *argv[6] = {0}; int argc = 0;
     for (char *p = strtok(line, " \t"); p && argc < 6; p = strtok(NULL, " \t")) argv[argc++] = p;
     if (!argc) return;
+    if (!strcmp(argv[0], "help") && argc == 1) {
+        print_help();
+        return;
+    }
+    if (!fpga_ready) {
+        puts("error: FPGA is not configured and responding; reset the board to retry");
+        return;
+    }
     if (!strcmp(argv[0], "hello") && argc == 1) {
         write_reg(REG_LED_R, 0); write_reg(REG_LED_G, 255); write_reg(REG_LED_B, 255);
         write_reg(REG_LED_GLOBAL, 64); write_reg(REG_LED_ENABLE, 1);
-        printf("Hello from RP2354 -> FPGA %02X\n", ping());
+        uint8_t id = ping();
+        uint8_t red = read_reg(REG_LED_R);
+        uint8_t green = read_reg(REG_LED_G);
+        uint8_t blue = read_reg(REG_LED_B);
+        uint8_t brightness = read_reg(REG_LED_GLOBAL);
+        uint8_t enabled = read_reg(REG_LED_ENABLE);
+        if (id == DESIGN_ID && red == 0 && green == 255 && blue == 255 &&
+                brightness == 64 && enabled == 1) {
+            printf("Hello from RP2354 -> FPGA %02X\n", id);
+        } else {
+            printf("error: hello readback failed: id=%02X rgb=%u,%u,%u brightness=%u enable=%u\n",
+                   id, red, green, blue, brightness, enabled);
+        }
     } else if (!strcmp(argv[0], "color") && (argc == 4 || argc == 5)) {
         uint8_t v[4] = {0, 0, 0, 255}; bool valid = true;
         for (int i = 1; i < argc; ++i) valid &= parse_byte(argv[i], &v[i - 1]);
@@ -116,15 +138,21 @@ static void execute(char *line) {
                read_reg(REG_STATUS), read_reg(REG_BUTTON), read_reg(REG_BUTTON_COUNT), gpio_get(PIN_STATUS));
     } else if (!strcmp(argv[0], "reset") && argc == 1) {
         const uint8_t tx[] = {CMD_RESET}; transaction(tx, 1, false); puts("ok");
-    } else if (!strcmp(argv[0], "help") && argc == 1) print_help();
-    else puts("error: invalid command (try help)");
+    } else puts("error: invalid command (try help)");
 }
 
 int main(void) {
     stdio_init_all();
     bool configured = configure_fpga();
     sleep_ms(1500);
-    printf("Forgix: configuration=%s ping=%02X\n", configured ? "ok" : "failed", ping());
+    uint8_t id = configured ? ping() : 0;
+    fpga_ready = configured && id == DESIGN_ID;
+    printf("Forgix: configuration=%s design_id=%02X runtime=%s cdone=%u status=%u\n",
+           configured ? "ok" : "failed", id, fpga_ready ? "ready" : "unavailable",
+           gpio_get(PIN_CDONE), gpio_get(PIN_STATUS));
+    if (!fpga_ready) {
+        puts("error: FPGA configuration or design-ID validation failed; runtime commands are disabled");
+    }
     print_help();
     char line[128]; size_t used = 0;
     while (true) {
