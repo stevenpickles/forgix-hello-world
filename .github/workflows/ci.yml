@@ -23,17 +23,25 @@ jobs:
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
 
+      - name: Verify coverage summary rendering
+        run: python scripts/test_render_coverage_summary.py
+
       - name: Exercise application behavior and enforce coverage
         run: bash scripts/test_ceedling.sh
 
       - name: Add coverage to the workflow summary
         if: always()
         run: |
-          report=firmware/build/ceedling/artifacts/gcov/gcovr/coverage.txt
+          report=firmware/build/ceedling/artifacts/gcov/gcovr/coverage.xml
           if [[ -f "$report" ]]; then
-            printf '## Application coverage\n\n```text\n' >> "$GITHUB_STEP_SUMMARY"
-            cat "$report" >> "$GITHUB_STEP_SUMMARY"
-            printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+            python scripts/render_coverage_summary.py "$report" \
+              --line-threshold 100 \
+              --branch-threshold 80 \
+              --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '<h2>Application coverage</h2>\n<p>Coverage report unavailable.</p>\n' \
+              >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload test and coverage reports
