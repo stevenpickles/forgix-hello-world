@@ -6,13 +6,16 @@
 #include <string.h>
 
 #include "application.h"
+#include "application_console.h"
 #include "mock_bsp_console.h"
+#include "mock_bsp_time.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
 
 void setUp(void) {
     mock_bsp_console_reset();
+    mock_bsp_time_reset();
 }
 
 void tearDown(void) {
@@ -213,6 +216,46 @@ void test_status_reports_fpga_and_button_state(void) {
 
     TEST_ASSERT_EQUAL_STRING("id=B5 status=01 button=03 count=7 fpga_status=1\n",
                              mock_bsp_console_output());
+}
+
+void test_console_control_commands_remain_available_without_fpga_access(void) {
+    const char *commands[] = {
+        "echo on",
+        "echo off",
+        "watch 1",
+        "watch 3600",
+        "watch off",
+        "quiet",
+        "interactive",
+    };
+
+    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
+        process(commands[index]);
+        TEST_ASSERT_EQUAL_STRING("ok\n", mock_bsp_console_output());
+        mock_bsp_console_reset();
+    }
+}
+
+void test_console_control_commands_report_invalid_usage(void) {
+    const char *commands[] = {
+        "echo",
+        "echo maybe",
+        "echo on extra",
+        "watch",
+        "watch nope",
+        "watch 1x",
+        "watch 0",
+        "watch 3601",
+        "watch off extra",
+        "quiet extra",
+        "interactive extra",
+    };
+
+    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
+        process(commands[index]);
+        TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "error:"));
+        mock_bsp_console_reset();
+    }
 }
 
 void test_status_reports_unavailable_hardware_without_accessing_registers(void) {

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "application_console.h"
 #include "bsp.h"
 
 static bool parse_byte(const char *text, uint8_t *value) {
@@ -20,8 +21,20 @@ static bool parse_byte(const char *text, uint8_t *value) {
     return true;
 }
 
+static bool parse_watch_period(const char *text, uint32_t *seconds) {
+    char *end = NULL;
+    long parsed = strtol(text, &end, 10);
+    if (end == text || *end || parsed < APPLICATION_WATCH_MIN_SECONDS ||
+            parsed > APPLICATION_WATCH_MAX_SECONDS) {
+        return false;
+    }
+    *seconds = (uint32_t)parsed;
+    return true;
+}
+
 static void print_help(void) {
-    bsp_console_puts("hello | color <r> <g> <b> [brightness] | off | status | reset | help");
+    bsp_console_puts(
+        "hello | color <r> <g> <b> [brightness] | off | status | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
 }
 
 void application_print_status(void) {
@@ -48,6 +61,48 @@ void application_process_command(char *line) {
     }
     if (!strcmp(argv[0], "help") && argc == 1) {
         print_help();
+        return;
+    }
+    if (!strcmp(argv[0], "quiet")) {
+        if (argc == 1) {
+            bsp_console_puts("ok");
+            application_console_set_quiet(true);
+        } else {
+            bsp_console_puts("error: invalid command (try help)");
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "interactive")) {
+        if (argc == 1) {
+            application_console_set_quiet(false);
+            bsp_console_puts("ok");
+        } else {
+            bsp_console_puts("error: invalid command (try help)");
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "echo")) {
+        if (argc == 2 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) {
+            application_console_set_echo(!strcmp(argv[1], "on"));
+            bsp_console_puts("ok");
+        } else {
+            bsp_console_puts("error: usage: echo <on|off>");
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "watch")) {
+        uint32_t period_seconds = 0;
+        if (argc == 2 && !strcmp(argv[1], "off")) {
+            application_console_disable_watch();
+            bsp_console_puts("ok");
+        } else if (argc == 2 && parse_watch_period(argv[1], &period_seconds)) {
+            application_console_set_watch(period_seconds);
+            bsp_console_puts("ok");
+        } else {
+            bsp_console_printf("error: usage: watch <%u..%u seconds|off>\n",
+                               APPLICATION_WATCH_MIN_SECONDS,
+                               APPLICATION_WATCH_MAX_SECONDS);
+        }
         return;
     }
     if (!strcmp(argv[0], "status") && argc == 1) {

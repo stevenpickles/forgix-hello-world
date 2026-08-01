@@ -5,6 +5,9 @@
 #include <string.h>
 
 static char output[2048];
+static int input[512];
+static size_t input_count;
+static size_t input_position;
 
 static void append(const char *text) {
     size_t used = strlen(output);
@@ -16,6 +19,20 @@ static void append(const char *text) {
 
 void mock_bsp_console_reset(void) {
     output[0] = 0;
+    input_count = 0;
+    input_position = 0;
+}
+
+void mock_bsp_console_queue_character(int character) {
+    if (input_count < sizeof input / sizeof input[0]) {
+        input[input_count++] = character;
+    }
+}
+
+void mock_bsp_console_queue_text(const char *text) {
+    while (*text) {
+        mock_bsp_console_queue_character((unsigned char)*text++);
+    }
 }
 
 const char *mock_bsp_console_output(void) {
@@ -27,6 +44,9 @@ void bsp_console_init(void) {
 
 int bsp_console_getchar_timeout_us(uint32_t timeout_us) {
     (void)timeout_us;
+    if (input_position < input_count) {
+        return input[input_position++];
+    }
     return BSP_CONSOLE_TIMEOUT;
 }
 
