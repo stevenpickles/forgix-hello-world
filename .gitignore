@@ -1,0 +1,5 @@
+build/
+fpga/outflow/
+fpga/work-obj*.cf
+*.ghw
+

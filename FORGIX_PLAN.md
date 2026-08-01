@@ -70,8 +70,8 @@ This follows the board architecture: USB terminates at the RP2354, while the FPG
 The documented happy path will be:
 
 ```bash
-export EFINITY_HOME="/c/Efinix/Efinity/2025.2"
-export PICO_SDK_PATH="/c/Users/$USER/.pico-sdk/sdk/2.2.0"
+export EFINITY_HOME="/c/Efinix/Efinity/2026.1"
+export PICO_SDK_PATH="/c/RPi/pico-sdk-2.3.0"
 
 ./scripts/bootstrap.sh
 ./scripts/test.sh
