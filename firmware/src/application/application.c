@@ -10,7 +10,10 @@
 static bool parse_byte(const char *text, uint8_t *value) {
     char *end = NULL;
     long parsed = strtol(text, &end, 0);
-    if (!text[0] || !end || *end || parsed < 0 || parsed > 255) {
+    if (end == text || *end) {
+        return false;
+    }
+    if (parsed < 0 || parsed > 255) {
         return false;
     }
     *value = (uint8_t)parsed;

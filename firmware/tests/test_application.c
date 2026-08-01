@@ -24,6 +24,24 @@ static void process(const char *command) {
     application_process_command(mutable_command);
 }
 
+static bsp_led_state_t expected_hello_led(void) {
+    bsp_led_state_t led = {
+        .red = 0,
+        .green = 255,
+        .blue = 255,
+        .brightness = 64,
+        .enabled = true,
+    };
+    return led;
+}
+
+static void expect_hello_readback(uint8_t design_id, bsp_led_state_t led) {
+    bsp_fpga_is_ready_ExpectAndReturn(true);
+    bsp_led_set_Expect(0, 255, 255, 64);
+    bsp_fpga_ping_ExpectAndReturn(design_id);
+    bsp_led_get_ExpectAndReturn(led);
+}
+
 void test_application_init_reports_ready_hardware_and_help(void) {
     bsp_init_result_t result = {
         .configured = true,
@@ -117,6 +135,14 @@ void test_color_rejects_non_numeric_values_without_writing_hardware(void) {
     TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", mock_bsp_console_output());
 }
 
+void test_color_rejects_trailing_characters_without_writing_hardware(void) {
+    bsp_fpga_is_ready_ExpectAndReturn(true);
+
+    process("color 1 2 3x");
+
+    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", mock_bsp_console_output());
+}
+
 void test_color_rejects_the_wrong_argument_count(void) {
     bsp_fpga_is_ready_ExpectAndReturn(true);
 
@@ -126,17 +152,7 @@ void test_color_rejects_the_wrong_argument_count(void) {
 }
 
 void test_hello_programs_and_verifies_the_expected_led_state(void) {
-    bsp_led_state_t led = {
-        .red = 0,
-        .green = 255,
-        .blue = 255,
-        .brightness = 64,
-        .enabled = true,
-    };
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_led_set_Expect(0, 255, 255, 64);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(led);
+    expect_hello_readback(BSP_FPGA_DESIGN_ID, expected_hello_led());
 
     process("hello");
 
@@ -145,15 +161,35 @@ void test_hello_programs_and_verifies_the_expected_led_state(void) {
 
 void test_hello_reports_failed_readback(void) {
     bsp_led_state_t led = {0};
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_led_set_Expect(0, 255, 255, 64);
-    bsp_fpga_ping_ExpectAndReturn(0);
-    bsp_led_get_ExpectAndReturn(led);
+    expect_hello_readback(0, led);
 
     process("hello");
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "hello readback failed"));
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "id=00"));
+}
+
+void test_hello_reports_each_led_readback_mismatch(void) {
+    const char *field_names[] = {"red", "green", "blue", "brightness", "enabled"};
+    bsp_led_state_t mismatches[5];
+
+    for (size_t index = 0; index < 5; ++index) {
+        mismatches[index] = expected_hello_led();
+    }
+    mismatches[0].red = 1;
+    mismatches[1].green = 254;
+    mismatches[2].blue = 254;
+    mismatches[3].brightness = 63;
+    mismatches[4].enabled = false;
+
+    for (size_t index = 0; index < 5; ++index) {
+        expect_hello_readback(BSP_FPGA_DESIGN_ID, mismatches[index]);
+        process("hello");
+
+        TEST_ASSERT_NOT_NULL_MESSAGE(
+            strstr(mock_bsp_console_output(), "hello readback failed"), field_names[index]);
+        mock_bsp_console_reset();
+    }
 }
 
 void test_off_disables_the_led(void) {
@@ -192,6 +228,33 @@ void test_unknown_command_is_rejected(void) {
     bsp_fpga_is_ready_ExpectAndReturn(true);
 
     process("unknown");
+
+    TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n", mock_bsp_console_output());
+}
+
+void test_known_commands_with_extra_arguments_are_rejected(void) {
+    const char *commands[] = {
+        "help extra",
+        "hello extra",
+        "off extra",
+        "status extra",
+        "reset extra",
+    };
+
+    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
+        bsp_fpga_is_ready_ExpectAndReturn(true);
+        process(commands[index]);
+
+        TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n",
+                                 mock_bsp_console_output());
+        mock_bsp_console_reset();
+    }
+}
+
+void test_command_tokenization_is_safely_limited_to_the_argument_capacity(void) {
+    bsp_fpga_is_ready_ExpectAndReturn(true);
+
+    process("unknown 1 2 3 4 5 6");
 
     TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n", mock_bsp_console_output());
 }
