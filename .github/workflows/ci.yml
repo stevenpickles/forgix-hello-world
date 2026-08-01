@@ -41,6 +41,15 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Validate scripts and Efinity metadata
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
+          python -m compileall -q scripts
+          python scripts/check_repository.py
+          python scripts/test_efinity_tools.py
+
       - name: Verify deterministic embedding
         run: python scripts/test_embed_image.py
 
@@ -79,10 +88,25 @@ jobs:
       - name: Report firmware size
         run: arm-none-eabi-size build/firmware-ci/forgix_hello_world.elf
 
-      - name: Upload firmware ELF
+      - name: Enforce RP2354 flash budget
+        run: |
+          arm-none-eabi-objcopy -O binary \
+            build/firmware-ci/forgix_hello_world.elf \
+            build/firmware-ci/forgix_hello_world.bin
+          firmware_size=$(wc -c < build/firmware-ci/forgix_hello_world.bin)
+          if (( firmware_size == 0 || firmware_size > 2097152 )); then
+            echo "Firmware binary is outside the 1..2097152 byte budget: $firmware_size" >&2
+            exit 1
+          fi
+          echo "Firmware binary: $firmware_size / 2097152 bytes"
+
+      - name: Upload firmware diagnostics
         uses: actions/upload-artifact@v4
         with:
-          name: forgix-rp2354-test-elf
-          path: build/firmware-ci/forgix_hello_world.elf
+          name: forgix-rp2354-test-firmware
+          path: |
+            build/firmware-ci/forgix_hello_world.elf
+            build/firmware-ci/forgix_hello_world.elf.map
+            build/firmware-ci/forgix_hello_world.bin
           if-no-files-found: error
           retention-days: 7
