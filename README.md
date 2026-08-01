@@ -22,3 +22,9 @@ Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 See `docs/register-map.md` for the runtime protocol. The Efinity project files
 are still being integrated; simulation and the firmware scaffold are available
 in this first implementation increment.
+
+GitHub Actions runs the open-source verification path on every push and pull
+request: VHDL 2008 simulation with GHDL 6.0.0, deterministic image-embedding
+checks, and an RP2354 USB firmware compile against Pico SDK 2.3.0. The firmware
+CI build embeds `tests/fixtures/fpga-test.bin`; it is a compile fixture, not a
+loadable FPGA image. Licensed Efinity synthesis and hardware tests remain local.

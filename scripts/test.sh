@@ -3,13 +3,19 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$repo_root/build/ghdl"
-export GHDL_BIN_PATH="${GHDL_BIN_PATH:-/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin}"
-ghdl="$GHDL_BIN_PATH/ghdl"
-
-if [[ ! -x "$ghdl" && ! -x "$ghdl.exe" ]]; then
-  printf 'GHDL executable not found under %s\n' "$GHDL_BIN_PATH" >&2
-  exit 1
+if [[ -n "${GHDL_BIN_PATH:-}" ]]; then
+  ghdl="$GHDL_BIN_PATH/ghdl"
+elif command -v ghdl >/dev/null 2>&1; then
+  ghdl="$(command -v ghdl)"
+else
+  export GHDL_BIN_PATH='/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin'
+  ghdl="$GHDL_BIN_PATH/ghdl"
 fi
+
+[[ -x "$ghdl" || -x "$ghdl.exe" ]] || {
+  printf 'GHDL executable not found: %s\n' "$ghdl" >&2
+  exit 1
+}
 
 mkdir -p "$work_dir"
 cd "$work_dir"

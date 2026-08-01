@@ -1,5 +1,7 @@
 build/
+.ci/
 fpga/outflow/
 fpga/work-obj*.cf
 *.ghw
-
+__pycache__/
+*.py[cod]

@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vhdl:
+    name: VHDL 2008 simulation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install GHDL 6.0.0
+        uses: ghdl/setup-ghdl@v1
+        with:
+          version: 6.0.0
+          backend: mcode
+
+      - name: Analyze, elaborate, and simulate
+        run: ./scripts/test.sh
+
+  image-embedding:
+    name: FPGA image embedding
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Verify deterministic embedding
+        run: python scripts/test_embed_image.py
+
+  firmware:
+    name: RP2354 firmware compile
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check out Pico SDK 2.3.0
+        uses: actions/checkout@v4
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 2.3.0
+          path: .ci/pico-sdk
+          submodules: recursive
+
+      - name: Install Arm build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib
+
+      - name: Configure RP2354 firmware
+        run: |
+          cmake -S firmware -B build/firmware-ci -G Ninja \
+            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/.ci/pico-sdk" \
+            -DFPGA_IMAGE="$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" \
+            -DPICO_NO_PICOTOOL=1
+
+      - name: Compile and link
+        run: cmake --build build/firmware-ci --parallel
+
+      - name: Report firmware size
+        run: arm-none-eabi-size build/firmware-ci/forgix_hello_world.elf
+
+      - name: Upload firmware ELF
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgix-rp2354-test-elf
+          path: build/firmware-ci/forgix_hello_world.elf
+          if-no-files-found: error
+          retention-days: 7
+
