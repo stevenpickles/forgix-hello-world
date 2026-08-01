@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   application:
-    name: BSP-independent application tests
+    name: Ceedling application tests and coverage
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -23,8 +23,27 @@ jobs:
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
 
-      - name: Exercise application behavior with a fake BSP
-        run: python scripts/test_application.py
+      - name: Exercise application behavior and enforce coverage
+        run: bash scripts/test_ceedling.sh
+
+      - name: Add coverage to the workflow summary
+        if: always()
+        run: |
+          report=firmware/build/ceedling/artifacts/gcov/gcovr/coverage.txt
+          if [[ -f "$report" ]]; then
+            printf '## Application coverage\n\n```text\n' >> "$GITHUB_STEP_SUMMARY"
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            printf '```\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgix-application-test-reports
+          path: firmware/build/ceedling/artifacts/
+          if-no-files-found: warn
+          retention-days: 14
 
   vhdl:
     name: VHDL 2008 simulation

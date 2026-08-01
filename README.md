@@ -49,10 +49,11 @@ build a placed-and-routed T8F49 passive-SPI image locally and verify the board
 pinout plus setup/hold timing before firmware compilation begins.
 
 GitHub Actions runs the open-source verification path on every push and pull
-request: host-side application tests against a fake BSP, firmware-layering
-checks, VHDL 2008 simulation with GHDL 6.0.0, deterministic image-embedding and
-Efinity-helper checks, static project-metadata validation, and an RP2354 USB
-firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0. The
-firmware CI build embeds `tests/fixtures/fpga-test.bin`; it is a compile fixture,
-not a loadable FPGA image. Licensed Efinity synthesis and hardware tests remain
-local.
+request: Dockerized Ceedling application tests with BSP mocks and enforced
+coverage, firmware-layering checks, VHDL 2008 simulation with GHDL 6.0.0,
+deterministic image-embedding and Efinity-helper checks, static project-metadata
+validation, and an RP2354 USB firmware compile with a 2 MB flash-budget gate
+against Pico SDK 2.3.0. The application job publishes its JUnit, detailed HTML,
+Cobertura XML, and text reports as a workflow artifact. The firmware CI build
+embeds `tests/fixtures/fpga-test.bin`; it is a compile fixture, not a loadable FPGA
+image. Licensed Efinity synthesis and hardware tests remain local.
