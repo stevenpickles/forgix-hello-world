@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
@@ -38,7 +38,7 @@ jobs:
 
       - name: Upload test and coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: forgix-application-test-reports
           path: firmware/build/ceedling/artifacts/
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install GHDL 6.0.0
         uses: ghdl/setup-ghdl@v1
@@ -66,10 +66,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -90,10 +90,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check out Pico SDK 2.3.0
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: raspberrypi/pico-sdk
           ref: 2.3.0
@@ -133,7 +133,7 @@ jobs:
           echo "Firmware binary: $firmware_size / 2097152 bytes"
 
       - name: Upload firmware diagnostics
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: forgix-rp2354-test-firmware
           path: |
