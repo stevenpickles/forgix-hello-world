@@ -1,0 +1,127 @@
+---
+:project:
+  :which_ceedling: gem
+  :ceedling_version: 1.0.1
+  :use_mocks: TRUE
+  :use_test_preprocessor: :none
+  :use_deep_preprocessor: :none
+  :use_backtrace: :simple
+  :use_decorators: :auto
+  :build_root: build/ceedling
+  :test_file_prefix: test_
+  :default_tasks:
+    - test:all
+  :test_threads: 1
+  :compile_threads: 4
+  :release_build: FALSE
+
+:test_build:
+  :use_assembly: FALSE
+
+:plugins:
+  :load_paths: []
+  :enabled:
+    - report_tests_pretty_stdout
+    - report_tests_log_factory
+    - gcov
+
+:report_tests_log_factory:
+  :reports:
+    - junit
+
+:gcov:
+  :summaries: TRUE
+  :report_task: FALSE
+  :utilities:
+    - gcovr
+  :reports:
+    - HtmlDetailed
+    - Cobertura
+    - Text
+  :gcovr:
+    :report_root: .
+    :report_include: "^src/application/"
+    :fail_under_line: 100
+    :fail_under_branch: 100
+    :exception_on_fail: true
+    :html_artifact_filename: coverage.html
+    :html_title: Forgix Application Coverage
+    :html_medium_threshold: 75
+    :html_high_threshold: 90
+    :cobertura_pretty: true
+    :cobertura_artifact_filename: coverage.xml
+    :text_artifact_filename: coverage.txt
+    :print_summary: true
+
+:extension:
+  :executable: .out
+
+:paths:
+  :test:
+    - +:tests/**
+    - -:tests/support
+  :source:
+    - src/application/**
+    - tests/support/**
+  :include:
+    - src/application/**
+    - src/bsp/**
+    - tests/support/**
+  :support: []
+  :libraries: []
+
+:files:
+  :test: []
+  :source: []
+
+:defines:
+  :test:
+    - TEST
+  :release: []
+  :use_test_definition: FALSE
+
+:flags:
+  :test:
+    :compile:
+      '*':
+        - -std=c11
+        - -Wall
+        - -Wextra
+        - -Werror
+        - -pedantic
+
+:cmock:
+  :plugins:
+    - :ignore
+    - :callback
+  :verbosity: 1
+  :when_no_prototypes: :warn
+  :mock_prefix: mock_auto_
+  :mock_suffix: ''
+  :treat_externs: :exclude
+  :treat_inlines: :exclude
+  :treat_as:
+    uint8: HEX8
+    uint16: HEX16
+    uint32: UINT32
+    int8: INT8
+    bool: UINT8
+  :memcmp_if_unknown: true
+  :when_ptr: :compare_data
+  :enforce_strict_ordering: false
+  :fail_on_unexpected_calls: true
+  :callback_include_count: true
+  :callback_after_arg_check: false
+  :exclude_setjmp_h: false
+
+:unity:
+  :defines:
+    - UNITY_EXCLUDE_FLOAT
+
+:libraries:
+  :placement: :end
+  :flag: "-l${1}"
+  :path_flag: "-L ${1}"
+  :system: []
+  :test: []
+  :release: []

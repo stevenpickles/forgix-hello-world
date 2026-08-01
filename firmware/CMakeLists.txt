@@ -36,7 +36,9 @@ target_include_directories(forgix_bsp
   PRIVATE ${GENERATED_DIR})
 target_link_libraries(forgix_bsp PUBLIC pico_stdlib hardware_spi)
 
-add_library(forgix_application STATIC src/application/application.c)
+add_library(forgix_application STATIC
+  src/application/application.c
+  src/application/application_runner.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
 target_link_libraries(forgix_application PUBLIC forgix_bsp)

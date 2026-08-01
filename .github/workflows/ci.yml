@@ -8,30 +8,61 @@ on:
 permissions:
   contents: read
 
+env:
+  ARTIFACT_SUFFIX: run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   application:
-    name: BSP-independent application tests
+    name: Ceedling application tests and coverage
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
 
-      - name: Exercise application behavior with a fake BSP
-        run: python scripts/test_application.py
+      - name: Verify coverage summary rendering
+        run: python scripts/test_render_coverage_summary.py
+
+      - name: Exercise application behavior and enforce coverage
+        run: bash scripts/test_ceedling.sh
+
+      - name: Add coverage to the workflow summary
+        if: always()
+        run: |
+          report=firmware/build/ceedling/artifacts/gcov/gcovr/coverage.xml
+          if [[ -f "$report" ]]; then
+            python scripts/render_coverage_summary.py "$report" \
+              --line-threshold 100 \
+              --branch-threshold 100 \
+              --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --artifact-name "forgix-application-test-reports-$ARTIFACT_SUFFIX" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '<h2>Application coverage</h2>\n<p>Coverage report unavailable.</p>\n' \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: forgix-application-test-reports-${{ env.ARTIFACT_SUFFIX }}
+          path: firmware/build/ceedling/artifacts/
+          if-no-files-found: warn
+          retention-days: 14
 
   vhdl:
     name: VHDL 2008 simulation
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install GHDL 6.0.0
         uses: ghdl/setup-ghdl@v1
@@ -47,10 +78,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -71,10 +102,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check out Pico SDK 2.3.0
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: raspberrypi/pico-sdk
           ref: 2.3.0
@@ -114,9 +145,9 @@ jobs:
           echo "Firmware binary: $firmware_size / 2097152 bytes"
 
       - name: Upload firmware diagnostics
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: forgix-rp2354-test-firmware
+          name: forgix-rp2354-test-firmware-${{ env.ARTIFACT_SUFFIX }}
           path: |
             build/firmware-ci/forgix_hello_world.elf
             build/firmware-ci/forgix_hello_world.elf.map

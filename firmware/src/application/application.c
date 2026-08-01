@@ -1,6 +1,5 @@
 #include "application.h"
 
-#include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,7 +10,10 @@
 static bool parse_byte(const char *text, uint8_t *value) {
     char *end = NULL;
     long parsed = strtol(text, &end, 0);
-    if (!text[0] || !end || *end || parsed < 0 || parsed > 255) {
+    if (end == text || *end) {
+        return false;
+    }
+    if (parsed < 0 || parsed > 255) {
         return false;
     }
     *value = (uint8_t)parsed;
@@ -91,26 +93,4 @@ void application_init(const bsp_init_result_t *bsp_result) {
             "error: FPGA configuration or design-ID validation failed; runtime commands are disabled");
     }
     print_help();
-}
-
-void application_run(void) {
-    char line[128];
-    size_t used = 0;
-    while (true) {
-        int character = bsp_console_getchar_timeout_us(1000);
-        if (character == BSP_CONSOLE_TIMEOUT) {
-            continue;
-        }
-        if (character == '\r' || character == '\n') {
-            if (used) {
-                line[used] = 0;
-                application_process_command(line);
-                used = 0;
-            }
-        } else if ((character == '\b' || character == 127) && used) {
-            --used;
-        } else if (isprint(character) && used + 1 < sizeof line) {
-            line[used++] = (char)character;
-        }
-    }
 }
