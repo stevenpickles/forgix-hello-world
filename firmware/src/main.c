@@ -53,14 +53,16 @@ static bool configure_fpga(void) {
     return done;
 }
 
-static void clock_bit(bool bit) {
-    gpio_put(PIN_SDIO, bit); gpio_put(PIN_SCK, 1); busy_wait_us_32(1);
-    gpio_put(PIN_SCK, 0); busy_wait_us_32(1);
-}
-
-static void send_byte(uint8_t value) {
+static void send_byte(uint8_t value, bool release_after_sample) {
     gpio_set_dir(PIN_SDIO, GPIO_OUT);
-    for (int bit = 7; bit >= 0; --bit) clock_bit((value >> bit) & 1u);
+    for (int bit = 7; bit >= 0; --bit) {
+        gpio_put(PIN_SDIO, (value >> bit) & 1u);
+        gpio_put(PIN_SCK, 1);
+        busy_wait_us_32(1);
+        if (release_after_sample && bit == 0) gpio_set_dir(PIN_SDIO, GPIO_IN);
+        gpio_put(PIN_SCK, 0);
+        busy_wait_us_32(1);
+    }
 }
 
 static uint8_t receive_byte(void) {
@@ -77,7 +79,7 @@ static uint8_t receive_byte(void) {
 
 static uint8_t transaction(const uint8_t *tx, size_t count, bool read) {
     gpio_put(PIN_CS, 0); busy_wait_us_32(1);
-    for (size_t i = 0; i < count; ++i) send_byte(tx[i]);
+    for (size_t i = 0; i < count; ++i) send_byte(tx[i], read && i + 1 == count);
     uint8_t result = read ? receive_byte() : 0;
     gpio_put(PIN_CS, 1); gpio_set_dir(PIN_SDIO, GPIO_IN); busy_wait_us_32(1);
     return result;

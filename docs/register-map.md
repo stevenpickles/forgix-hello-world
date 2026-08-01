@@ -1,7 +1,8 @@
 # Runtime register map
 
 Transactions keep chip select low throughout. Bytes are MSB-first; the FPGA
-samples SDIO on rising SCK edges and changes read data on falling edges.
+samples SDIO on rising SCK edges. For reads, the MCU releases SDIO while the
+last request clock is high and the FPGA starts driving after its falling edge.
 
 | Command | Value | Transaction |
 | --- | ---: | --- |

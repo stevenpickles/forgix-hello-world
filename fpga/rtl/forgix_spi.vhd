@@ -50,9 +50,9 @@ begin
 
         if state = read_wait_s then
           tx_shift <= reg_rdata; tx_count <= 0;
-          sdio_out <= reg_rdata(7); oe <= '1'; state <= tx_arm_s;
+          sdio_out <= reg_rdata(7); state <= tx_arm_s;
         elsif state = tx_arm_s and fall then
-          state <= tx_s;
+          oe <= '1'; state <= tx_s;
         elsif state = tx_s and fall then
           if tx_count = 7 then
             oe <= '0'; state <= done_s;
@@ -71,7 +71,7 @@ begin
                 command <= received;
                 if received = CMD_PING then
                   tx_shift <= DESIGN_ID; tx_count <= 0; sdio_out <= DESIGN_ID(7);
-                  oe <= '1'; state <= tx_arm_s;
+                  state <= tx_arm_s;
                 elsif received = CMD_RESET then
                   reset_regs <= '1'; error <= '0'; state <= done_s;
                 elsif received = CMD_WRITE or received = CMD_READ then

@@ -29,6 +29,31 @@ architecture sim of tb_spi_regs is
     end loop;
   end procedure;
 
+  procedure send_read_request_byte(
+    signal sck : out std_ulogic;
+    signal sdio : out std_ulogic;
+    signal dut_oe : in std_ulogic;
+    constant value : in byte_t
+  ) is
+  begin
+    for bit_index in 7 downto 1 loop
+      sdio <= value(bit_index);
+      wait for 40 ns;
+      sck <= '1';
+      wait for 40 ns;
+      sck <= '0';
+    end loop;
+    sdio <= value(0);
+    wait for 40 ns;
+    sck <= '1';
+    wait for 20 ns;
+    assert dut_oe = '0' report "FPGA drove SDIO before MCU turnaround" severity failure;
+    wait for 20 ns;
+    sck <= '0';
+    wait for 40 ns;
+    assert dut_oe = '1' report "FPGA did not drive SDIO after turnaround" severity failure;
+  end procedure;
+
   procedure receive_byte(
     signal sck : out std_ulogic;
     signal sdio : out std_ulogic;
@@ -76,7 +101,7 @@ begin
     procedure ping(variable value : out byte_t) is
     begin
       begin_transaction(spi_cs_n);
-      send_byte(spi_sck, spi_sdio_in, CMD_PING);
+      send_read_request_byte(spi_sck, spi_sdio_in, spi_sdio_oe, CMD_PING);
       receive_byte(spi_sck, spi_sdio_in, spi_sdio_out, spi_sdio_oe, value);
       end_transaction(spi_cs_n);
     end procedure;
@@ -94,7 +119,7 @@ begin
     begin
       begin_transaction(spi_cs_n);
       send_byte(spi_sck, spi_sdio_in, CMD_READ);
-      send_byte(spi_sck, spi_sdio_in, address);
+      send_read_request_byte(spi_sck, spi_sdio_in, spi_sdio_oe, address);
       receive_byte(spi_sck, spi_sdio_in, spi_sdio_out, spi_sdio_oe, value);
       end_transaction(spi_cs_n);
     end procedure;
