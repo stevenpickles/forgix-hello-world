@@ -20,8 +20,8 @@ Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 ```
 
 See `docs/register-map.md` for the runtime protocol. The Efinity project files
-are still being integrated; simulation and the firmware scaffold are available
-in this first implementation increment.
+build a placed-and-routed T8F49 passive-SPI image locally and verify the board
+pinout plus setup/hold timing before firmware compilation begins.
 
 GitHub Actions runs the open-source verification path on every push and pull
 request: VHDL 2008 simulation with GHDL 6.0.0, deterministic image-embedding

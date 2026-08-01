@@ -1,0 +1,28 @@
+# Efinity interface configuration for the Forgix T8F49 board.
+
+design.set_device_property("1A", "VOLTAGE", "3.3", "IOBANK")
+design.set_device_property("1B", "VOLTAGE", "3.3", "IOBANK")
+design.set_device_property("1C", "VOLTAGE", "1.1", "IOBANK")
+design.set_device_property("2A", "VOLTAGE", "3.3", "IOBANK")
+design.set_device_property("2B", "VOLTAGE", "3.3", "IOBANK")
+
+# Replace the three inferred core-facing GPIOs with one physical half-duplex pad.
+design.delete_gpio("spi_sdio_in")
+design.delete_gpio("spi_sdio_out")
+design.delete_gpio("spi_sdio_oe")
+design.create_inout_gpio("spi_sdio")
+design.set_property("spi_sdio", "IN_PIN", "spi_sdio_in")
+design.set_property("spi_sdio", "OUT_PIN", "spi_sdio_out")
+design.set_property("spi_sdio", "OE_PIN", "spi_sdio_oe")
+design.set_property("clk_32m", "CONN_TYPE", "NONE")
+design.set_property("button_n", "PULL_OPTION", "WEAK_PULLUP")
+design.set_property("button_n", "SCHMITT_TRIGGER", "1")
+
+design.assign_pkg_pin("clk_32m", "B4")
+design.assign_pkg_pin("spi_cs_n", "G3")
+design.assign_pkg_pin("spi_sck", "F3")
+design.assign_pkg_pin("spi_sdio", "F2")
+design.assign_pkg_pin("button_n", "G6")
+design.assign_pkg_pin("led_r_n", "E1")
+design.assign_pkg_pin("led_g_n", "F1")
+design.assign_pkg_pin("led_b_n", "G1")

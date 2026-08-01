@@ -22,8 +22,13 @@ architecture rtl of forgix_hello_world is
   signal button_count : byte_t := x"00";
 begin
   rst <= '1' when por /= x"FF" else '0';
-  process(clk_32m) begin
-    if rising_edge(clk_32m) and por /= x"FF" then por <= por + 1; end if;
+  process(clk_32m)
+  begin
+    if rising_edge(clk_32m) then
+      if por /= x"FF" then
+        por <= por + 1;
+      end if;
+    end if;
   end process;
 
   spi : entity work.forgix_spi port map (
