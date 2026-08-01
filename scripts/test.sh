@@ -25,6 +25,8 @@ cd "$work_dir"
 "$ghdl" -a --std=08 "$repo_root/fpga/rtl/forgix_rgb_pwm.vhd"
 "$ghdl" -a --std=08 "$repo_root/fpga/rtl/forgix_spi.vhd"
 "$ghdl" -a --std=08 "$repo_root/fpga/rtl/forgix_hello_world.vhd"
-"$ghdl" -a --std=08 "$repo_root/fpga/tb/tb_button.vhd"
-"$ghdl" -e --std=08 tb_button
-"$ghdl" -r --std=08 tb_button --assert-level=error
+for testbench in tb_button tb_pwm tb_spi_regs; do
+  "$ghdl" -a --std=08 "$repo_root/fpga/tb/$testbench.vhd"
+  "$ghdl" -e --std=08 "$testbench"
+  "$ghdl" -r --std=08 "$testbench" --assert-level=error
+done

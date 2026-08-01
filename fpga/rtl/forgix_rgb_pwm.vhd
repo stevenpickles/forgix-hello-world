@@ -19,7 +19,7 @@ end entity;
 
 architecture rtl of forgix_rgb_pwm is
   signal phase : unsigned(7 downto 0) := (others => '0');
-  signal r_scaled, g_scaled, b_scaled : unsigned(15 downto 0);
+  signal r_scaled, g_scaled, b_scaled : unsigned(15 downto 0) := (others => '0');
 begin
   r_scaled <= red * brightness;
   g_scaled <= green * brightness;

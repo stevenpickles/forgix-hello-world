@@ -4,6 +4,10 @@ use ieee.numeric_std.all;
 use work.forgix_pkg.all;
 
 entity forgix_hello_world is
+  generic (
+    CLK_HZ      : positive := 32_000_000;
+    DEBOUNCE_MS : positive := 10
+  );
   port (
     clk_32m, spi_cs_n, spi_sck, spi_sdio_in, button_n : in std_ulogic;
     spi_sdio_out, spi_sdio_oe : out std_ulogic;
@@ -34,8 +38,9 @@ begin
   spi : entity work.forgix_spi port map (
     clk_32m, rst, spi_cs_n, spi_sck, spi_sdio_in, spi_sdio_out, spi_sdio_oe,
     wr, rd, addr, wdata, rdata, reset_regs, activity, spi_error);
-  debounce : entity work.forgix_button port map (
-    clk_32m, rst, button_n, raw_button, button, button_press);
+  debounce : entity work.forgix_button
+    generic map (CLK_HZ => CLK_HZ, DEBOUNCE_MS => DEBOUNCE_MS)
+    port map (clk_32m, rst, button_n, raw_button, button, button_press);
   pwm : entity work.forgix_rgb_pwm port map (
     clk_32m, rst, led_enable, red, green, blue, brightness, led_r_n, led_g_n, led_b_n);
 
