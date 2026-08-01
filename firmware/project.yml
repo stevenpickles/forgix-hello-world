@@ -7,7 +7,7 @@
   :use_deep_preprocessor: :none
   :use_backtrace: :simple
   :use_decorators: :auto
-  :build_root: ../build/ceedling
+  :build_root: build/ceedling
   :test_file_prefix: test_
   :default_tasks:
     - test:all
@@ -23,10 +23,35 @@
   :enabled:
     - report_tests_pretty_stdout
     - report_tests_log_factory
+    - gcov
 
 :report_tests_log_factory:
   :reports:
     - junit
+
+:gcov:
+  :summaries: TRUE
+  :report_task: FALSE
+  :utilities:
+    - gcovr
+  :reports:
+    - HtmlDetailed
+    - Cobertura
+    - Text
+  :gcovr:
+    :report_root: .
+    :report_include: "^src/application/"
+    :fail_under_line: 100
+    :fail_under_branch: 80
+    :exception_on_fail: true
+    :html_artifact_filename: coverage.html
+    :html_title: Forgix Application Coverage
+    :html_medium_threshold: 75
+    :html_high_threshold: 90
+    :cobertura_pretty: true
+    :cobertura_artifact_filename: coverage.xml
+    :text_artifact_filename: coverage.txt
+    :print_summary: true
 
 :extension:
   :executable: .out

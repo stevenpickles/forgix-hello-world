@@ -25,13 +25,19 @@ Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 ./scripts/flash.sh
 ```
 
-Application behavior can also be exercised without a board when a native C
-compiler is available:
+Application behavior can also be exercised without a board. The Ceedling toolchain
+is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools
+run on Windows and in CI:
 
 ```bash
 python scripts/check_firmware_layers.py
-python scripts/test_application.py
+./scripts/test_ceedling.sh
 ```
+
+The command runs the unit suite both normally and with coverage instrumentation.
+Detailed HTML, Cobertura XML, and text coverage reports are written beneath
+`firmware/build/ceedling/artifacts/gcov/gcovr/`. Pass explicit Ceedling tasks when a faster
+development loop is useful, for example `./scripts/test_ceedling.sh test:all`.
 
 Pico SDK 2.3.0 must include its TinyUSB submodule. If the SDK came from a
 source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible
