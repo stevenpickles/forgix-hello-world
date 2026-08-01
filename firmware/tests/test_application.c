@@ -6,13 +6,13 @@
 #include <string.h>
 
 #include "application.h"
-#include "fake_bsp_console.h"
-#include "mock_bsp_button.h"
-#include "mock_bsp_fpga.h"
-#include "mock_bsp_led.h"
+#include "mock_bsp_console.h"
+#include "mock_auto_bsp_button.h"
+#include "mock_auto_bsp_fpga.h"
+#include "mock_auto_bsp_led.h"
 
 void setUp(void) {
-    fake_bsp_console_reset();
+    mock_bsp_console_reset();
 }
 
 void tearDown(void) {
@@ -35,9 +35,9 @@ void test_application_init_reports_ready_hardware_and_help(void) {
 
     application_init(&result);
 
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "configuration=ok"));
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "runtime=ready"));
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "hello | color"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=ok"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "runtime=ready"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "hello | color"));
 }
 
 void test_application_init_preserves_diagnostics_when_hardware_is_unavailable(void) {
@@ -51,20 +51,20 @@ void test_application_init_preserves_diagnostics_when_hardware_is_unavailable(vo
 
     application_init(&result);
 
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "configuration=failed"));
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "runtime=unavailable"));
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "runtime commands are disabled"));
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "hello | color"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=failed"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "runtime=unavailable"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "runtime commands are disabled"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "hello | color"));
 }
 
 void test_empty_command_has_no_effect(void) {
     process(" \t");
-    TEST_ASSERT_EQUAL_STRING("", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("", mock_bsp_console_output());
 }
 
 void test_help_remains_available_without_fpga_access(void) {
     process("help");
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "hello | color"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "hello | color"));
 }
 
 void test_hardware_command_is_rejected_when_fpga_is_unavailable(void) {
@@ -72,7 +72,7 @@ void test_hardware_command_is_rejected_when_fpga_is_unavailable(void) {
 
     process("hello");
 
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "FPGA is not configured and responding"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "FPGA is not configured and responding"));
 }
 
 void test_color_uses_default_brightness(void) {
@@ -81,7 +81,7 @@ void test_color_uses_default_brightness(void) {
 
     process("color 1 2 3");
 
-    TEST_ASSERT_EQUAL_STRING("ok\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("ok\n", mock_bsp_console_output());
 }
 
 void test_color_forwards_explicit_brightness(void) {
@@ -90,7 +90,7 @@ void test_color_forwards_explicit_brightness(void) {
 
     process("color 4 5 6 7");
 
-    TEST_ASSERT_EQUAL_STRING("ok\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("ok\n", mock_bsp_console_output());
 }
 
 void test_color_rejects_values_above_a_byte_without_writing_hardware(void) {
@@ -98,7 +98,7 @@ void test_color_rejects_values_above_a_byte_without_writing_hardware(void) {
 
     process("color 1 2 256");
 
-    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", mock_bsp_console_output());
 }
 
 void test_color_rejects_negative_values_without_writing_hardware(void) {
@@ -106,7 +106,7 @@ void test_color_rejects_negative_values_without_writing_hardware(void) {
 
     process("color -1 2 3");
 
-    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", mock_bsp_console_output());
 }
 
 void test_color_rejects_non_numeric_values_without_writing_hardware(void) {
@@ -114,7 +114,7 @@ void test_color_rejects_non_numeric_values_without_writing_hardware(void) {
 
     process("color red 2 3");
 
-    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("error: values must be 0..255\n", mock_bsp_console_output());
 }
 
 void test_color_rejects_the_wrong_argument_count(void) {
@@ -122,7 +122,7 @@ void test_color_rejects_the_wrong_argument_count(void) {
 
     process("color 1 2");
 
-    TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n", mock_bsp_console_output());
 }
 
 void test_hello_programs_and_verifies_the_expected_led_state(void) {
@@ -140,7 +140,7 @@ void test_hello_programs_and_verifies_the_expected_led_state(void) {
 
     process("hello");
 
-    TEST_ASSERT_EQUAL_STRING("Hello from RP2354 -> FPGA B5\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("Hello from RP2354 -> FPGA B5\n", mock_bsp_console_output());
 }
 
 void test_hello_reports_failed_readback(void) {
@@ -152,8 +152,8 @@ void test_hello_reports_failed_readback(void) {
 
     process("hello");
 
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "hello readback failed"));
-    TEST_ASSERT_NOT_NULL(strstr(fake_bsp_console_output(), "id=00"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "hello readback failed"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "id=00"));
 }
 
 void test_off_disables_the_led(void) {
@@ -162,7 +162,7 @@ void test_off_disables_the_led(void) {
 
     process("off");
 
-    TEST_ASSERT_EQUAL_STRING("ok\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("ok\n", mock_bsp_console_output());
 }
 
 void test_status_reports_fpga_and_button_state(void) {
@@ -176,7 +176,7 @@ void test_status_reports_fpga_and_button_state(void) {
     process("status");
 
     TEST_ASSERT_EQUAL_STRING("id=B5 status=01 button=03 count=7 fpga_status=1\n",
-                             fake_bsp_console_output());
+                             mock_bsp_console_output());
 }
 
 void test_reset_reaches_the_fpga(void) {
@@ -185,7 +185,7 @@ void test_reset_reaches_the_fpga(void) {
 
     process("reset");
 
-    TEST_ASSERT_EQUAL_STRING("ok\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("ok\n", mock_bsp_console_output());
 }
 
 void test_unknown_command_is_rejected(void) {
@@ -193,5 +193,5 @@ void test_unknown_command_is_rejected(void) {
 
     process("unknown");
 
-    TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n", fake_bsp_console_output());
+    TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n", mock_bsp_console_output());
 }

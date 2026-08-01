@@ -62,11 +62,12 @@
     - -:tests/support
   :source:
     - src/application/**
+    - tests/support/**
   :include:
     - src/application/**
     - src/bsp/**
-  :support:
-    - tests/support
+    - tests/support/**
+  :support: []
   :libraries: []
 
 :files:
@@ -95,7 +96,7 @@
     - :callback
   :verbosity: 1
   :when_no_prototypes: :warn
-  :mock_prefix: mock_
+  :mock_prefix: mock_auto_
   :mock_suffix: ''
   :treat_externs: :exclude
   :treat_inlines: :exclude

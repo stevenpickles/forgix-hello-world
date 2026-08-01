@@ -1,4 +1,4 @@
-#include "fake_bsp_console.h"
+#include "mock_bsp_console.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -14,11 +14,11 @@ static void append(const char *text) {
     }
 }
 
-void fake_bsp_console_reset(void) {
+void mock_bsp_console_reset(void) {
     output[0] = 0;
 }
 
-const char *fake_bsp_console_output(void) {
+const char *mock_bsp_console_output(void) {
     return output;
 }
 
