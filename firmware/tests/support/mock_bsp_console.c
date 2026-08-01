@@ -30,6 +30,12 @@ int bsp_console_getchar_timeout_us(uint32_t timeout_us) {
     return BSP_CONSOLE_TIMEOUT;
 }
 
+int bsp_console_putchar(int character) {
+    char text[2] = {(char)character, 0};
+    append(text);
+    return character;
+}
+
 int bsp_console_printf(const char *format, ...) {
     char formatted[512];
     va_list arguments;

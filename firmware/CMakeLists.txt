@@ -30,6 +30,7 @@ add_library(forgix_bsp STATIC
   src/bsp/bsp_console.c
   src/bsp/bsp_fpga.c
   src/bsp/bsp_led.c
+  src/bsp/bsp_time.c
   ${GENERATED_C})
 target_include_directories(forgix_bsp
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/bsp
