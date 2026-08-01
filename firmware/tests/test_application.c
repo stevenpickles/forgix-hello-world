@@ -215,6 +215,15 @@ void test_status_reports_fpga_and_button_state(void) {
                              mock_bsp_console_output());
 }
 
+void test_status_reports_unavailable_hardware_without_accessing_registers(void) {
+    bsp_fpga_is_ready_ExpectAndReturn(false);
+
+    process("status");
+
+    TEST_ASSERT_EQUAL_STRING("status unavailable: FPGA is not configured and responding\n",
+                             mock_bsp_console_output());
+}
+
 void test_reset_reaches_the_fpga(void) {
     bsp_fpga_is_ready_ExpectAndReturn(true);
     bsp_fpga_reset_Expect();

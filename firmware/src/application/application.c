@@ -24,6 +24,18 @@ static void print_help(void) {
     bsp_console_puts("hello | color <r> <g> <b> [brightness] | off | status | reset | help");
 }
 
+void application_print_status(void) {
+    if (!bsp_fpga_is_ready()) {
+        bsp_console_puts("status unavailable: FPGA is not configured and responding");
+        return;
+    }
+
+    bsp_button_state_t button = bsp_button_get_state();
+    bsp_console_printf("id=%02X status=%02X button=%02X count=%u fpga_status=%u\n",
+                       bsp_fpga_ping(), bsp_fpga_read_status(), button.level,
+                       button.count, bsp_fpga_status_pin());
+}
+
 void application_process_command(char *line) {
     char *argv[6] = {0};
     int argc = 0;
@@ -36,6 +48,10 @@ void application_process_command(char *line) {
     }
     if (!strcmp(argv[0], "help") && argc == 1) {
         print_help();
+        return;
+    }
+    if (!strcmp(argv[0], "status") && argc == 1) {
+        application_print_status();
         return;
     }
     if (!bsp_fpga_is_ready()) {
@@ -70,11 +86,6 @@ void application_process_command(char *line) {
     } else if (!strcmp(argv[0], "off") && argc == 1) {
         bsp_led_off();
         bsp_console_puts("ok");
-    } else if (!strcmp(argv[0], "status") && argc == 1) {
-        bsp_button_state_t button = bsp_button_get_state();
-        bsp_console_printf("id=%02X status=%02X button=%02X count=%u fpga_status=%u\n",
-                           bsp_fpga_ping(), bsp_fpga_read_status(), button.level,
-                           button.count, bsp_fpga_status_pin());
     } else if (!strcmp(argv[0], "reset") && argc == 1) {
         bsp_fpga_reset();
         bsp_console_puts("ok");
