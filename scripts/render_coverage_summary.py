@@ -68,7 +68,11 @@ def coverage_indicator(percent: float) -> str:
     return "&#x1F534;"
 
 
-def render_html(metrics: list[CoverageMetric], run_url: str | None = None) -> str:
+def render_html(
+    metrics: list[CoverageMetric],
+    run_url: str | None = None,
+    artifact_name: str = "forgix-application-test-reports",
+) -> str:
     rows: list[str] = []
     for metric in metrics:
         if metric.threshold is None:
@@ -96,9 +100,9 @@ def render_html(metrics: list[CoverageMetric], run_url: str | None = None) -> st
     if run_url:
         details = (
             '<p>Download <a href="{}#artifacts">'
-            "<code>forgix-application-test-reports</code></a> for the detailed "
+            "<code>{}</code></a> for the detailed "
             "colorized HTML report.</p>"
-        ).format(escape(run_url, quote=True))
+        ).format(escape(run_url, quote=True), escape(artifact_name))
 
     return "\n".join(
         [
@@ -124,12 +128,20 @@ def main() -> int:
     parser.add_argument("--line-threshold", type=float, default=100.0)
     parser.add_argument("--branch-threshold", type=float, default=80.0)
     parser.add_argument("--run-url", help="GitHub Actions run URL for the artifact link")
+    parser.add_argument(
+        "--artifact-name",
+        default="forgix-application-test-reports",
+        help="artifact label shown in the workflow summary",
+    )
     arguments = parser.parse_args()
 
     metrics = read_metrics(
         arguments.report, arguments.line_threshold, arguments.branch_threshold
     )
-    print(render_html(metrics, arguments.run_url), end="")
+    print(
+        render_html(metrics, arguments.run_url, arguments.artifact_name),
+        end="",
+    )
     return 0
 
 

@@ -41,6 +41,8 @@ development loop is useful, for example `./scripts/test_ceedling.sh test:all`.
 Application policy is gated at 100% line coverage and 80% branch coverage. The
 GitHub Actions summary renders color-coded line, function, and branch totals and
 links to the detailed annotated HTML report in the downloadable test artifact.
+CI artifact names include the workflow run ID and attempt number so downloaded
+reports and firmware images can be traced back to an exact execution.
 
 Pico SDK 2.3.0 must include its TinyUSB submodule. If the SDK came from a
 source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible

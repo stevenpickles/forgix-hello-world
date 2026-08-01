@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ARTIFACT_SUFFIX: run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -38,6 +41,7 @@ jobs:
               --line-threshold 100 \
               --branch-threshold 80 \
               --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --artifact-name "forgix-application-test-reports-$ARTIFACT_SUFFIX" \
               >> "$GITHUB_STEP_SUMMARY"
           else
             printf '<h2>Application coverage</h2>\n<p>Coverage report unavailable.</p>\n' \
@@ -48,7 +52,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: forgix-application-test-reports
+          name: forgix-application-test-reports-${{ env.ARTIFACT_SUFFIX }}
           path: firmware/build/ceedling/artifacts/
           if-no-files-found: warn
           retention-days: 14
@@ -143,7 +147,7 @@ jobs:
       - name: Upload firmware diagnostics
         uses: actions/upload-artifact@v7
         with:
-          name: forgix-rp2354-test-firmware
+          name: forgix-rp2354-test-firmware-${{ env.ARTIFACT_SUFFIX }}
           path: |
             build/firmware-ci/forgix_hello_world.elf
             build/firmware-ci/forgix_hello_world.elf.map

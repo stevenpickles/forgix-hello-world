@@ -26,6 +26,7 @@ class CoverageSummaryTests(unittest.TestCase):
             summary = render_html(
                 read_metrics(report, line_threshold=100, branch_threshold=80),
                 "https://github.com/example/project/actions/runs/123",
+                "forgix-application-test-reports-run-123-attempt-2",
             )
 
         self.assertIn("<table>", summary)
@@ -38,6 +39,9 @@ class CoverageSummaryTests(unittest.TestCase):
         self.assertIn("&ge; 80%", summary)
         self.assertIn("&#x2705; Pass", summary)
         self.assertIn("actions/runs/123#artifacts", summary)
+        self.assertIn(
+            "forgix-application-test-reports-run-123-attempt-2", summary
+        )
 
     def test_marks_a_branch_gate_failure(self) -> None:
         metrics = read_metrics_from_text(
