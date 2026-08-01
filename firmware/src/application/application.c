@@ -22,7 +22,7 @@ static void print_help(void) {
     bsp_console_puts("hello | color <r> <g> <b> [brightness] | off | status | reset | help");
 }
 
-static void execute(char *line) {
+void application_process_command(char *line) {
     char *argv[6] = {0};
     int argc = 0;
     for (char *part = strtok(line, " \t"); part && argc < 6; part = strtok(NULL, " \t")) {
@@ -104,7 +104,7 @@ void application_run(void) {
         if (character == '\r' || character == '\n') {
             if (used) {
                 line[used] = 0;
-                execute(line);
+                application_process_command(line);
                 used = 0;
             }
         } else if ((character == '\b' || character == 127) && used) {

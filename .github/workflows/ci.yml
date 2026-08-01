@@ -13,6 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  application:
+    name: BSP-independent application tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Enforce firmware layering
+        run: python scripts/check_firmware_layers.py
+
+      - name: Exercise application behavior with a fake BSP
+        run: python scripts/test_application.py
+
   vhdl:
     name: VHDL 2008 simulation
     runs-on: ubuntu-24.04
