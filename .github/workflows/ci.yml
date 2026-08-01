@@ -27,7 +27,7 @@ jobs:
           backend: mcode
 
       - name: Analyze, elaborate, and simulate
-        run: ./scripts/test.sh
+        run: bash ./scripts/test.sh
 
   image-embedding:
     name: FPGA image embedding
@@ -86,4 +86,3 @@ jobs:
           path: build/firmware-ci/forgix_hello_world.elf
           if-no-files-found: error
           retention-days: 7
-
