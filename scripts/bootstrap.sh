@@ -4,6 +4,7 @@ set -u
 default_efinity='/c/Efinix/Efinity/2026.1'
 default_pico_sdk='/c/RPi/pico-sdk-2.3.0'
 default_ghdl_bin='/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin'
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export EFINITY_HOME="${EFINITY_HOME:-$default_efinity}"
 export PICO_SDK_PATH="${PICO_SDK_PATH:-$default_pico_sdk}"
@@ -46,10 +47,14 @@ if command -v cygpath >/dev/null 2>&1; then
 else
   pico_sdk_posix="$PICO_SDK_PATH"
 fi
-if [[ -f "$pico_sdk_posix/lib/tinyusb/src/tusb.c" ]]; then
-  printf 'ok      %-20s %s\n' 'Pico SDK TinyUSB' "$pico_sdk_posix/lib/tinyusb"
+tinyusb_posix="${PICO_TINYUSB_PATH:-$pico_sdk_posix/lib/tinyusb}"
+if [[ ! -f "$tinyusb_posix/src/tusb.c" && -f "$repo_root/build/tinyusb/src/tusb.c" ]]; then
+  tinyusb_posix="$repo_root/build/tinyusb"
+fi
+if [[ -f "$tinyusb_posix/src/tusb.c" ]]; then
+  printf 'ok      %-20s %s\n' 'Pico SDK TinyUSB' "$tinyusb_posix"
 else
-  printf 'missing %-20s run: git -C "%s" submodule update --init lib/tinyusb\n' 'Pico SDK TinyUSB' "$PICO_SDK_PATH"
+  printf 'missing %-20s initialize lib/tinyusb in the SDK, or set PICO_TINYUSB_PATH\n' 'Pico SDK TinyUSB'
   failures=$((failures + 1))
 fi
 check_command python 'Install Python 3 and add it to PATH.'

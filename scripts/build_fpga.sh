@@ -26,7 +26,7 @@ rm -f \
   "$binary_image" \
   "$pinout_report" \
   "$timing_report"
-cmd.exe /d /c "call \"$efinity_win\\bin\\setup.bat\" && cd /d \"$repo_win\\fpga\" && efx_run.bat --prj -f compile forgix_hello_world"
+"$repo_root/scripts/run_efinity.cmd" "$efinity_win" "$repo_win"
 
 [[ -s "$hex_image" ]] || {
   printf 'Efinity did not produce a nonempty passive-SPI image: %s\n' "$hex_image" >&2

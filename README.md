@@ -19,6 +19,11 @@ Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 ./scripts/flash.sh
 ```
 
+Pico SDK 2.3.0 must include its TinyUSB submodule. If the SDK came from a
+source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible
+TinyUSB checkout; the scripts also recognize `build/tinyusb`. UF2 generation
+and flashing require picotool 2.3.0, matching the SDK.
+
 See `docs/register-map.md` for the runtime protocol. The Efinity project files
 build a placed-and-routed T8F49 passive-SPI image locally and verify the board
 pinout plus setup/hold timing before firmware compilation begins.
