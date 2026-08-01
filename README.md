@@ -15,7 +15,19 @@ The supported build environment is Windows with Git Bash. Tool paths default to:
 export EFINITY_HOME="/c/Efinix/Efinity/2026.1"
 export PICO_SDK_PATH="/c/RPi/pico-sdk-2.3.0"
 export GHDL_BIN_PATH="/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin"
+export PICOTOOL_BIN_PATH="/c/RPi/picotool-2.3.0-install-usb/picotool"
+export picotool_DIR="$PICOTOOL_BIN_PATH"
+export PATH="$PICOTOOL_BIN_PATH:$PATH"
 ```
+
+Build and install the USB-enabled picotool 2.3.0 host utility from Git Bash
+with `./scripts/build_picotool.sh`. The script uses the Visual Studio 2022 x64
+toolchain and the compatible VS2019 x64 static library from the libusb package
+under `/c/Forgix/libusb-1.0.29`. It rejects the installation if picotool's USB
+load command is unavailable. See
+[Building USB-enabled picotool 2.3.0 on Windows](docs/picotool-windows.md) for
+the complete source-build, environment, verification, BOOTSEL, and first-flash
+procedure.
 
 Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 
@@ -24,6 +36,14 @@ Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 ./scripts/build_all.sh
 ./scripts/flash.sh
 ```
+
+With this project's firmware running, `picotool reboot -f -u` reliably places
+the board in BOOTSEL. The original factory firmware did not complete that
+transition on the tested board. For that first flash, or as a recovery method,
+power the board off, jumper the I/O-ring `PRG` (`PROGRAM`) pin to `GND`, and
+reconnect USB with the jumper fitted. Remove the jumper after the RP2350-family
+boot device appears, then follow the verified load procedure in
+[the picotool guide](docs/picotool-windows.md#first-forgix-flash).
 
 Application behavior can also be exercised without a board. The Ceedling toolchain
 is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools
