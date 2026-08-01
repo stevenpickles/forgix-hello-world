@@ -17,6 +17,7 @@ fi
 
 efinity_win="$(cygpath -w "$EFINITY_HOME")"
 repo_win="$(cygpath -w "$repo_root")"
+wrapper_short="$(cygpath -u "$(cygpath -aw -s "$repo_root/scripts/run_efinity.cmd")")"
 
 mkdir -p "$outflow"
 rm -f \
@@ -26,7 +27,7 @@ rm -f \
   "$binary_image" \
   "$pinout_report" \
   "$timing_report"
-"$repo_root/scripts/run_efinity.cmd" "$efinity_win" "$repo_win"
+"$wrapper_short" "$efinity_win" "$repo_win"
 
 [[ -s "$hex_image" ]] || {
   printf 'Efinity did not produce a nonempty passive-SPI image: %s\n' "$hex_image" >&2
