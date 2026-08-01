@@ -15,7 +15,15 @@ The supported build environment is Windows with Git Bash. Tool paths default to:
 export EFINITY_HOME="/c/Efinix/Efinity/2026.1"
 export PICO_SDK_PATH="/c/RPi/pico-sdk-2.3.0"
 export GHDL_BIN_PATH="/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin"
+export PICOTOOL_BIN_PATH="/c/RPi/picotool-2.3.0-install-usb/picotool"
+export picotool_DIR="$PICOTOOL_BIN_PATH"
+export PATH="$PICOTOOL_BIN_PATH:$PATH"
 ```
+
+Build and install the USB-enabled picotool 2.3.0 host utility from Git Bash
+with `./scripts/build_picotool.sh`. The script uses the Visual Studio 2022 x64
+toolchain and the static libusb package under `/c/Forgix/libusb-1.0.29`, then
+rejects the installation if picotool's USB load command is unavailable.
 
 Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 
