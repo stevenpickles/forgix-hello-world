@@ -1,5 +1,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
+use std.env.all;
 
 entity tb_button is
 end entity;
@@ -36,7 +37,7 @@ begin
     wait for 110 * PERIOD;
     assert pressed = '0' report "button did not debounce released" severity failure;
     report "tb_button passed" severity note;
+    stop;
     wait;
   end process;
 end architecture;
-
