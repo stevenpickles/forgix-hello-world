@@ -11,9 +11,9 @@ from render_coverage_summary import read_metrics, render_html
 
 
 COBERTURA = """<?xml version="1.0"?>
-<coverage line-rate="1.0" function-rate="1.0" branch-rate="0.803030303"
+<coverage line-rate="1.0" function-rate="1.0" branch-rate="1.0"
   lines-covered="63" lines-valid="63" functions-covered="4" functions-valid="4"
-  branches-covered="53" branches-valid="66" />
+  branches-covered="66" branches-valid="66" />
 """
 
 
@@ -24,7 +24,7 @@ class CoverageSummaryTests(unittest.TestCase):
             report.write_text(COBERTURA, encoding="utf-8")
 
             summary = render_html(
-                read_metrics(report, line_threshold=100, branch_threshold=80),
+                read_metrics(report, line_threshold=100, branch_threshold=100),
                 "https://github.com/example/project/actions/runs/123",
                 "forgix-application-test-reports-run-123-attempt-2",
             )
@@ -34,9 +34,9 @@ class CoverageSummaryTests(unittest.TestCase):
         self.assertIn("63 / 63", summary)
         self.assertIn("&#x1F7E2; <strong>100.0%</strong>", summary)
         self.assertIn("<strong>Branches</strong>", summary)
-        self.assertIn("53 / 66", summary)
-        self.assertIn("&#x1F7E1; <strong>80.3%</strong>", summary)
-        self.assertIn("&ge; 80%", summary)
+        self.assertIn("66 / 66", summary)
+        self.assertIn("&#x1F7E2; <strong>100.0%</strong>", summary)
+        self.assertIn("&ge; 100%", summary)
         self.assertIn("&#x2705; Pass", summary)
         self.assertIn("actions/runs/123#artifacts", summary)
         self.assertIn(
@@ -45,7 +45,7 @@ class CoverageSummaryTests(unittest.TestCase):
 
     def test_marks_a_branch_gate_failure(self) -> None:
         metrics = read_metrics_from_text(
-            COBERTURA.replace('branch-rate="0.803030303"', 'branch-rate="0.5"')
+            COBERTURA.replace('branch-rate="1.0"', 'branch-rate="0.5"')
         )
         summary = render_html(metrics)
 
@@ -57,7 +57,7 @@ def read_metrics_from_text(contents: str):
     with tempfile.TemporaryDirectory() as temporary:
         report = Path(temporary) / "coverage.xml"
         report.write_text(contents, encoding="utf-8")
-        return read_metrics(report, line_threshold=100, branch_threshold=80)
+        return read_metrics(report, line_threshold=100, branch_threshold=100)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ The command runs the unit suite both normally and with coverage instrumentation.
 Detailed HTML, Cobertura XML, and text coverage reports are written beneath
 `firmware/build/ceedling/artifacts/gcov/gcovr/`. Pass explicit Ceedling tasks when a faster
 development loop is useful, for example `./scripts/test_ceedling.sh test:all`.
-Application policy is gated at 100% line coverage and 80% branch coverage. The
+Application policy is gated at 100% line and branch coverage. The
 GitHub Actions summary renders color-coded line, function, and branch totals and
 links to the detailed annotated HTML report in the downloadable test artifact.
 CI artifact names include the workflow run ID and attempt number so downloaded

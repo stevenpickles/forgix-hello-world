@@ -39,7 +39,7 @@ jobs:
           if [[ -f "$report" ]]; then
             python scripts/render_coverage_summary.py "$report" \
               --line-threshold 100 \
-              --branch-threshold 80 \
+              --branch-threshold 100 \
               --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
               --artifact-name "forgix-application-test-reports-$ARTIFACT_SUFFIX" \
               >> "$GITHUB_STEP_SUMMARY"

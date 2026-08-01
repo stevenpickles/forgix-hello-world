@@ -126,7 +126,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path, help="Cobertura XML report")
     parser.add_argument("--line-threshold", type=float, default=100.0)
-    parser.add_argument("--branch-threshold", type=float, default=80.0)
+    parser.add_argument("--branch-threshold", type=float, default=100.0)
     parser.add_argument("--run-url", help="GitHub Actions run URL for the artifact link")
     parser.add_argument(
         "--artifact-name",
