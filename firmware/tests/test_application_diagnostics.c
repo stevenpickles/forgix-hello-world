@@ -303,7 +303,7 @@ void test_heartbeat_turns_magenta_when_the_frame_counter_freezes(void) {
     poll_at(6000);
 }
 
-void test_heartbeat_turns_red_when_transfers_stop_completing(void) {
+void test_heartbeat_turns_red_when_a_full_fifo_stops_draining(void) {
     start_usb_at(0);
     bsp_led_off_Expect();
     poll_at(250);
@@ -315,12 +315,48 @@ void test_heartbeat_turns_red_when_transfers_stop_completing(void) {
     bsp_led_off_Expect();
     poll_at(1250);
 
-    /* the bus is alive but no CDC transfer has completed for five seconds */
+    /* transmit FIFO full and nothing completing: a genuine endpoint wedge */
     mock_bsp_usb_set_health(health_of(true, false, 0, 5, 101));
     expect_sample(255, 0, 0);
-    poll_at(6000);
+    poll_at(1000 + APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS);
 
     TEST_ASSERT_EQUAL_UINT32(101u | (1u << 16) | (1u << 18), mock_bsp_watchdog_snapshot(2));
+}
+
+/* A momentarily full FIFO is normal under load; it only means anything if it
+   also stops draining. */
+void test_a_full_fifo_that_is_still_draining_stays_green(void) {
+    start_usb_at(0);
+    bsp_led_off_Expect();
+    poll_at(250);
+
+    mock_bsp_usb_set_health(health_of(true, false, 0, 5, 100));
+    expect_sample(0, 255, 0);
+    poll_at(1000);
+
+    TEST_ASSERT_EQUAL_UINT32(100u | (1u << 16) | (1u << 18), mock_bsp_watchdog_snapshot(2));
+}
+
+/* Regression guard. A quiet link is not a fault. Keying red on the traffic gap
+   alone made the heartbeat alternate green and red against the firmware's own
+   10 s idle-status cadence, reporting an endpoint wedge on every cycle. */
+void test_a_quiet_link_with_room_in_the_fifo_stays_green(void) {
+    start_usb_at(0);
+    bsp_led_off_Expect();
+    poll_at(250);
+
+    mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
+    expect_sample(0, 255, 0);
+    poll_at(1000);
+
+    bsp_led_off_Expect();
+    poll_at(1250);
+
+    /* far beyond the activity threshold, but the FIFO has room, so nothing is
+       stuck; the frame counter keeps advancing so the host is still framing */
+    mock_bsp_usb_set_health(health_of(true, false, 64, 5, 101));
+    expect_sample(0, 255, 0);
+    poll_at(1000 + APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS + 5000);
 }
 
 void test_a_sample_without_a_heartbeat_toggle_still_refreshes_the_led(void) {

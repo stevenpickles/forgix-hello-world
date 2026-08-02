@@ -71,8 +71,8 @@ static bool deadline_reached(uint32_t now_ms, uint32_t deadline_ms) {
     return (int32_t)(now_ms - deadline_ms) >= 0;
 }
 
-static bool stalled_since(uint32_t now_ms, uint32_t since_ms) {
-    return (int32_t)(now_ms - since_ms) >= (int32_t)APPLICATION_DIAGNOSTICS_STALL_TIMEOUT_MS;
+static bool stalled_since(uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms) {
+    return (int32_t)(now_ms - since_ms) >= (int32_t)threshold_ms;
 }
 
 /* The USB-free image has no USB health to show, so its resting heartbeat carries
@@ -113,14 +113,21 @@ static void heartbeat_color(uint32_t now_ms, uint8_t *red, uint8_t *green, uint8
         *red = 0;
         *green = 0;
         *blue = 255; /* blue: host has not asserted DTR */
-    } else if (diagnostics.health.suspended || stalled_since(now_ms, diagnostics.last_frame_ms)) {
+    } else if (diagnostics.health.suspended ||
+               stalled_since(now_ms, diagnostics.last_frame_ms,
+                             APPLICATION_DIAGNOSTICS_FRAME_STALL_MS)) {
         *red = 255;
         *green = 0;
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
-    } else if (stalled_since(now_ms, diagnostics.last_activity_ms)) {
+    } else if (diagnostics.health.write_available == 0 &&
+               stalled_since(now_ms, diagnostics.last_activity_ms,
+                             APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS)) {
+        /* red: data is queued and the FIFO is not draining. A quiet link is not
+           a fault -- keying on the gap alone made this trip on the firmware's
+           own 10 s idle-status cadence, reporting a wedge every single cycle. */
         *red = 255;
         *green = 0;
-        *blue = 0; /* red: connected but no CDC transfer completed recently */
+        *blue = 0;
     } else {
         *red = 0;
         *green = 255;

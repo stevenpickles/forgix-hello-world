@@ -18,7 +18,14 @@ enum {
     APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS = 5000,
     APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS = 250,
     APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS = 1000,
-    APPLICATION_DIAGNOSTICS_STALL_TIMEOUT_MS = 5000,
+    /* Start-of-frame advances every millisecond while the host is framing, so a
+       few seconds of silence is already decisive. */
+    APPLICATION_DIAGNOSTICS_FRAME_STALL_MS = 5000,
+    /* CDC traffic is bursty and driven by whatever the host and the console
+       policy do, so a gap proves nothing on its own. This must stay well above
+       APPLICATION_IDLE_STATUS_PERIOD_MS, and is only consulted alongside a
+       backed-up transmit FIFO. */
+    APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS = 30000,
 };
 
 /* Reports the previous boot and arms the watchdog. Must run before the
