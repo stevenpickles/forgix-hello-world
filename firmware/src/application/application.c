@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "application_console.h"
+#include "application_diagnostics.h"
 #include "bsp.h"
 
 static bool parse_byte(const char *text, uint8_t *value) {
@@ -34,7 +35,7 @@ static bool parse_watch_period(const char *text, uint32_t *seconds) {
 
 static void print_help(void) {
     bsp_console_puts(
-        "hello | color <r> <g> <b> [brightness] | off | status | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
 }
 
 void application_print_status(void) {
@@ -107,6 +108,10 @@ void application_process_command(char *line) {
     }
     if (!strcmp(argv[0], "status") && argc == 1) {
         application_print_status();
+        return;
+    }
+    if (!strcmp(argv[0], "diag") && argc == 1) {
+        application_diagnostics_print_report();
         return;
     }
     if (!bsp_fpga_is_ready()) {

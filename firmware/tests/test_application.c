@@ -7,8 +7,11 @@
 
 #include "application.h"
 #include "application_console.h"
+#include "application_diagnostics.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
+#include "mock_bsp_usb.h"
+#include "mock_bsp_watchdog.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
@@ -16,6 +19,8 @@
 void setUp(void) {
     mock_bsp_console_reset();
     mock_bsp_time_reset();
+    mock_bsp_usb_reset();
+    mock_bsp_watchdog_reset();
 }
 
 void tearDown(void) {
@@ -267,6 +272,17 @@ void test_status_reports_unavailable_hardware_without_accessing_registers(void) 
                              mock_bsp_console_output());
 }
 
+void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access(void) {
+    mock_bsp_watchdog_set_boot_reason(BSP_BOOT_WATCHDOG);
+    mock_bsp_watchdog_set_retained(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE, 0, 0, 0);
+
+    process("diag");
+
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "diag: boot="));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "uptime="));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "fpga_reconfig="));
+}
+
 void test_reset_reaches_the_fpga(void) {
     bsp_fpga_is_ready_ExpectAndReturn(true);
     bsp_fpga_reset_Expect();
@@ -290,6 +306,7 @@ void test_known_commands_with_extra_arguments_are_rejected(void) {
         "hello extra",
         "off extra",
         "status extra",
+        "diag extra",
         "reset extra",
     };
 
