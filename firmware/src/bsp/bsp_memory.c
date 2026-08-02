@@ -2,6 +2,7 @@
 
 #include "hardware/flash.h"
 #include "hardware/regs/addressmap.h"
+#include "hardware/structs/qmi.h"
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
 
@@ -35,21 +36,70 @@ static bool flash_reads_coherently(uint32_t flash_bytes) {
 
    Runs from RAM with interrupts off: flash_do_cmd_cs turns XIP off to talk to
    the bus, and any handler living in flash would fault while it is down. */
-static void __no_inline_not_in_flash_func(read_qspi_cs1_id)(uint8_t *response) {
-    uint8_t transmit[8] = {0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu};
-    uint8_t receive[8] = {0};
+static void __no_inline_not_in_flash_func(cs1_transfer)(const uint8_t *transmit, uint8_t *receive,
+                                                        size_t count) {
+    uint32_t interrupts = save_and_disable_interrupts();
+    flash_do_cmd_cs(transmit, receive, count, 1);
+    restore_interrupts(interrupts);
+}
+
+/* The device has to be reset before it can be identified, and the reason is the
+   missing pull-up. With chip select held asserted from power-up, this part does
+   not ignore the bootrom's flash traffic -- it decodes it as its own command
+   stream. Arbitrary opcodes walk it into QPI mode or some other state, and that
+   happens again on every boot, before any of our code runs. So an unreset device
+   answers Read-ID with whatever mode it was left in, which is what the first
+   probe showed: a response that was neither absent nor AP Memory's 0x0D / 0x5D.
+
+   0xF5 leaves QPI mode if it is in it, then 0x66 / 0x99 is the standard
+   reset-enable / reset pair, understood by the AP Memory parts and by the
+   JEDEC-style devices that might occupy the same footprint. Each transfer is its
+   own chip-select assertion, which is what the sequence requires. */
+/* JEDEC Read-ID against the boot flash, as a control for the CS1 probe. No reset
+   is sent here: this device is the one we are executing from. */
+static void identify_qspi_cs0(uint8_t *response) {
+    const uint8_t read_id[8] = {0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu};
+    uint32_t interrupts = save_and_disable_interrupts();
+    flash_do_cmd_cs(read_id, response, sizeof read_id, 0);
+    restore_interrupts(interrupts);
+}
+
+static void identify_qspi_cs1(uint8_t *response) {
+    /* Chip select 1 comes out of reset with the QMI's default timing while chip
+       select 0 was given clkdiv 2 and rxdelay 2 by boot stage 2. Both devices sit
+       on the same pins at the same clock, so matching them is right regardless.
+
+       Note this governs memory-mapped XIP accesses only. The identification
+       below goes through flash_do_cmd_cs, which uses direct mode and takes its
+       sampling from DIRECT_CSR, so this does not affect the response recorded
+       here -- setting it made no difference to the bytes read back. It is kept
+       because it is the correct setting for any later XIP use of CS1, not
+       because it fixed anything. */
+    qmi_hw->m[1].timing = qmi_hw->m[0].timing;
 
     flash_devinfo_size_t previous = flash_devinfo_get_cs_size(1);
+    /* Chip select 1 needs a non-zero size for the ROM to issue its XIP exit
+       sequence to it; restored afterwards so nothing else sees the change. */
     flash_devinfo_set_cs_size(1, FLASH_DEVINFO_SIZE_8K);
 
-    uint32_t interrupts = save_and_disable_interrupts();
-    flash_do_cmd_cs(transmit, receive, sizeof transmit, 1);
-    restore_interrupts(interrupts);
+    const uint8_t exit_qpi[1] = {0xf5u};
+    const uint8_t reset_enable[1] = {0x66u};
+    const uint8_t reset[1] = {0x99u};
+    uint8_t discard[8] = {0};
+
+    cs1_transfer(exit_qpi, discard, sizeof exit_qpi);
+    cs1_transfer(reset_enable, discard, sizeof reset_enable);
+    cs1_transfer(reset, discard, sizeof reset);
+    /* tRST: AP Memory specifies a few microseconds; XIP is back on between
+       transfers, so an ordinary busy wait is safe here. */
+    busy_wait_us_32(500);
+
+    /* Read-ID, then no-ops to clock the response out. An AP Memory part puts its
+       manufacturer at byte 4 and KGD 0x5D at byte 5. */
+    const uint8_t read_id[8] = {0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu};
+    cs1_transfer(read_id, response, sizeof read_id);
 
     flash_devinfo_set_cs_size(1, previous);
-    for (uint32_t index = 0; index < sizeof receive; ++index) {
-        response[index] = receive[index];
-    }
 }
 
 /* Writes every pattern before reading any of them back. Checking each write
@@ -91,13 +141,16 @@ bsp_memory_report_t bsp_memory_check(void) {
        exercising the shared bus on a schedule, which is a variable the run is
        supposed to be holding still. */
     static bool identified;
-    static uint8_t cached_id[8];
+    static uint8_t cached_cs1[8];
+    static uint8_t cached_cs0[8];
     if (!identified) {
-        read_qspi_cs1_id(cached_id);
+        identify_qspi_cs0(cached_cs0);
+        identify_qspi_cs1(cached_cs1);
         identified = true;
     }
-    for (uint32_t index = 0; index < sizeof cached_id; ++index) {
-        report.qspi_cs1_id[index] = cached_id[index];
+    for (uint32_t index = 0; index < sizeof cached_cs1; ++index) {
+        report.qspi_cs1_id[index] = cached_cs1[index];
+        report.qspi_cs0_id[index] = cached_cs0[index];
     }
 
     if (psram_is_available()) {

@@ -18,6 +18,11 @@ typedef struct {
        decoded size cannot distinguish "absent" from "present but unrecognised",
        and those lead to opposite conclusions. */
     uint8_t qspi_cs1_id[8];
+    /* The same probe run against chip select 0, where the answer is known: the
+       stacked W25Q16JV must report EF 40 15 at bytes 1 to 3. It calibrates the
+       instrument -- without a reference reading, a strange CS1 response cannot
+       be told apart from a probe that does not work. */
+    uint8_t qspi_cs0_id[8];
 } bsp_memory_report_t;
 
 bsp_memory_report_t bsp_memory_check(void);

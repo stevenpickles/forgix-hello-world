@@ -46,6 +46,10 @@ static void print_memory_report(void) {
     bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u\n",
                        (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
                        (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok);
+    bsp_console_printf("Forgix: cs0_id=%02X %02X %02X %02X %02X %02X %02X %02X\n",
+                       memory.qspi_cs0_id[0], memory.qspi_cs0_id[1], memory.qspi_cs0_id[2],
+                       memory.qspi_cs0_id[3], memory.qspi_cs0_id[4], memory.qspi_cs0_id[5],
+                       memory.qspi_cs0_id[6], memory.qspi_cs0_id[7]);
     bsp_console_printf("Forgix: cs1_id=%02X %02X %02X %02X %02X %02X %02X %02X\n",
                        memory.qspi_cs1_id[0], memory.qspi_cs1_id[1], memory.qspi_cs1_id[2],
                        memory.qspi_cs1_id[3], memory.qspi_cs1_id[4], memory.qspi_cs1_id[5],
