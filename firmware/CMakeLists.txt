@@ -46,13 +46,12 @@ option(FORGIX_DIAGNOSTIC_UART
 # when disabled the BSP holds the pin deasserted and the DRAM is unreachable.
 # Either way the pad's power-up pull-down is swapped for a pull-up, which is the
 # only substitute for the 10K resistor this board has no footprint for.
-# OFF because the device cannot currently be identified, not because it is
-# unusable in principle. The fitted APS1604M-3SQR-SN is a 3.0 V part (2.7-3.6 V)
-# and correct for this bus. It answers Read-ID, but with bytes that do not decode
-# as AP Memory, so the SDK will not size it and driving it would be driving
-# something we cannot describe. Turn this on once identification works.
+# ON: the fitted APS1604M-3SQR-SN is sized at 2 MByte by the SDK's own detection
+# and passes a write/read pattern across the start, middle and end of its range.
+# Note this puts the DRAM back on the bus that the original lockup lived on, so
+# it is a configuration that has to earn its own soak rather than inherit one.
 option(FORGIX_QSPI_PSRAM
-  "Bring up the DRAM on QSPI chip select 1 (GPIO 0)" OFF)
+  "Bring up the DRAM on QSPI chip select 1 (GPIO 0)" ON)
 
 add_library(forgix_bsp STATIC
   src/bsp/bsp.c
