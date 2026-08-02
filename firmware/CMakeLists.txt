@@ -46,10 +46,11 @@ option(FORGIX_DIAGNOSTIC_UART
 # when disabled the BSP holds the pin deasserted and the DRAM is unreachable.
 # Either way the pad's power-up pull-down is swapped for a pull-up, which is the
 # only substitute for the 10K resistor this board has no footprint for.
-# OFF: the fitted APS1604M-SQR is the 1.8 V variant (VDD 1.62-1.98 V per its
-# datasheet, rev 3.0) sitting on a 3.3 V QSPI bus shared with the stacked flash.
-# It is out of spec as wired, so the pin is held deasserted rather than driven.
-# Turn this on only once a 3.3 V part and the chip-select pull-up are fitted.
+# OFF because the device cannot currently be identified, not because it is
+# unusable in principle. The fitted APS1604M-3SQR-SN is a 3.0 V part (2.7-3.6 V)
+# and correct for this bus. It answers Read-ID, but with bytes that do not decode
+# as AP Memory, so the SDK will not size it and driving it would be driving
+# something we cannot describe. Turn this on once identification works.
 option(FORGIX_QSPI_PSRAM
   "Bring up the DRAM on QSPI chip select 1 (GPIO 0)" OFF)
 
@@ -66,7 +67,9 @@ add_library(forgix_bsp STATIC
 target_include_directories(forgix_bsp
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/bsp
   PRIVATE ${GENERATED_DIR})
-target_link_libraries(forgix_bsp PUBLIC pico_stdlib hardware_spi hardware_watchdog)
+# hardware_flash is unconditional: bsp_memory uses it to identify the QSPI
+# devices whether or not the chip-select-1 device is brought up.
+target_link_libraries(forgix_bsp PUBLIC pico_stdlib hardware_spi hardware_watchdog hardware_flash)
 
 if(FORGIX_QSPI_PSRAM)
   target_link_libraries(forgix_bsp PUBLIC hardware_psram)

@@ -64,7 +64,7 @@ static void identify_qspi_cs0(uint8_t *response) {
     restore_interrupts(interrupts);
 }
 
-static void identify_qspi_cs1(uint8_t *response) {
+static void identify_qspi_cs1(uint8_t *response, uint32_t rx_delay) {
     /* Chip select 1 comes out of reset with the QMI's default timing while chip
        select 0 was given clkdiv 2 and rxdelay 2 by boot stage 2. Both devices sit
        on the same pins at the same clock, so matching them is right regardless.
@@ -76,6 +76,16 @@ static void identify_qspi_cs1(uint8_t *response) {
        because it is the correct setting for any later XIP use of CS1, not
        because it fixed anything. */
     qmi_hw->m[1].timing = qmi_hw->m[0].timing;
+
+    /* Direct mode resets RXDELAY to 0 while the flash runs at 2, and
+       flash_do_cmd_cs only sets the enable bit -- it never configures sampling.
+       WARNING: this write does not survive. flash_do_cmd_cs calls the ROM's
+       connect_internal_flash, which resets QMI state, so every delay in the
+       sweep produced identical bytes. The sweep is inconclusive, not negative;
+       testing sampling properly needs the direct-mode sequence reimplemented
+       here rather than borrowed from the SDK. */
+    hw_write_masked(&qmi_hw->direct_csr, rx_delay << QMI_DIRECT_CSR_RXDELAY_LSB,
+                    QMI_DIRECT_CSR_RXDELAY_BITS);
 
     flash_devinfo_size_t previous = flash_devinfo_get_cs_size(1);
     /* Chip select 1 needs a non-zero size for the ROM to issue its XIP exit
@@ -143,14 +153,26 @@ bsp_memory_report_t bsp_memory_check(void) {
     static bool identified;
     static uint8_t cached_cs1[8];
     static uint8_t cached_cs0[8];
+    static uint8_t cached_sweep[8];
     if (!identified) {
         identify_qspi_cs0(cached_cs0);
-        identify_qspi_cs1(cached_cs1);
+        for (uint32_t delay = 0; delay < 4u; ++delay) {
+            uint8_t attempt[8] = {0};
+            identify_qspi_cs1(attempt, delay);
+            cached_sweep[delay * 2u] = attempt[4];
+            cached_sweep[delay * 2u + 1u] = attempt[5];
+            if (delay == 2u) {
+                for (uint32_t index = 0; index < sizeof attempt; ++index) {
+                    cached_cs1[index] = attempt[index];
+                }
+            }
+        }
         identified = true;
     }
     for (uint32_t index = 0; index < sizeof cached_cs1; ++index) {
         report.qspi_cs1_id[index] = cached_cs1[index];
         report.qspi_cs0_id[index] = cached_cs0[index];
+        report.qspi_cs1_sweep[index] = cached_sweep[index];
     }
 
     if (psram_is_available()) {

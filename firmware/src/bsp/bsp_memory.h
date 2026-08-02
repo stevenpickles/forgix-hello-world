@@ -23,6 +23,11 @@ typedef struct {
        instrument -- without a reference reading, a strange CS1 response cannot
        be told apart from a probe that does not work. */
     uint8_t qspi_cs0_id[8];
+    /* Read-ID bytes 4 and 5 from chip select 1 at each direct-mode RX delay,
+       0 through 3: four pairs. Direct mode resets RXDELAY to 0 while boot stage 2
+       gave the flash 2, and flash_do_cmd_cs never sets it, so the sampling point
+       is a prime suspect for a response that decodes as shifted. */
+    uint8_t qspi_cs1_sweep[8];
 } bsp_memory_report_t;
 
 bsp_memory_report_t bsp_memory_check(void);
