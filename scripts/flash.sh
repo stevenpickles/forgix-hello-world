@@ -44,10 +44,24 @@ else
   image_kind='USB-free image: boot report is an LED blink code, no serial'
 fi
 printf 'Loading %s\n  %s\n  %s\n' "$uf2" "${image_name:-<unnamed>}" "$image_kind"
-if ! picotool load -f "$uf2"; then
+if ! picotool load -v -f "$uf2"; then
   printf '\npicotool could not load the image.\n' >&2
-  printf 'Put the board in BOOTSEL with ./scripts/bootsel.sh and retry, or copy\n' >&2
-  printf '%s to the RPI-RP2 drive by hand.\n' "$uf2" >&2
+  # picotool reaches a board either already in BOOTSEL or running an image that
+  # exposes the USB reset interface. A USB-free image has neither, so once one is
+  # flashed the PRG jumper is the only way back in -- and a failure here leaves
+  # the previous image running, which looks identical on the LED.
+  printf 'If the board is running a USB-free image, picotool cannot reach it at all.\n' >&2
+  printf 'Power off, jumper the I/O-ring PRG pin to GND, reconnect USB, remove the\n' >&2
+  printf 'jumper once the boot device appears, then run this again.\n' >&2
   exit 1
 fi
+
+# Confirm what is actually in flash now. A silently failed load leaves the old
+# image running, and the two images are indistinguishable from the LED alone.
+flashed_name="$(picotool info 2>/dev/null | sed -n 's/^ *name: *//p' | head -1)"
+if [[ -n "$flashed_name" && -n "$image_name" && "$flashed_name" != "$image_name" ]]; then
+  printf '\nFlash reports %s but %s was requested.\n' "$flashed_name" "$image_name" >&2
+  exit 1
+fi
+printf 'Verified in flash: %s\n' "${flashed_name:-$image_name}"
 picotool reboot
