@@ -260,15 +260,19 @@ its configuration -- a distinction that otherwise needs instruments on the board
 
 ### Running a soak
 
-```bash
-./scripts/soak_serial.sh --port COM3 --duration-minutes 20
-./scripts/soak_serial.sh --port COM3 --duration-minutes 120 --send-interval 10
+```powershell
+./scripts/soak_serial.ps1 -Port COM3 -DurationMinutes 20
+./scripts/soak_serial.ps1 -Port COM3 -DurationMinutes 120 -SendIntervalSeconds 10
 ```
+
+This one script stays PowerShell: serial from Git Bash does not work on the
+tested machine. `/dev/ttyS2` and `/dev/com3` are real character devices and open
+with `clocal` set, but carry no data, while .NET `SerialPort` on the same port
+works. A bash conversion needs `pyserial`, which is not installed.
 
 It opens the port once and never reopens it, because the single clean reopen is
 itself the experiment that separates a wedged device from a recoverable host
-session. Use `--validate-only` to check arguments with no board attached, and
-`--self-test` to exercise the line and gap logic.
+session. Use `-ValidateOnly` to check parameters with no board attached.
 
 The USB-free image needs no harness: it needs only a power source and a note of
 the wall-clock time at which the LED froze and, if it happens, recovered.
