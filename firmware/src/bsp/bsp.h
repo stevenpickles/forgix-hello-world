@@ -5,6 +5,7 @@
 #include "bsp_console.h"
 #include "bsp_fpga.h"
 #include "bsp_led.h"
+#include "bsp_memory.h"
 #include "bsp_time.h"
 #include "bsp_usb.h"
 #include "bsp_watchdog.h"

@@ -32,25 +32,33 @@
 #define FORGIX_QSPI_CS1_GPIO 0
 #endif
 
-static void deselect_qspi_cs1(void) {
+static void configure_qspi_cs1(void) {
     /* RP2350-E14: the bootrom clears pad isolation for GPIO 0 rather than the
        configured chip select. Clear it explicitly so this does not depend on
        that erratum happening to name the right pin. */
     hw_clear_bits(&pads_bank0_hw->io[FORGIX_QSPI_CS1_GPIO], PADS_BANK0_GPIO0_ISO_BITS);
 
-    gpio_init(FORGIX_QSPI_CS1_GPIO);
-    /* Swap the power-up pull-down for a pull-up first: that alone stops the pad
-       asserting the chip select, and it stands in -- weakly -- for the 10K
-       resistor the board is missing. */
+    /* The pull is what matters most: swapping the power-up pull-down for a
+       pull-up is the only stand-in available for the 10K resistor the board
+       cannot fit, and on an active-low chip select it is the difference between
+       the device being selected at rest and deselected at rest. */
     gpio_set_pulls(FORGIX_QSPI_CS1_GPIO, true, false);
+
+#if !FORGIX_QSPI_PSRAM
+    /* Nothing is going to use the device, so hold it firmly deasserted. */
+    gpio_init(FORGIX_QSPI_CS1_GPIO);
     /* Drive the output register before enabling the driver, so the pin never
        presents a low -- a momentary low is a chip select. */
     gpio_put(FORGIX_QSPI_CS1_GPIO, 1);
     gpio_set_dir(FORGIX_QSPI_CS1_GPIO, GPIO_OUT);
+#endif
+    /* With FORGIX_QSPI_PSRAM the pin is left alone beyond the pull: runtime_init
+       has already given it GPIO_FUNC_XIP_CS1 and the QMI drives it, idle high.
+       Taking it back to SIO here would cut the DRAM off the bus. */
 }
 
 bsp_init_result_t bsp_init(void) {
-    deselect_qspi_cs1();
+    configure_qspi_cs1();
     bsp_console_init();
     return bsp_fpga_init();
 }

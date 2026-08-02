@@ -15,6 +15,7 @@
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
+#include "mock_auto_bsp_memory.h"
 
 void setUp(void) {
     mock_bsp_console_reset();
@@ -30,6 +31,16 @@ static void process(const char *command) {
     char mutable_command[128];
     snprintf(mutable_command, sizeof mutable_command, "%s", command);
     application_process_command(mutable_command);
+}
+
+static bsp_memory_report_t memory_report(void) {
+    bsp_memory_report_t report = {
+        .flash_bytes = 2u * 1024u * 1024u,
+        .flash_ok = true,
+        .psram_bytes = 8u * 1024u * 1024u,
+        .psram_ok = true,
+    };
+    return report;
 }
 
 static bsp_led_state_t expected_hello_led(void) {
@@ -59,6 +70,7 @@ void test_application_init_reports_ready_hardware_and_help(void) {
         .status_pin = true,
     };
 
+    bsp_memory_check_ExpectAndReturn(memory_report());
     application_init(&result);
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=ok"));
@@ -75,6 +87,7 @@ void test_application_init_preserves_diagnostics_when_hardware_is_unavailable(vo
         .status_pin = false,
     };
 
+    bsp_memory_check_ExpectAndReturn(memory_report());
     application_init(&result);
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=failed"));

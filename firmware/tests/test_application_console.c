@@ -13,6 +13,7 @@
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
+#include "mock_auto_bsp_memory.h"
 
 void setUp(void) {
     mock_bsp_console_reset();

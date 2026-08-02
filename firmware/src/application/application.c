@@ -155,6 +155,12 @@ void application_process_command(char *line) {
 }
 
 void application_init(const bsp_init_result_t *bsp_result) {
+    /* Both QSPI memories share the same data lines, so reporting them at boot
+       makes a bus fault visible before it manifests as a lockup. */
+    bsp_memory_report_t memory = bsp_memory_check();
+    bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u\n",
+                       (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
+                       (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok);
     bsp_console_printf("Forgix: configuration=%s design_id=%02X runtime=%s cdone=%u status=%u\n",
                        bsp_result->configured ? "ok" : "failed", bsp_result->design_id,
                        bsp_result->ready ? "ready" : "unavailable", bsp_result->cdone,

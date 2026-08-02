@@ -41,12 +41,21 @@ option(FORGIX_FPGA_AUTO_RECONFIGURE
 option(FORGIX_DIAGNOSTIC_UART
   "Emit the USB-free image's diagnostics over UART stdio" OFF)
 
+# GPIO 0 is XIP_CS1n for the DRAM sharing the QSPI bus. When enabled, runtime_init
+# gives the pin its chip-select function and sizes the device before main runs;
+# when disabled the BSP holds the pin deasserted and the DRAM is unreachable.
+# Either way the pad's power-up pull-down is swapped for a pull-up, which is the
+# only substitute for the 10K resistor this board has no footprint for.
+option(FORGIX_QSPI_PSRAM
+  "Bring up the DRAM on QSPI chip select 1 (GPIO 0)" ON)
+
 add_library(forgix_bsp STATIC
   src/bsp/bsp.c
   src/bsp/bsp_button.c
   src/bsp/bsp_console.c
   src/bsp/bsp_fpga.c
   src/bsp/bsp_led.c
+  src/bsp/bsp_memory.c
   src/bsp/bsp_time.c
   src/bsp/bsp_watchdog.c
   ${GENERATED_C})
@@ -54,6 +63,17 @@ target_include_directories(forgix_bsp
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/bsp
   PRIVATE ${GENERATED_DIR})
 target_link_libraries(forgix_bsp PUBLIC pico_stdlib hardware_spi hardware_watchdog)
+
+if(FORGIX_QSPI_PSRAM)
+  target_link_libraries(forgix_bsp PUBLIC hardware_psram)
+  # The chip select is known, so only the size needs probing. Naming the pin also
+  # keeps auto-detection away from the other candidate CS pins -- GPIO 19 is this
+  # board's FPGA oscillator enable, and wiggling it would be its own bug.
+  target_compile_definitions(forgix_bsp PUBLIC
+    FORGIX_QSPI_PSRAM=1
+    PICO_PSRAM_CS_PIN=0
+    PICO_AUTO_DETECT_PSRAM_SIZE=1)
+endif()
 
 # bsp_usb is a separate library because forgix_bsp is shared with the USB-free
 # diagnostic image, which links the stub implementation instead.
