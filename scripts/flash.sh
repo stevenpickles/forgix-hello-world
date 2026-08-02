@@ -36,7 +36,9 @@ fi
 
 printf 'Loading %s\n' "$uf2"
 if ! picotool load -f "$uf2"; then
-  printf 'picotool failed. Hold BOOTSEL while connecting USB, then copy %s to the RPI-RP2 drive.\n' "$uf2" >&2
+  printf '\npicotool could not load the image.\n' >&2
+  printf 'Put the board in BOOTSEL with ./scripts/bootsel.sh and retry, or copy\n' >&2
+  printf '%s to the RPI-RP2 drive by hand.\n' "$uf2" >&2
   exit 1
 fi
 picotool reboot

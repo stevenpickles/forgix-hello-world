@@ -53,12 +53,19 @@ Run `./scripts/bootstrap.sh` first. Once all dependencies are available:
 ./scripts/flash.sh
 ```
 
-With this project's firmware running, `picotool reboot -f -u` reliably places
-the board in BOOTSEL. The original factory firmware did not complete that
-transition on the tested board. For that first flash, or as a recovery method,
-power the board off, jumper the I/O-ring `PRG` (`PROGRAM`) pin to `GND`, and
-reconnect USB with the jumper fitted. Remove the jumper after the RP2350-family
-boot device appears, then follow the verified load procedure in
+With this project's firmware running, `./scripts/bootsel.sh` places the board in
+BOOTSEL. It wraps `picotool reboot -f -u` and then waits for the bootloader to
+enumerate, so success means the board is ready to flash rather than only that
+the request was accepted. `./scripts/bootsel.sh --check` reports the current
+state without changing it.
+
+Two cases the script cannot rescue, both of which it names when it fails. The
+original factory firmware did not complete the transition on the tested board;
+and `forgix_led_only_diagnostic` has USB compiled out entirely, so no host tool
+can ever reach it. For those, and as general recovery, power the board off,
+jumper the I/O-ring `PRG` (`PROGRAM`) pin to `GND`, and reconnect USB with the
+jumper fitted. Remove the jumper after the RP2350-family boot device appears,
+then follow the verified load procedure in
 [the picotool guide](docs/picotool-windows.md#first-forgix-flash).
 
 With a flashed Forgix attached as `COM3`, close any serial terminal and run the
