@@ -84,6 +84,28 @@ An active `watch` stops as soon as a key is received so its output cannot
 interrupt the next command. `scripts/test_hardware.sh` selects `quiet` mode
 before parsing responses, keeping the physical smoke test deterministic.
 
+### USB CDC stability investigation
+
+The USB serial console currently has a reproducible long-duration stability
+issue on the tested Windows 11 host. Three sessions stopped responding after
+approximately nine to ten minutes, including a quiet session in which the last
+character reached the host interface but was not echoed by the firmware.
+
+A temporary diagnostic image made both the FPGA-driven RGB LED blink at 2 Hz
+and emitted a numbered USB serial heartbeat once per second. Both stopped
+together near the observed failure window while Windows still listed the COM
+port. In contrast, an image with USB support compiled out continued driving the
+LED for more than 45 minutes while connected to the same PC. This evidence
+narrows the investigation to behavior activated by the USB data path; it does
+not yet distinguish application blocking, Pico SDK/TinyUSB behavior, or the
+Windows CDC driver.
+
+See the [USB CDC communications debugging plan](docs/usb-cdc-debugging.md) for
+the controlled firmware ladder, Windows observations to capture before a power
+cycle, pass criteria, and follow-up host comparisons. The baseline shell remains
+the intended functionality, but its long-duration USB stability should not be
+considered validated until that plan is complete.
+
 Application behavior can also be exercised without a board. The Ceedling toolchain
 is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools
 run on Windows and in CI:
