@@ -288,9 +288,13 @@ void test_status_reports_unavailable_hardware_without_accessing_registers(void) 
 void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access(void) {
     mock_bsp_watchdog_set_boot_reason(BSP_BOOT_WATCHDOG);
     mock_bsp_watchdog_set_retained(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE, 0, 0, 0);
+    bsp_memory_check_ExpectAndReturn(memory_report());
 
     process("diag");
 
+    /* both QSPI memories, so a shared-bus fault is visible without a reboot */
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "flash=2048KiB ok=1"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "psram=8192KiB ok=1"));
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "diag: boot="));
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "uptime="));
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "fpga_reconfig="));

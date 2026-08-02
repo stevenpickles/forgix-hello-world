@@ -38,6 +38,20 @@ static void print_help(void) {
         "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
 }
 
+/* Both QSPI memories share the same data lines, so a fault on one shows up as
+   the other misbehaving. Reported at boot and repeatable through `diag`, because
+   a line that only appears once is a line nobody is listening for. */
+static void print_memory_report(void) {
+    bsp_memory_report_t memory = bsp_memory_check();
+    bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u\n",
+                       (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
+                       (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok);
+    bsp_console_printf("Forgix: cs1_id=%02X %02X %02X %02X %02X %02X %02X %02X\n",
+                       memory.qspi_cs1_id[0], memory.qspi_cs1_id[1], memory.qspi_cs1_id[2],
+                       memory.qspi_cs1_id[3], memory.qspi_cs1_id[4], memory.qspi_cs1_id[5],
+                       memory.qspi_cs1_id[6], memory.qspi_cs1_id[7]);
+}
+
 void application_print_status(void) {
     if (!bsp_fpga_is_ready()) {
         bsp_console_puts("status unavailable: FPGA is not configured and responding");
@@ -111,6 +125,7 @@ void application_process_command(char *line) {
         return;
     }
     if (!strcmp(argv[0], "diag") && argc == 1) {
+        print_memory_report();
         application_diagnostics_print_report();
         return;
     }
@@ -155,12 +170,7 @@ void application_process_command(char *line) {
 }
 
 void application_init(const bsp_init_result_t *bsp_result) {
-    /* Both QSPI memories share the same data lines, so reporting them at boot
-       makes a bus fault visible before it manifests as a lockup. */
-    bsp_memory_report_t memory = bsp_memory_check();
-    bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u\n",
-                       (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
-                       (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok);
+    print_memory_report();
     bsp_console_printf("Forgix: configuration=%s design_id=%02X runtime=%s cdone=%u status=%u\n",
                        bsp_result->configured ? "ok" : "failed", bsp_result->design_id,
                        bsp_result->ready ? "ready" : "unavailable", bsp_result->cdone,
