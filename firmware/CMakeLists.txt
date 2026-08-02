@@ -46,8 +46,12 @@ option(FORGIX_DIAGNOSTIC_UART
 # when disabled the BSP holds the pin deasserted and the DRAM is unreachable.
 # Either way the pad's power-up pull-down is swapped for a pull-up, which is the
 # only substitute for the 10K resistor this board has no footprint for.
+# OFF: the fitted APS1604M-SQR is the 1.8 V variant (VDD 1.62-1.98 V per its
+# datasheet, rev 3.0) sitting on a 3.3 V QSPI bus shared with the stacked flash.
+# It is out of spec as wired, so the pin is held deasserted rather than driven.
+# Turn this on only once a 3.3 V part and the chip-select pull-up are fitted.
 option(FORGIX_QSPI_PSRAM
-  "Bring up the DRAM on QSPI chip select 1 (GPIO 0)" ON)
+  "Bring up the DRAM on QSPI chip select 1 (GPIO 0)" OFF)
 
 add_library(forgix_bsp STATIC
   src/bsp/bsp.c
