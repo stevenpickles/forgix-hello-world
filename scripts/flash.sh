@@ -34,7 +34,16 @@ if ! picotool help 2>&1 | grep -qE '^[[:space:]]+load[[:space:]]'; then
   exit 1
 fi
 
-printf 'Loading %s\n' "$uf2"
+# Name the image being loaded. The two targets look alike on a bench supply --
+# both rest on a blue 2 Hz heartbeat -- but only the USB-free one blinks its boot
+# report, so flashing the wrong one silently invalidates a soak run.
+image_name="$(picotool info "$uf2" 2>/dev/null | sed -n 's/^ *name: *//p' | head -1)"
+if picotool info "$uf2" 2>/dev/null | grep -q 'USB stdin / stdout'; then
+  image_kind='USB shell image: boot report goes to serial, no blink code'
+else
+  image_kind='USB-free image: boot report is an LED blink code, no serial'
+fi
+printf 'Loading %s\n  %s\n  %s\n' "$uf2" "${image_name:-<unnamed>}" "$image_kind"
 if ! picotool load -f "$uf2"; then
   printf '\npicotool could not load the image.\n' >&2
   printf 'Put the board in BOOTSEL with ./scripts/bootsel.sh and retry, or copy\n' >&2
