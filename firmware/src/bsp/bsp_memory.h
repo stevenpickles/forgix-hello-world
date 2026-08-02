@@ -38,6 +38,11 @@ typedef struct {
        floating bus, not a device in a wrong mode -- a distinction no amount of
        resetting or reclocking can make. */
     uint8_t qspi_cs1_null[8];
+    /* Whether the chip-select-1 device was brought up by forcing the datasheet's
+       parameters rather than by auto-detection. Detection only checks the
+       identity byte, so a device that reports an unexpected vendor can still be
+       perfectly good memory -- identity and function are separate questions. */
+    bool psram_forced;
 } bsp_memory_report_t;
 
 bsp_memory_report_t bsp_memory_check(void);

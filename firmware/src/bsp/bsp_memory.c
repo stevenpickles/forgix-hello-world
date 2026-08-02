@@ -5,6 +5,10 @@
 #include "hardware/structs/qmi.h"
 #include "hardware/sync.h"
 #include "pico/bootrom.h"
+
+#ifndef FORGIX_QSPI_CS1_GPIO
+#define FORGIX_QSPI_CS1_GPIO 0
+#endif
 #include "pico/stdlib.h"
 
 #if FORGIX_QSPI_PSRAM
@@ -255,6 +259,30 @@ static void identify_qspi_cs1(uint8_t *response, uint32_t clkdiv, uint8_t *obser
     flash_devinfo_set_cs_size(1, previous);
 }
 
+/* Configures chip select 1 from the datasheet instead of from what the device
+   claims to be, then brings it up.
+
+   APS1604M-3SQR at 3.3 V: 2 MByte, 84 MHz for linear-512 burst which is the
+   conservative ceiling, tCEM 3 us at 105 C bounding how long chip select may
+   stay asserted, and a deselect gap with margin over the specified minimum.
+
+   psram_reinitialize is documented as unsafe against concurrent XIP, so it runs
+   with interrupts off -- handlers live in flash. */
+static bool force_psram_from_datasheet(void) {
+    flash_devinfo_set_cs_gpio(1, FORGIX_QSPI_CS1_GPIO);
+    flash_devinfo_set_cs_size(1, FLASH_DEVINFO_SIZE_2M);
+
+    if (psram_configure_params(84u * 1000u * 1000u, 3000u, 50u) != PICO_OK) {
+        return false;
+    }
+
+    uint32_t interrupts = save_and_disable_interrupts();
+    int result = psram_reinitialize();
+    restore_interrupts(interrupts);
+
+    return result == PICO_OK && psram_get_size() > 0u;
+}
+
 /* Writes every pattern before reading any of them back. Checking each write
    immediately would pass against a bus that merely echoes the last value, and
    would not catch address aliasing from a device smaller than it reports. */
@@ -330,6 +358,14 @@ bsp_memory_report_t bsp_memory_check(void) {
     }
 
     if (psram_is_available()) {
+        report.psram_bytes = (uint32_t)psram_get_size();
+        report.psram_ok = psram_holds_a_pattern(report.psram_bytes);
+    } else if (force_psram_from_datasheet()) {
+        /* Auto-detection only compares the identity byte. This device answers
+           Read-ID selectively and correctly, it just does not report AP Memory's
+           vendor, so ask whether it works as memory rather than whether it says
+           the right name. */
+        report.psram_forced = true;
         report.psram_bytes = (uint32_t)psram_get_size();
         report.psram_ok = psram_holds_a_pattern(report.psram_bytes);
     }
