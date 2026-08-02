@@ -6,6 +6,8 @@
 #include "bsp_fpga.h"
 #include "bsp_led.h"
 #include "bsp_time.h"
+#include "bsp_usb.h"
+#include "bsp_watchdog.h"
 
 typedef bsp_fpga_init_result_t bsp_init_result_t;
 

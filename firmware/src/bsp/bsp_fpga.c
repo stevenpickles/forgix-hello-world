@@ -136,8 +136,17 @@ bsp_fpga_init_result_t bsp_fpga_init(void) {
     return result;
 }
 
+bool bsp_fpga_reconfigure(void) {
+    bsp_fpga_init_result_t result = bsp_fpga_init();
+    return result.ready;
+}
+
 bool bsp_fpga_is_ready(void) {
     return fpga_ready;
+}
+
+bool bsp_fpga_cdone(void) {
+    return gpio_get(PIN_CDONE);
 }
 
 uint8_t bsp_fpga_ping(void) {
