@@ -14,10 +14,10 @@
 #include "bsp.h"
 
 int main(void) {
-    /* Brings up UART stdio when built with FORGIX_DIAGNOSTIC_UART. With no stdio
-       backend linked it is a no-op, and the diagnostics prints go nowhere. */
-    bsp_console_init();
-    (void)bsp_fpga_init();
+    /* Same board bring-up as the shell image: deselects the QSPI device on chip
+       select 1 before anything else, then brings up stdio (UART only when built
+       with FORGIX_DIAGNOSTIC_UART) and configures the FPGA. */
+    (void)bsp_init();
     application_diagnostics_start();
 
     while (true) {

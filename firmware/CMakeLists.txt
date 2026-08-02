@@ -100,10 +100,11 @@ add_executable(forgix_led_only_diagnostic src/diagnostics/led_only_main.c)
 target_link_libraries(forgix_led_only_diagnostic PRIVATE forgix_application forgix_bsp_usb_stub)
 pico_enable_stdio_usb(forgix_led_only_diagnostic 0)
 if(FORGIX_DIAGNOSTIC_UART)
-  # UART0 TX defaults to GPIO 0, which the FPGA BSP does not use. RX moves off
-  # GPIO 1, which is the FPGA chip select; the diagnostics stream is output only.
+  # Not GPIO 0/1: GPIO 0 is CE# of the QSPI device on chip select 1 and must stay
+  # driven high, and GPIO 1 is the FPGA chip select. UART0 also maps to 12/13.
   pico_enable_stdio_uart(forgix_led_only_diagnostic 1)
-  target_compile_definitions(forgix_led_only_diagnostic PRIVATE PICO_DEFAULT_UART_RX_PIN=-1)
+  target_compile_definitions(forgix_led_only_diagnostic PRIVATE
+    PICO_DEFAULT_UART_TX_PIN=12 PICO_DEFAULT_UART_RX_PIN=13)
 else()
   pico_enable_stdio_uart(forgix_led_only_diagnostic 0)
 endif()
