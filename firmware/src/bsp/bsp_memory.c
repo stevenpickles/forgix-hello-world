@@ -4,6 +4,7 @@
 #include "hardware/regs/addressmap.h"
 #include "hardware/structs/qmi.h"
 #include "hardware/sync.h"
+#include "pico/bootrom.h"
 #include "pico/stdlib.h"
 
 #if FORGIX_QSPI_PSRAM
@@ -64,50 +65,192 @@ static void identify_qspi_cs0(uint8_t *response) {
     restore_interrupts(interrupts);
 }
 
-static void identify_qspi_cs1(uint8_t *response, uint32_t rx_delay) {
-    /* Chip select 1 comes out of reset with the QMI's default timing while chip
-       select 0 was given clkdiv 2 and rxdelay 2 by boot stage 2. Both devices sit
-       on the same pins at the same clock, so matching them is right regardless.
+/* The direct-mode sequence flash_do_cmd_cs performs, reimplemented so the bus
+   clock can be set at the one moment that matters.
 
-       Note this governs memory-mapped XIP accesses only. The identification
-       below goes through flash_do_cmd_cs, which uses direct mode and takes its
-       sampling from DIRECT_CSR, so this does not affect the response recorded
-       here -- setting it made no difference to the bytes read back. It is kept
-       because it is the correct setting for any later XIP use of CS1, not
-       because it fixed anything. */
-    qmi_hw->m[1].timing = qmi_hw->m[0].timing;
+   Read ID takes zero wait cycles and is specified at 33 MHz maximum, unlike the
+   133 MHz burst commands which have four to eight wait cycles covering the
+   device's output-valid time. Over that limit the transfer does not fail, it
+   samples before the data is valid and returns displaced bytes -- which is what
+   00 00 00 00 66 0B 43 57 looks like.
 
-    /* Direct mode resets RXDELAY to 0 while the flash runs at 2, and
-       flash_do_cmd_cs only sets the enable bit -- it never configures sampling.
-       WARNING: this write does not survive. flash_do_cmd_cs calls the ROM's
-       connect_internal_flash, which resets QMI state, so every delay in the
-       sweep produced identical bytes. The sweep is inconclusive, not negative;
-       testing sampling properly needs the direct-mode sequence reimplemented
-       here rather than borrowed from the SDK. */
-    hw_write_masked(&qmi_hw->direct_csr, rx_delay << QMI_DIRECT_CSR_RXDELAY_LSB,
-                    QMI_DIRECT_CSR_RXDELAY_BITS);
+   The SDK's helper cannot be told a clock. Setting DIRECT_CSR before calling it
+   does nothing, because connect_internal_flash runs inside and reconfigures QMI
+   afterwards; an earlier sweep of RXDELAY returned four identical results for
+   exactly that reason. So the divisor is written here, after the ROM has
+   finished, and read back so the caller can prove it took.
 
+   XIP is left in the ROM's plain command mode on return. The caller restores the
+   faster boot2 configuration by making one ordinary flash_do_cmd_cs call, which
+   does that copyout internally. */
+static void __no_inline_not_in_flash_func(cs1_direct_transfer)(const uint8_t *transmit,
+                                                               uint8_t *receive, size_t count,
+                                                               uint32_t clkdiv,
+                                                               uint8_t *observed_clkdiv) {
+    rom_connect_internal_flash_fn connect_internal_flash =
+        (rom_connect_internal_flash_fn)rom_func_lookup_inline(ROM_FUNC_CONNECT_INTERNAL_FLASH);
+    rom_flash_exit_xip_fn flash_exit_xip =
+        (rom_flash_exit_xip_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_EXIT_XIP);
+    rom_flash_flush_cache_fn flash_flush_cache =
+        (rom_flash_flush_cache_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_FLUSH_CACHE);
+    rom_flash_enter_cmd_xip_fn flash_enter_cmd_xip =
+        (rom_flash_enter_cmd_xip_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_ENTER_CMD_XIP);
+
+    connect_internal_flash();
+    flash_exit_xip();
+
+    /* Now that the ROM has stopped touching QMI, impose the divisor. */
+    hw_write_masked(&qmi_hw->direct_csr, clkdiv << QMI_DIRECT_CSR_CLKDIV_LSB,
+                    QMI_DIRECT_CSR_CLKDIV_BITS);
+    hw_set_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS);
+    *observed_clkdiv =
+        (uint8_t)((qmi_hw->direct_csr & QMI_DIRECT_CSR_CLKDIV_BITS) >> QMI_DIRECT_CSR_CLKDIV_LSB);
+
+    hw_set_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS);
+    size_t to_send = count;
+    size_t to_receive = count;
+    while (to_send || to_receive) {
+        uint32_t status = qmi_hw->direct_csr;
+        if (to_send && !(status & QMI_DIRECT_CSR_TXFULL_BITS)) {
+            qmi_hw->direct_tx = *transmit++;
+            --to_send;
+        }
+        if (to_receive && !(status & QMI_DIRECT_CSR_RXEMPTY_BITS)) {
+            *receive++ = (uint8_t)qmi_hw->direct_rx;
+            --to_receive;
+        }
+    }
+    while (qmi_hw->direct_csr & QMI_DIRECT_CSR_BUSY_BITS) {
+        tight_loop_contents();
+    }
+    hw_clear_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS);
+    hw_clear_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS);
+
+    flash_flush_cache();
+    flash_enter_cmd_xip();
+}
+
+/* A device sitting in QPI mode decodes commands four bits wide across SIO[3:0],
+   so every serial opcode we have sent it -- including the resets -- was never a
+   valid command. That is the shape of the evidence: a response that does not
+   move across reboots, across resets, or across a four-fold change in bus clock
+   is a width mismatch, not a timing problem.
+
+   Reset Enable and Reset exist in both widths, so issuing them quad reaches a
+   device in either mode. OE drives all four lines, NOPUSH discards the response
+   we do not want. Each opcode gets its own chip-select assertion. */
+static void __no_inline_not_in_flash_func(cs1_quad_reset)(uint32_t clkdiv) {
+    rom_connect_internal_flash_fn connect_internal_flash =
+        (rom_connect_internal_flash_fn)rom_func_lookup_inline(ROM_FUNC_CONNECT_INTERNAL_FLASH);
+    rom_flash_exit_xip_fn flash_exit_xip =
+        (rom_flash_exit_xip_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_EXIT_XIP);
+    rom_flash_flush_cache_fn flash_flush_cache =
+        (rom_flash_flush_cache_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_FLUSH_CACHE);
+    rom_flash_enter_cmd_xip_fn flash_enter_cmd_xip =
+        (rom_flash_enter_cmd_xip_fn)rom_func_lookup_inline(ROM_FUNC_FLASH_ENTER_CMD_XIP);
+
+    connect_internal_flash();
+    flash_exit_xip();
+
+    hw_write_masked(&qmi_hw->direct_csr, clkdiv << QMI_DIRECT_CSR_CLKDIV_LSB,
+                    QMI_DIRECT_CSR_CLKDIV_BITS);
+    hw_set_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS);
+
+    static const uint8_t opcodes[2] = {0x66u, 0x99u};
+    for (uint32_t index = 0; index < 2u; ++index) {
+        hw_set_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS);
+        qmi_hw->direct_tx = QMI_DIRECT_TX_OE_BITS | QMI_DIRECT_TX_NOPUSH_BITS |
+                            (QMI_DIRECT_TX_IWIDTH_VALUE_Q << QMI_DIRECT_TX_IWIDTH_LSB) |
+                            opcodes[index];
+        while (qmi_hw->direct_csr & QMI_DIRECT_CSR_BUSY_BITS) {
+            tight_loop_contents();
+        }
+        hw_clear_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS);
+    }
+
+    hw_clear_bits(&qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS);
+    flash_flush_cache();
+    flash_enter_cmd_xip();
+}
+
+/* Divisors of the 150 MHz system clock, straddling the 33 MHz Read-ID limit:
+   4 is 37.5 MHz and over it, 6 is 25 MHz, 8 is 18.75 MHz, 16 is 9.4 MHz. If the
+   over-limit entry is garbled and the others read 0D 5D, the clock was the
+   fault. */
+static const uint8_t probe_clkdivs[4] = {4u, 6u, 8u, 16u};
+
+const uint8_t *bsp_memory_probe_clkdivs(void) {
+    return probe_clkdivs;
+}
+
+/* Read ID may only be issued straight after a global reset plus tRST, so the
+   reset pair precedes it at the same clock. Both are zero-wait commands.
+
+   Note the reset is issued serially. If the device is sitting in QPI mode these
+   opcodes need quad width to be understood, so a serial reset cannot reach it --
+   that remains untested and is the next thing to try if the clock is not the
+   whole story. */
+/* Control: the identical transfer with an opcode the device cannot recognise.
+   A real responder gives a different answer than it gives to Read-ID. */
+static void probe_qspi_cs1_null(uint8_t *response, uint32_t clkdiv) {
+    flash_devinfo_size_t previous = flash_devinfo_get_cs_size(1);
+    flash_devinfo_set_cs_size(1, FLASH_DEVINFO_SIZE_8K);
+
+    const uint8_t nonsense[8] = {0x00u, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu};
+    uint8_t seen = 0;
+    uint32_t interrupts = save_and_disable_interrupts();
+    cs1_direct_transfer(nonsense, response, sizeof nonsense, clkdiv, &seen);
+    restore_interrupts(interrupts);
+
+    uint8_t restore_tx[1] = {0x9fu};
+    uint8_t restore_rx[1] = {0};
+    interrupts = save_and_disable_interrupts();
+    flash_do_cmd_cs(restore_tx, restore_rx, sizeof restore_tx, 0);
+    restore_interrupts(interrupts);
+
+    flash_devinfo_set_cs_size(1, previous);
+}
+
+static void identify_qspi_cs1(uint8_t *response, uint32_t clkdiv, uint8_t *observed_clkdiv) {
     flash_devinfo_size_t previous = flash_devinfo_get_cs_size(1);
     /* Chip select 1 needs a non-zero size for the ROM to issue its XIP exit
        sequence to it; restored afterwards so nothing else sees the change. */
     flash_devinfo_set_cs_size(1, FLASH_DEVINFO_SIZE_8K);
 
-    const uint8_t exit_qpi[1] = {0xf5u};
     const uint8_t reset_enable[1] = {0x66u};
     const uint8_t reset[1] = {0x99u};
+    const uint8_t read_id[8] = {0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu};
     uint8_t discard[8] = {0};
+    uint8_t seen = 0;
 
-    cs1_transfer(exit_qpi, discard, sizeof exit_qpi);
-    cs1_transfer(reset_enable, discard, sizeof reset_enable);
-    cs1_transfer(reset, discard, sizeof reset);
-    /* tRST: AP Memory specifies a few microseconds; XIP is back on between
-       transfers, so an ordinary busy wait is safe here. */
+    /* Quad first, to recover a device stuck in QPI; then serial, which is what a
+       device already in SPI mode understands. One of the two always applies. */
+    uint32_t interrupts = save_and_disable_interrupts();
+    cs1_quad_reset(clkdiv);
+    restore_interrupts(interrupts);
     busy_wait_us_32(500);
 
-    /* Read-ID, then no-ops to clock the response out. An AP Memory part puts its
-       manufacturer at byte 4 and KGD 0x5D at byte 5. */
-    const uint8_t read_id[8] = {0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu};
-    cs1_transfer(read_id, response, sizeof read_id);
+    interrupts = save_and_disable_interrupts();
+    cs1_direct_transfer(reset_enable, discard, sizeof reset_enable, clkdiv, &seen);
+    cs1_direct_transfer(reset, discard, sizeof reset, clkdiv, &seen);
+    restore_interrupts(interrupts);
+
+    busy_wait_us_32(500); /* tRST is 50 ns; this is generous and costs nothing */
+
+    interrupts = save_and_disable_interrupts();
+    cs1_direct_transfer(read_id, response, sizeof read_id, clkdiv, &seen);
+    restore_interrupts(interrupts);
+
+    *observed_clkdiv = seen;
+
+    /* cs1_direct_transfer leaves XIP in the ROM's plain command mode. One
+       ordinary SDK call restores the faster boot2 configuration, since it does
+       that copyout internally. */
+    uint8_t restore_tx[1] = {0x9fu};
+    uint8_t restore_rx[1] = {0};
+    interrupts = save_and_disable_interrupts();
+    flash_do_cmd_cs(restore_tx, restore_rx, sizeof restore_tx, 0);
+    restore_interrupts(interrupts);
 
     flash_devinfo_set_cs_size(1, previous);
 }
@@ -154,14 +297,21 @@ bsp_memory_report_t bsp_memory_check(void) {
     static uint8_t cached_cs1[8];
     static uint8_t cached_cs0[8];
     static uint8_t cached_sweep[8];
+    static uint8_t cached_clkdiv;
+    static uint8_t cached_null[8];
     if (!identified) {
         identify_qspi_cs0(cached_cs0);
-        for (uint32_t delay = 0; delay < 4u; ++delay) {
+        probe_qspi_cs1_null(cached_null, 16u);
+        for (uint32_t entry = 0; entry < 4u; ++entry) {
             uint8_t attempt[8] = {0};
-            identify_qspi_cs1(attempt, delay);
-            cached_sweep[delay * 2u] = attempt[4];
-            cached_sweep[delay * 2u + 1u] = attempt[5];
-            if (delay == 2u) {
+            uint8_t seen = 0;
+            identify_qspi_cs1(attempt, probe_clkdivs[entry], &seen);
+            cached_sweep[entry * 2u] = attempt[4];
+            cached_sweep[entry * 2u + 1u] = attempt[5];
+            cached_clkdiv = seen;
+            /* Keep the slowest attempt as the reported identity: furthest inside
+               the Read-ID limit, so most likely to be the true one. */
+            if (entry == 3u) {
                 for (uint32_t index = 0; index < sizeof attempt; ++index) {
                     cached_cs1[index] = attempt[index];
                 }
@@ -172,7 +322,11 @@ bsp_memory_report_t bsp_memory_check(void) {
     for (uint32_t index = 0; index < sizeof cached_cs1; ++index) {
         report.qspi_cs1_id[index] = cached_cs1[index];
         report.qspi_cs0_id[index] = cached_cs0[index];
+        report.qspi_cs1_null[index] = cached_null[index];
         report.qspi_cs1_sweep[index] = cached_sweep[index];
+    }
+    report.qspi_probe_clkdiv = cached_clkdiv;
+    {
     }
 
     if (psram_is_available()) {

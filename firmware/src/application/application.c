@@ -50,11 +50,17 @@ static void print_memory_report(void) {
                        memory.qspi_cs0_id[0], memory.qspi_cs0_id[1], memory.qspi_cs0_id[2],
                        memory.qspi_cs0_id[3], memory.qspi_cs0_id[4], memory.qspi_cs0_id[5],
                        memory.qspi_cs0_id[6], memory.qspi_cs0_id[7]);
-    bsp_console_printf("Forgix: cs1_rxdelay 0=%02X%02X 1=%02X%02X 2=%02X%02X 3=%02X%02X\n",
-                       memory.qspi_cs1_sweep[0], memory.qspi_cs1_sweep[1],
-                       memory.qspi_cs1_sweep[2], memory.qspi_cs1_sweep[3],
-                       memory.qspi_cs1_sweep[4], memory.qspi_cs1_sweep[5],
-                       memory.qspi_cs1_sweep[6], memory.qspi_cs1_sweep[7]);
+    const uint8_t *divisors = bsp_memory_probe_clkdivs();
+    bsp_console_printf("Forgix: cs1_clk /%u=%02X%02X /%u=%02X%02X /%u=%02X%02X /%u=%02X%02X set=/%u\n",
+                       divisors[0], memory.qspi_cs1_sweep[0], memory.qspi_cs1_sweep[1],
+                       divisors[1], memory.qspi_cs1_sweep[2], memory.qspi_cs1_sweep[3],
+                       divisors[2], memory.qspi_cs1_sweep[4], memory.qspi_cs1_sweep[5],
+                       divisors[3], memory.qspi_cs1_sweep[6], memory.qspi_cs1_sweep[7],
+                       memory.qspi_probe_clkdiv);
+    bsp_console_printf("Forgix: cs1_null=%02X %02X %02X %02X %02X %02X %02X %02X\n",
+                       memory.qspi_cs1_null[0], memory.qspi_cs1_null[1], memory.qspi_cs1_null[2],
+                       memory.qspi_cs1_null[3], memory.qspi_cs1_null[4], memory.qspi_cs1_null[5],
+                       memory.qspi_cs1_null[6], memory.qspi_cs1_null[7]);
     bsp_console_printf("Forgix: cs1_id=%02X %02X %02X %02X %02X %02X %02X %02X\n",
                        memory.qspi_cs1_id[0], memory.qspi_cs1_id[1], memory.qspi_cs1_id[2],
                        memory.qspi_cs1_id[3], memory.qspi_cs1_id[4], memory.qspi_cs1_id[5],

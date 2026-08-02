@@ -33,6 +33,17 @@ static void process(const char *command) {
     application_process_command(mutable_command);
 }
 
+static bsp_memory_report_t memory_report(void);
+
+/* The reporting layer names the bus clock each sweep entry was taken at, so the
+   divisor table has to be available too. */
+static const uint8_t probe_divisors[4] = {4u, 6u, 8u, 16u};
+
+static void expect_memory_report(void) {
+    bsp_memory_check_ExpectAndReturn(memory_report());
+    bsp_memory_probe_clkdivs_ExpectAndReturn(probe_divisors);
+}
+
 static bsp_memory_report_t memory_report(void) {
     bsp_memory_report_t report = {
         .flash_bytes = 2u * 1024u * 1024u,
@@ -70,7 +81,7 @@ void test_application_init_reports_ready_hardware_and_help(void) {
         .status_pin = true,
     };
 
-    bsp_memory_check_ExpectAndReturn(memory_report());
+    expect_memory_report();
     application_init(&result);
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=ok"));
@@ -87,7 +98,7 @@ void test_application_init_preserves_diagnostics_when_hardware_is_unavailable(vo
         .status_pin = false,
     };
 
-    bsp_memory_check_ExpectAndReturn(memory_report());
+    expect_memory_report();
     application_init(&result);
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=failed"));
@@ -288,7 +299,7 @@ void test_status_reports_unavailable_hardware_without_accessing_registers(void) 
 void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access(void) {
     mock_bsp_watchdog_set_boot_reason(BSP_BOOT_WATCHDOG);
     mock_bsp_watchdog_set_retained(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE, 0, 0, 0);
-    bsp_memory_check_ExpectAndReturn(memory_report());
+    expect_memory_report();
 
     process("diag");
 
