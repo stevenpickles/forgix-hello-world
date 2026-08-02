@@ -164,7 +164,7 @@ precise wall-clock times to failure.
 - Gates green: `python scripts/check_firmware_layers.py` reports 7 BSP headers; `./scripts/test_ceedling.sh` passes 60/60 with line-rate 1.0 and branch-rate 1.0 on all of `src/application/`.
 - Firmware: both images build; `forgix_hello_world.bin` is 209 584 bytes against the 2 MB CI gate. `-DFORGIX_FOREGROUND_USB_SERVICE=ON` was verified to build and to compile `bsp_usb_service` into a `tud_task_ext` tail call with `PICO_STDIO_USB_ENABLE_IRQ_BACKGROUND_TASK=0` applied.
 
-### 8. Soak harness `scripts/soak_serial.ps1` — done
+### 8. Soak harness `scripts/soak_serial.sh` — done
 
 Params: `-Port COM3 -BaudRate 115200 -Dtr $true -Rts $false -DurationMinutes 0 -GapWarnSeconds 5 -GapFailSeconds 30 -SendIntervalSeconds 0 -PingCommand status -LogDirectory build/soak-logs`, plus `-ValidateOnly`. Opens the port **once**, never toggles control lines, never auto-reopens. Timestamped log of every RX line, TX pings with sequence numbers, gap warnings. On failure: log last-RX/last-seq/max-gap, print the Stage 4 capture checklist (record LED color; Device Manager/USBView; ETW; one manual reopen; `picotool reboot -f -u` last), exit non-zero. A `diag:` boot report arriving on the still-open port after a watchdog reset is matched explicitly and flagged as a reset rather than logged as ordinary output.
 
@@ -221,7 +221,7 @@ If mode 2's root cause is FPGA/power, re-evaluate mode 1: a supply/FPGA event at
 
 ### 12. Docs — done
 
-- `docs/usb-cdc-debugging.md`: **correct the results log** (variant A did not pass — LED-only image freezes at ~45–75 min on all power sources; power cycle recovers); retitle/extend scope to both failure modes; add "Stage 3 implementation" (marker table, scratch layout, LED colors + blink codes, decision trees, build knobs, `soak_serial.ps1` usage); note the instrumented images supersede serial variants B–G where the trees resolve them.
+- `docs/usb-cdc-debugging.md`: **correct the results log** (variant A did not pass — LED-only image freezes at ~45–75 min on all power sources; power cycle recovers); retitle/extend scope to both failure modes; add "Stage 3 implementation" (marker table, scratch layout, LED colors + blink codes, decision trees, build knobs, `soak_serial.sh` usage); note the instrumented images supersede serial variants B–G where the trees resolve them.
 - `README.md`: update the stability-investigation paragraph (no longer "narrowed to USB" — two modes) and point to the soak harness and this plan.
 
 ## Execution order & verification
@@ -229,11 +229,11 @@ If mode 2's root cause is FPGA/power, re-evaluate mode 1: a supply/FPGA event at
 1. ~~BSP modules (`bsp_watchdog`, `bsp_usb` + stub, `bsp_fpga` additions) → CMake → app diagnostics + console markers + DTR gate → restore + audit LED-only target from stash.~~ Done.
 2. ~~Mocks + tests green: `python scripts/check_firmware_layers.py`, `./scripts/test_ceedling.sh` (100 % gate).~~ Done — 60/60 tests, line and branch rate 1.0.
 3. ~~`./scripts/build_firmware.sh` — both UF2s build; flash-budget gate still passes.~~ Done — 209 584 bytes of a 2 097 152 byte budget.
-4. ~~Write `scripts/soak_serial.ps1`; dry-check param parsing without hardware.~~ Done via `-ValidateOnly`.
+4. ~~Write the soak harness; dry-check parsing without hardware.~~ Done as `scripts/soak_serial.sh` (bash, not PowerShell) with `--validate-only` and `--self-test`.
 5. ~~Docs updates; commit on `feature/6/investigate-firmware-lockup`.~~ Done.
 6. **Next — hardware (user-run):** flash the LED-only image first (Run 0 on the wall supply, ≥ 2 h), then the USB image soaks per the sequence; interpret via the decision trees.
 
-Critical files: `firmware/CMakeLists.txt`, `firmware/src/application/application_console.c`, `firmware/src/application/application_runner.c`, `firmware/src/application/application_diagnostics.c` (new, seed from stash@{0}^3), `firmware/src/bsp/bsp_watchdog.{h,c}` + `bsp_usb.{h,c}` + `bsp_usb_stub.c` (new), `firmware/src/bsp/bsp_fpga.{h,c}` (health additions), `firmware/src/diagnostics/led_only_main.c` (restore), `scripts/soak_serial.ps1` (new), `scripts/flash.sh`, `docs/usb-cdc-debugging.md`, `README.md`.
+Critical files: `firmware/CMakeLists.txt`, `firmware/src/application/application_console.c`, `firmware/src/application/application_runner.c`, `firmware/src/application/application_diagnostics.c` (new, seed from stash@{0}^3), `firmware/src/bsp/bsp_watchdog.{h,c}` + `bsp_usb.{h,c}` + `bsp_usb_stub.c` (new), `firmware/src/bsp/bsp_fpga.{h,c}` (health additions), `firmware/src/diagnostics/led_only_main.c` (restore), `scripts/soak_serial.sh` (new), `scripts/flash.sh`, `docs/usb-cdc-debugging.md`, `README.md`.
 
 ## Learnings log
 

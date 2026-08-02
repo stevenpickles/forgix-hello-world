@@ -133,7 +133,7 @@ produces both `forgix_hello_world.uf2` and `forgix_led_only_diagnostic.uf2`;
 `./scripts/flash.sh <image-name>` loads either one, and the `diag` shell command
 prints the retained boot report with live counters.
 
-Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open for
+Run long sessions with `./scripts/soak_serial.sh`, which holds the port open for
 the whole run and never reopens it after a failure, since a single controlled
 reopen is itself one of the experiments.
 
