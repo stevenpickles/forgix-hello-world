@@ -217,14 +217,24 @@ supply droop. The remaining fields are the retained scratch registers from
 before the reset. The `diag` shell command prints the same line plus live
 counters at any time.
 
-The USB-free image has no console and blinks the same report instead:
+The USB-free image has no console and blinks the same report instead. The code
+plays three times, because it cannot be replayed on demand: power-cycling to
+watch it again resets the scratch registers it is reporting.
 
-| Blink code | Meaning |
-| --- | --- |
-| White x1 | Clean power-on |
-| Yellow x2 | Brownout reset |
-| Cyan x3 | Unclassified reset |
-| Red x N | Watchdog reset; N is the retained marker value, clamped to 1-8 |
+| Blink code | Meaning | Resting heartbeat |
+| --- | --- | --- |
+| White x1 | Clean power-on | Blue |
+| Yellow x2 | Brownout reset | Yellow |
+| Cyan x3 | Unclassified reset | Cyan |
+| Red x N | Watchdog reset; N is the retained marker value, clamped to 1-8 | Red |
+
+The resting color persists for the whole run, so the verdict stays readable
+hours later even if the blink code was missed. **Blue is nominal; any other
+resting color means something happened.** Only the blink count carries the
+marker, so read it while it plays if the heartbeat comes up red.
+
+Expect roughly 1.7 s of darkness after power-up while the FPGA is configured and
+settles, then the blink code, then the heartbeat.
 
 ### Live LED colors
 
@@ -237,8 +247,11 @@ investigation; the commands still answer `ok`, so `test_hardware.ps1` passes.
 | Green | Connected and CDC transfers are completing |
 | Red | Connected, but no transfer has completed for 5 s: endpoint or stack wedge |
 | Magenta | Bus suspended, or start-of-frame frozen for 5 s |
-| Blue | Host has not asserted DTR, or this is the USB-free image |
+| Blue | Host has not asserted DTR |
 | White x3 | FPGA was reconfigured and recovered |
+
+In the USB-free image there is no USB health to show, so the resting color
+reports the last boot reason instead, per the table above.
 
 The white recovery signature is the decisive observation for the second failure
 mode. The LED is FPGA-driven, so a freeze that ends with three white flashes and

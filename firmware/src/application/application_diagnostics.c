@@ -12,9 +12,13 @@ enum {
        MCU stayed alive and the FPGA lost its configuration. */
     RECOVERY_TOGGLES = 6,
     BOOT_BLINK_MAX = 8,
-    BOOT_BLINK_ON_MS = 150,
+    /* The blink code is the USB-free image's only boot-evidence channel, and it
+       plays once: a power cycle to see it again would destroy the very scratch
+       registers it is reporting. So it is paced to be readable and repeated. */
+    BOOT_BLINK_ON_MS = 350,
     BOOT_BLINK_OFF_MS = 250,
-    BOOT_BLINK_GAP_MS = 700,
+    BOOT_BLINK_GAP_MS = 800,
+    BOOT_REPORT_REPEATS = 3,
 };
 
 /* Packing of snapshot slot 2. Slot 0 holds the loop-seconds counter and slot 1
@@ -71,15 +75,44 @@ static bool stalled_since(uint32_t now_ms, uint32_t since_ms) {
     return (int32_t)(now_ms - since_ms) >= (int32_t)APPLICATION_DIAGNOSTICS_STALL_TIMEOUT_MS;
 }
 
+/* The USB-free image has no USB health to show, so its resting heartbeat carries
+   the last boot reason instead. The blink code plays once and cannot be replayed
+   without destroying the evidence, so this keeps the verdict readable for the
+   whole run: blue is nominal, any other resting color means something happened. */
+static void resting_color(uint8_t *red, uint8_t *green, uint8_t *blue) {
+    *red = 0;
+    *green = 0;
+    *blue = 255; /* blue: clean power-on */
+
+    switch (diagnostics.boot_reason) {
+    case BSP_BOOT_WATCHDOG:
+        *red = 255;
+        *blue = 0; /* red: the foreground stopped and the watchdog recovered it */
+        break;
+    case BSP_BOOT_BROWNOUT:
+        *red = 255;
+        *green = 255;
+        *blue = 0; /* yellow: supply droop */
+        break;
+    case BSP_BOOT_OTHER:
+        *green = 255; /* cyan: reset with no attributable cause */
+        break;
+    default:
+        break;
+    }
+}
+
 static void heartbeat_color(uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue) {
     if (diagnostics.recovery_toggles) {
         *red = 255;
         *green = 255;
         *blue = 255; /* white: FPGA reconfiguration recovery signature */
-    } else if (!diagnostics.usb_present || !diagnostics.health.connected) {
+    } else if (!diagnostics.usb_present) {
+        resting_color(red, green, blue);
+    } else if (!diagnostics.health.connected) {
         *red = 0;
         *green = 0;
-        *blue = 255; /* blue: USB-free image, or host has not asserted DTR */
+        *blue = 255; /* blue: host has not asserted DTR */
     } else if (diagnostics.health.suspended || stalled_since(now_ms, diagnostics.last_frame_ms)) {
         *red = 255;
         *green = 0;
@@ -231,13 +264,15 @@ static void blink_boot_report(void) {
 
     bsp_led_off();
     bsp_time_sleep_ms(BOOT_BLINK_GAP_MS);
-    for (uint32_t blink = 0; blink < signature.blinks; ++blink) {
-        bsp_led_set(signature.red, signature.green, signature.blue, HEARTBEAT_BRIGHTNESS);
-        bsp_time_sleep_ms(BOOT_BLINK_ON_MS);
-        bsp_led_off();
-        bsp_time_sleep_ms(BOOT_BLINK_OFF_MS);
+    for (uint32_t pass = 0; pass < BOOT_REPORT_REPEATS; ++pass) {
+        for (uint32_t blink = 0; blink < signature.blinks; ++blink) {
+            bsp_led_set(signature.red, signature.green, signature.blue, HEARTBEAT_BRIGHTNESS);
+            bsp_time_sleep_ms(BOOT_BLINK_ON_MS);
+            bsp_led_off();
+            bsp_time_sleep_ms(BOOT_BLINK_OFF_MS);
+        }
+        bsp_time_sleep_ms(BOOT_BLINK_GAP_MS);
     }
-    bsp_time_sleep_ms(BOOT_BLINK_GAP_MS);
 }
 
 void application_diagnostics_start(void) {

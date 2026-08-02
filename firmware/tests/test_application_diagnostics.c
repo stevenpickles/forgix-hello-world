@@ -57,19 +57,26 @@ static void start_usb_at(uint32_t now_ms) {
     application_diagnostics_start();
 }
 
+/* The blink code repeats, because it cannot be replayed: a power cycle to watch
+   it again would reset the scratch registers it is reporting. */
+enum { BOOT_REPEATS = 3 };
+
 static void start_led_only(bsp_boot_reason_t reason, uint32_t marker, uint8_t red, uint8_t green,
-                           uint8_t blue, uint32_t blinks) {
+                           uint8_t blue, uint32_t blinks, uint8_t rest_red, uint8_t rest_green,
+                           uint8_t rest_blue) {
     mock_bsp_usb_set_present(false);
     mock_bsp_watchdog_set_boot_reason(reason);
     mock_bsp_watchdog_set_retained(marker, 0, 0, 0);
     mock_bsp_time_set_ms(0);
 
     bsp_led_off_Expect();
-    for (uint32_t blink = 0; blink < blinks; ++blink) {
-        bsp_led_set_Expect(red, green, blue, BRIGHTNESS);
-        bsp_led_off_Expect();
+    for (uint32_t pass = 0; pass < BOOT_REPEATS; ++pass) {
+        for (uint32_t blink = 0; blink < blinks; ++blink) {
+            bsp_led_set_Expect(red, green, blue, BRIGHTNESS);
+            bsp_led_off_Expect();
+        }
     }
-    bsp_led_set_Expect(0, 0, 255, BRIGHTNESS);
+    bsp_led_set_Expect(rest_red, rest_green, rest_blue, BRIGHTNESS);
     application_diagnostics_start();
 }
 
@@ -129,29 +136,50 @@ void test_start_names_every_boot_reason_on_the_console(void) {
 }
 
 void test_usb_free_image_blinks_a_white_power_on_code_instead_of_printing(void) {
-    start_led_only(BSP_BOOT_POWER_ON, 0, 255, 255, 255, 1);
+    start_led_only(BSP_BOOT_POWER_ON, 0, 255, 255, 255, 1, 0, 0, 255);
 
     TEST_ASSERT_EQUAL_STRING("", mock_bsp_console_output());
-    /* one leading gap, one on/off pair per blink, one trailing gap */
-    TEST_ASSERT_EQUAL_UINT32(4, mock_bsp_time_sleep_count());
+    /* one leading gap, then per pass: an on/off pair per blink plus a gap */
+    TEST_ASSERT_EQUAL_UINT32(1 + BOOT_REPEATS * (1 * 2 + 1), mock_bsp_time_sleep_count());
     TEST_ASSERT_TRUE(mock_bsp_watchdog_started());
 }
 
-void test_usb_free_image_blinks_brownout_in_yellow(void) {
-    start_led_only(BSP_BOOT_BROWNOUT, 0, 255, 255, 0, 2);
+/* Each boot reason keeps its resting heartbeat color for the whole run, so the
+   verdict is readable hours later without having caught the blink code. */
+void test_usb_free_image_blinks_brownout_in_yellow_and_rests_yellow(void) {
+    start_led_only(BSP_BOOT_BROWNOUT, 0, 255, 255, 0, 2, 255, 255, 0);
 }
 
-void test_usb_free_image_blinks_unclassified_resets_in_cyan(void) {
-    start_led_only(BSP_BOOT_OTHER, 0, 0, 255, 255, 3);
+void test_usb_free_image_blinks_unclassified_resets_in_cyan_and_rests_cyan(void) {
+    start_led_only(BSP_BOOT_OTHER, 0, 0, 255, 255, 3, 0, 255, 255);
 }
 
-void test_usb_free_image_blinks_the_retained_marker_in_red_after_a_watchdog_reset(void) {
-    start_led_only(BSP_BOOT_WATCHDOG, APPLICATION_DIAGNOSTICS_MARKER_COMMAND, 255, 0, 0, 4);
+void test_usb_free_image_blinks_the_retained_marker_in_red_and_rests_red(void) {
+    start_led_only(BSP_BOOT_WATCHDOG, APPLICATION_DIAGNOSTICS_MARKER_COMMAND, 255, 0, 0, 4, 255, 0,
+                   0);
 }
 
 void test_watchdog_blink_count_is_clamped_to_a_readable_range(void) {
-    start_led_only(BSP_BOOT_WATCHDOG, 0, 255, 0, 0, 1);
-    start_led_only(BSP_BOOT_WATCHDOG, 20, 255, 0, 0, 8);
+    start_led_only(BSP_BOOT_WATCHDOG, 0, 255, 0, 0, 1, 255, 0, 0);
+    start_led_only(BSP_BOOT_WATCHDOG, 20, 255, 0, 0, 8, 255, 0, 0);
+}
+
+void test_usb_free_heartbeat_keeps_reporting_the_boot_reason_while_it_runs(void) {
+    start_led_only(BSP_BOOT_WATCHDOG, APPLICATION_DIAGNOSTICS_MARKER_LOOP, 255, 0, 0, 1, 255, 0, 0);
+
+    bsp_led_off_Expect();
+    poll_at(250);
+    bsp_led_set_Expect(255, 0, 0, BRIGHTNESS);
+    poll_at(500);
+
+    /* the stub reports no host, so the one-second sample must not repaint it blue */
+    bsp_led_off_Expect();
+    poll_at(750);
+    bsp_led_set_Expect(255, 0, 0, BRIGHTNESS);
+    bsp_fpga_cdone_ExpectAndReturn(true);
+    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    bsp_led_get_ExpectAndReturn(led_state(255, 0, 0, true));
+    poll_at(1000);
 }
 
 void test_poll_feeds_the_watchdog_and_marks_the_loop_before_any_deadline(void) {
