@@ -133,6 +133,15 @@ produces both `forgix_hello_world.uf2` and `forgix_led_only_diagnostic.uf2`;
 `./scripts/flash.sh <image-name>` loads either one, and the `diag` shell command
 prints the retained boot report with live counters.
 
+**Board note.** GPIO 0 is `XIP_CS1n`, the chip select for the secondary QSPI memory that
+shares the flash bus. Raspberry Pi's *Hardware design with RP2350* section 3.2 requires a
+10K pull-up on that net, because RP2350 pads default to a pull-down at power-up and the
+chip select is active low. This board does not fit one, so the secondary device is selected
+from reset and contends with the boot flash, hanging the core mid-XIP. `bsp_init()` takes
+the pin off its pull-down and holds it deasserted, which cleared a two-hour soak, but it
+cannot cover the bootrom's own flash reads before the first instruction. **Fitting the
+pull-up is the actual fix.**
+
 Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open for
 the whole run and never reopens it after a failure, since a single controlled
 reopen is itself one of the experiments.
