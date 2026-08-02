@@ -9,22 +9,38 @@ and command behavior, and `bsp/` owns every Pico SDK and board-hardware detail.
 Application code consumes the aggregate `bsp.h` interface instead of including
 Pico SDK headers directly.
 
-The supported build environment is Windows with Git Bash. Tool paths default to:
+The supported build environment is Windows with Git Bash. Tool locations live in
+`scripts/env.sh`, which every script sources for itself, so the scripts run in a
+fresh shell with no setup:
 
 ```bash
-export EFINITY_HOME="/c/Efinix/Efinity/2026.1"
-export PICO_SDK_PATH="/c/RPi/pico-sdk-2.3.0"
-export GHDL_BIN_PATH="/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin"
-export PICOTOOL_BIN_PATH="/c/RPi/picotool-2.3.0-install-usb/picotool"
-export picotool_DIR="$PICOTOOL_BIN_PATH"
-export PATH="$PICOTOOL_BIN_PATH:$PATH"
+EFINITY_HOME       /c/Efinix/Efinity/2026.1
+PICO_SDK_PATH      /c/RPi/pico-sdk-2.3.0
+GHDL_BIN_PATH      /c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin
+PICOTOOL_BIN_PATH  /c/RPi/picotool-2.3.0-install-usb/picotool
+PICO_TINYUSB_PATH  resolved from the SDK submodule, or build/tinyusb
+```
+
+Any variable already set in the environment wins, so a non-default installation
+only needs that one export. Source the file yourself when invoking `cmake`,
+`ninja`, or `picotool` by hand; `--print` reports what it resolved:
+
+```bash
+source ./scripts/env.sh --print
 ```
 
 Build and install the USB-enabled picotool 2.3.0 host utility from Git Bash
 with `./scripts/build_picotool.sh`. The script uses the Visual Studio 2022 x64
 toolchain and the compatible VS2019 x64 static library from the libusb package
 under `/c/Forgix/libusb-1.0.29`. It rejects the installation if picotool's USB
-load command is unavailable. See
+load command is unavailable.
+
+USB support is what separates a picotool that can flash from one that cannot.
+The Pico SDK fetches its own copy into `build/` while configuring the firmware;
+that build has no libusb, so it converts UF2 files but has no `load` or `reboot`
+command at all. `scripts/env.sh` therefore prefers the USB-enabled install, and
+`bootstrap.sh` and `flash.sh` both check for `load` rather than merely finding
+something named picotool. See
 [Building USB-enabled picotool 2.3.0 on Windows](docs/picotool-windows.md) for
 the complete source-build, environment, verification, BOOTSEL, and first-flash
 procedure.

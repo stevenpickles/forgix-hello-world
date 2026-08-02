@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PICO_SDK_PATH="${PICO_SDK_PATH:-/c/RPi/pico-sdk-2.3.0}"
+source "$repo_root/scripts/env.sh"
 build_dir="$repo_root/build/firmware"
 fpga_image="$repo_root/fpga/outflow/forgix_hello_world.bin"
 firmware_binary="$build_dir/forgix_hello_world.bin"
@@ -18,12 +18,8 @@ repo_native="$(cygpath -w "$repo_root")"
 build_native="$(cygpath -w "$build_dir")"
 sdk_native="$(cygpath -w "$PICO_SDK_PATH")"
 image_native="$(cygpath -w "$fpga_image")"
-sdk_posix="$(cygpath -u "$PICO_SDK_PATH")"
-tinyusb_posix="${PICO_TINYUSB_PATH:-$sdk_posix/lib/tinyusb}"
-if [[ ! -f "$tinyusb_posix/src/tusb.c" && -f "$repo_root/build/tinyusb/src/tusb.c" ]]; then
-  tinyusb_posix="$repo_root/build/tinyusb"
-fi
-if [[ ! -f "$tinyusb_posix/src/tusb.c" ]]; then
+tinyusb_posix="${PICO_TINYUSB_PATH:-}"
+if [[ -z "$tinyusb_posix" || ! -f "$tinyusb_posix/src/tusb.c" ]]; then
   printf 'TinyUSB is missing. Initialize lib/tinyusb in the Pico SDK or set PICO_TINYUSB_PATH.\n' >&2
   exit 1
 fi

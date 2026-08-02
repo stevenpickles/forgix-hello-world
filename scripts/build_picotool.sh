@@ -2,11 +2,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/env.sh"
 
 picotool_source="${PICOTOOL_SOURCE:-/c/RPi/picotool-2.3.0}"
 picotool_build="${PICOTOOL_BUILD:-/c/RPi/picotool-2.3.0-build-usb}"
 picotool_install="${PICOTOOL_INSTALL:-/c/RPi/picotool-2.3.0-install-usb}"
-pico_sdk_path="${PICO_SDK_PATH:-/c/RPi/pico-sdk-2.3.0}"
+pico_sdk_path="$PICO_SDK_PATH"
 libusb_root="${LIBUSB_ROOT:-/c/Forgix/libusb-1.0.29}"
 libusb_include="${LIBUSB_INCLUDE_DIR:-$libusb_root/include}"
 libusb_library="${LIBUSB_LIBRARY:-$libusb_root/VS2019/MS64/static/libusb-1.0.lib}"
