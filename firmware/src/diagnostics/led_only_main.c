@@ -14,6 +14,9 @@
 #include "bsp.h"
 
 int main(void) {
+    /* Brings up UART stdio when built with FORGIX_DIAGNOSTIC_UART. With no stdio
+       backend linked it is a no-op, and the diagnostics prints go nowhere. */
+    bsp_console_init();
     (void)bsp_fpga_init();
     application_diagnostics_start();
 

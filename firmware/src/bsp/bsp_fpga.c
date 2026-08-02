@@ -141,6 +141,14 @@ bool bsp_fpga_reconfigure(void) {
     return result.ready;
 }
 
+bool bsp_fpga_auto_reconfigure_enabled(void) {
+#if FORGIX_FPGA_AUTO_RECONFIGURE
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool bsp_fpga_is_ready(void) {
     return fpga_ready;
 }

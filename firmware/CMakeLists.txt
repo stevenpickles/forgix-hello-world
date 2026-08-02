@@ -30,6 +30,17 @@ add_custom_command(
 option(FORGIX_FOREGROUND_USB_SERVICE
   "Service TinyUSB from the foreground loop instead of the SDK background task" OFF)
 
+# Reloading the bitstream drives CRESET_N and rewrites 173 KB on every failing
+# sample, which is itself a disturbance. Off by default so a run establishes what
+# the fault does when left alone; turn it on for the recovery comparison.
+option(FORGIX_FPGA_AUTO_RECONFIGURE
+  "Attempt FPGA reconfiguration after a runtime health-check failure" OFF)
+
+# Routes the diagnostics report out of the USB-free image over UART, which needs
+# no USB and survives the FPGA dying -- the LED cannot report either.
+option(FORGIX_DIAGNOSTIC_UART
+  "Emit the USB-free image's diagnostics over UART stdio" OFF)
+
 add_library(forgix_bsp STATIC
   src/bsp/bsp.c
   src/bsp/bsp_button.c
@@ -80,9 +91,20 @@ if(FORGIX_FOREGROUND_USB_SERVICE)
   target_compile_definitions(forgix_hello_world PRIVATE PICO_STDIO_USB_ENABLE_IRQ_BACKGROUND_TASK=0)
 endif()
 
+if(FORGIX_FPGA_AUTO_RECONFIGURE)
+  target_compile_definitions(forgix_bsp PRIVATE FORGIX_FPGA_AUTO_RECONFIGURE=1)
+endif()
+
 # USB-free control image: same instrumented diagnostics loop, no USB code.
 add_executable(forgix_led_only_diagnostic src/diagnostics/led_only_main.c)
 target_link_libraries(forgix_led_only_diagnostic PRIVATE forgix_application forgix_bsp_usb_stub)
 pico_enable_stdio_usb(forgix_led_only_diagnostic 0)
-pico_enable_stdio_uart(forgix_led_only_diagnostic 0)
+if(FORGIX_DIAGNOSTIC_UART)
+  # UART0 TX defaults to GPIO 0, which the FPGA BSP does not use. RX moves off
+  # GPIO 1, which is the FPGA chip select; the diagnostics stream is output only.
+  pico_enable_stdio_uart(forgix_led_only_diagnostic 1)
+  target_compile_definitions(forgix_led_only_diagnostic PRIVATE PICO_DEFAULT_UART_RX_PIN=-1)
+else()
+  pico_enable_stdio_uart(forgix_led_only_diagnostic 0)
+endif()
 pico_add_extra_outputs(forgix_led_only_diagnostic)

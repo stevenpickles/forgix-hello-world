@@ -166,6 +166,13 @@ static void check_fpga(uint32_t now_ms) {
     }
 
     ++diagnostics.fpga_failures;
+
+    /* Recovery is opt-in. Reloading the bitstream drives CRESET_N and rewrites
+       173 KB on every failing sample, which is itself a disturbance; keeping it
+       off establishes what the fault does when left alone. */
+    if (!bsp_fpga_auto_reconfigure_enabled()) {
+        return;
+    }
     if (bsp_fpga_reconfigure()) {
         ++diagnostics.fpga_reconfigures;
         diagnostics.recovery_toggles = RECOVERY_TOGGLES;
@@ -227,6 +234,14 @@ static void print_boot_report(void) {
                        (unsigned long)diagnostics.boot_snapshot[2]);
 }
 
+static void print_live_report(void) {
+    bsp_console_printf("diag: t=%lus led=%u fpga_fail=%lu fpga_reconfig=%lu marker=%lu\n",
+                       (unsigned long)diagnostics.uptime_seconds, diagnostics.led_on,
+                       (unsigned long)diagnostics.fpga_failures,
+                       (unsigned long)diagnostics.fpga_reconfigures,
+                       (unsigned long)bsp_watchdog_marker_get());
+}
+
 static uint32_t clamp_blinks(uint32_t marker) {
     if (marker == 0) {
         return 1;
@@ -285,9 +300,12 @@ void application_diagnostics_start(void) {
         bsp_watchdog_snapshot_set(slot, 0);
     }
 
-    if (diagnostics.usb_present) {
-        print_boot_report();
-    } else {
+    /* Printing is unconditional: with no stdio backend linked it costs nothing,
+       and when the USB-free image is built with FORGIX_DIAGNOSTIC_UART it is the
+       only report that survives the FPGA dying. The blink code is additional,
+       for the console-less build. */
+    print_boot_report();
+    if (!diagnostics.usb_present) {
         blink_boot_report();
     }
 
@@ -331,6 +349,13 @@ void application_diagnostics_poll(void) {
     if (sample_due) {
         check_fpga(now_ms);
         store_snapshots();
+        /* One line per second in the USB-free image. On a UART build this is the
+           MCU-liveness proof the LED cannot give: it depends on nothing but the
+           foreground loop, so the last logged second dates the freeze exactly.
+           The shell image omits it, where it would flood the console. */
+        if (!diagnostics.usb_present) {
+            print_live_report();
+        }
         bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
     }
 }

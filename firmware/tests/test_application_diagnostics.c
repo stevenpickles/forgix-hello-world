@@ -135,13 +135,50 @@ void test_start_names_every_boot_reason_on_the_console(void) {
     }
 }
 
-void test_usb_free_image_blinks_a_white_power_on_code_instead_of_printing(void) {
+void test_usb_free_image_blinks_a_white_power_on_code_and_still_prints_it(void) {
     start_led_only(BSP_BOOT_POWER_ON, 0, 255, 255, 255, 1, 0, 0, 255);
 
-    TEST_ASSERT_EQUAL_STRING("", mock_bsp_console_output());
+    /* The print costs nothing with no stdio backend linked, and carries the
+       report over UART when the image is built with FORGIX_DIAGNOSTIC_UART. */
+    TEST_ASSERT_EQUAL_STRING("diag: boot=power-on marker=0 loop=0 usb=0 health=00000000\n",
+                             mock_bsp_console_output());
     /* one leading gap, then per pass: an on/off pair per blink plus a gap */
     TEST_ASSERT_EQUAL_UINT32(1 + BOOT_REPEATS * (1 * 2 + 1), mock_bsp_time_sleep_count());
     TEST_ASSERT_TRUE(mock_bsp_watchdog_started());
+}
+
+/* The per-second line is the MCU-liveness proof the LED cannot give: it depends
+   only on the foreground loop, so the last logged second dates a freeze exactly. */
+void test_usb_free_image_logs_a_line_every_second(void) {
+    start_led_only(BSP_BOOT_POWER_ON, 0, 255, 255, 255, 1, 0, 0, 255);
+    bsp_led_off_Expect();
+    poll_at(250);
+    mock_bsp_console_reset();
+
+    bsp_led_set_Expect(0, 0, 255, BRIGHTNESS);
+    bsp_fpga_cdone_ExpectAndReturn(true);
+    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    bsp_led_get_ExpectAndReturn(led_state(0, 0, 255, true));
+    poll_at(1000);
+
+    TEST_ASSERT_EQUAL_STRING("diag: t=1s led=1 fpga_fail=0 fpga_reconfig=0 marker=6\n",
+                             mock_bsp_console_output());
+}
+
+void test_recovery_is_skipped_when_auto_reconfigure_is_disabled(void) {
+    start_usb_at(0);
+    bsp_led_off_Expect();
+    poll_at(250);
+
+    mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
+    bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
+    bsp_fpga_cdone_ExpectAndReturn(false);
+    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(false);
+    poll_at(1000);
+
+    /* the fault is still counted, so a run records it without disturbing it */
+    TEST_ASSERT_EQUAL_UINT32(1u << 19, mock_bsp_watchdog_snapshot(2) & (0x7fu << 19));
+    TEST_ASSERT_EQUAL_UINT32(0, mock_bsp_watchdog_snapshot(2) & (0x3fu << 26));
 }
 
 /* Each boot reason keeps its resting heartbeat color for the whole run, so the
@@ -310,6 +347,7 @@ void test_lost_configuration_reconfigures_and_flies_the_recovery_signature(void)
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
     bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
     bsp_fpga_cdone_ExpectAndReturn(false);
+    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(true);
     bsp_fpga_reconfigure_ExpectAndReturn(true);
     bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
     poll_at(1000);
@@ -348,6 +386,7 @@ void test_a_wrong_design_id_reconfigures_without_reading_the_led_back(void) {
     bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
     bsp_fpga_cdone_ExpectAndReturn(true);
     bsp_fpga_ping_ExpectAndReturn(0x00);
+    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(true);
     bsp_fpga_reconfigure_ExpectAndReturn(true);
     bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
     poll_at(1000);
@@ -373,6 +412,7 @@ static void run_readback_mismatch(bsp_led_state_t readback, const char *field_na
     bsp_fpga_cdone_ExpectAndReturn(true);
     bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     bsp_led_get_ExpectAndReturn(readback);
+    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(true);
     bsp_fpga_reconfigure_ExpectAndReturn(false);
     poll_at(1000);
 
