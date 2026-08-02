@@ -35,13 +35,8 @@ static void process(const char *command) {
 
 static bsp_memory_report_t memory_report(void);
 
-/* The reporting layer names the bus clock each sweep entry was taken at, so the
-   divisor table has to be available too. */
-static const uint8_t probe_divisors[4] = {4u, 6u, 8u, 16u};
-
 static void expect_memory_report(void) {
     bsp_memory_check_ExpectAndReturn(memory_report());
-    bsp_memory_probe_clkdivs_ExpectAndReturn(probe_divisors);
 }
 
 static bsp_memory_report_t memory_report(void) {

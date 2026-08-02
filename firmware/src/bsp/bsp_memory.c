@@ -19,6 +19,9 @@
    window. See the PSRAM region in the SDK linker script. */
 enum { PSRAM_WINDOW_BASE = 0x11000000u };
 
+/* AP Memory's known-good-die byte, at offset 5 of the Read-ID response. */
+enum { EXPECTED_KGD = 0x5du };
+
 /* The boot flash is proven readable by the fact that this code is executing from
    it, so the useful check is that it still reads back coherently: a stack
    pointer in SRAM and a reset vector inside the flash window. Bus contention on
@@ -177,23 +180,14 @@ static void __no_inline_not_in_flash_func(cs1_quad_reset)(uint32_t clkdiv) {
     flash_enter_cmd_xip();
 }
 
-/* Divisors of the 150 MHz system clock, straddling the 33 MHz Read-ID limit:
-   4 is 37.5 MHz and over it, 6 is 25 MHz, 8 is 18.75 MHz, 16 is 9.4 MHz. If the
-   over-limit entry is garbled and the others read 0D 5D, the clock was the
-   fault. */
-static const uint8_t probe_clkdivs[4] = {4u, 6u, 8u, 16u};
-
-const uint8_t *bsp_memory_probe_clkdivs(void) {
-    return probe_clkdivs;
-}
+/* Comfortably inside the 33 MHz ceiling that Read-ID carries for having no
+   wait cycles. A sweep from 37.5 down to 9.4 MHz returned identical bytes at
+   every step, so the clock is not a variable worth re-testing on every boot --
+   and each probe is traffic on a bus shared with the boot flash. */
+enum { CS1_PROBE_CLKDIV = 8u };
 
 /* Read ID may only be issued straight after a global reset plus tRST, so the
-   reset pair precedes it at the same clock. Both are zero-wait commands.
-
-   Note the reset is issued serially. If the device is sitting in QPI mode these
-   opcodes need quad width to be understood, so a serial reset cannot reach it --
-   that remains untested and is the next thing to try if the clock is not the
-   whole story. */
+   reset pair precedes it. Both are zero-wait commands, hence the slow clock. */
 /* Control: the identical transfer with an opcode the device cannot recognise.
    A real responder gives a different answer than it gives to Read-ID. */
 static void probe_qspi_cs1_null(uint8_t *response, uint32_t clkdiv) {
@@ -324,26 +318,24 @@ bsp_memory_report_t bsp_memory_check(void) {
     static bool identified;
     static uint8_t cached_cs1[8];
     static uint8_t cached_cs0[8];
-    static uint8_t cached_sweep[8];
     static uint8_t cached_clkdiv;
+    static bool cached_recovered;
     static uint8_t cached_null[8];
     if (!identified) {
         identify_qspi_cs0(cached_cs0);
-        probe_qspi_cs1_null(cached_null, 16u);
-        for (uint32_t entry = 0; entry < 4u; ++entry) {
-            uint8_t attempt[8] = {0};
-            uint8_t seen = 0;
-            identify_qspi_cs1(attempt, probe_clkdivs[entry], &seen);
-            cached_sweep[entry * 2u] = attempt[4];
-            cached_sweep[entry * 2u + 1u] = attempt[5];
-            cached_clkdiv = seen;
-            /* Keep the slowest attempt as the reported identity: furthest inside
-               the Read-ID limit, so most likely to be the true one. */
-            if (entry == 3u) {
-                for (uint32_t index = 0; index < sizeof attempt; ++index) {
-                    cached_cs1[index] = attempt[index];
-                }
-            }
+        probe_qspi_cs1_null(cached_null, CS1_PROBE_CLKDIV);
+        identify_qspi_cs1(cached_cs1, CS1_PROBE_CLKDIV, &cached_clkdiv);
+        /* Escalate only on failure. A quad-width reset aimed at a device already
+           in SPI mode is not a reset, it is eight clocks of nonsense spread over
+           four lines -- issuing it unconditionally is what made this probe
+           report 66 0B 43 57 while the SDK's own detection read the part
+           correctly. So it is held back for the case it was meant for: a device
+           stuck in QPI, which cannot hear serial opcodes at all. */
+        if (cached_cs1[5] != EXPECTED_KGD) {
+            cs1_quad_reset(CS1_PROBE_CLKDIV);
+            busy_wait_us_32(500);
+            identify_qspi_cs1(cached_cs1, CS1_PROBE_CLKDIV, &cached_clkdiv);
+            cached_recovered = true;
         }
         identified = true;
     }
@@ -351,9 +343,9 @@ bsp_memory_report_t bsp_memory_check(void) {
         report.qspi_cs1_id[index] = cached_cs1[index];
         report.qspi_cs0_id[index] = cached_cs0[index];
         report.qspi_cs1_null[index] = cached_null[index];
-        report.qspi_cs1_sweep[index] = cached_sweep[index];
     }
     report.qspi_probe_clkdiv = cached_clkdiv;
+    report.qspi_cs1_recovered = cached_recovered;
     {
     }
 

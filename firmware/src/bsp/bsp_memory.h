@@ -23,16 +23,14 @@ typedef struct {
        instrument -- without a reference reading, a strange CS1 response cannot
        be told apart from a probe that does not work. */
     uint8_t qspi_cs0_id[8];
-    /* Read-ID bytes 4 and 5 from chip select 1 at four bus clocks: four pairs,
-       in the order given by bsp_memory_probe_clkdivs(). Read ID takes zero wait
-       cycles and is specified at 33 MHz maximum, so the divisors straddle that
-       limit deliberately -- if the fast one is garbled and the slow ones report
-       0D 5D, the clock was the fault. */
-    uint8_t qspi_cs1_sweep[8];
     /* CLKDIV read back from DIRECT_CSR inside the transfer. Proves the divisor
        actually took effect, rather than being reset by the ROM's flash
        reconnection as an earlier attempt was. */
     uint8_t qspi_probe_clkdiv;
+    /* Set when the serial identification failed and a quad-width reset was
+       needed to recover the device. Normally false: a device answering in SPI
+       mode must not be sent quad opcodes, which it would decode as noise. */
+    bool qspi_cs1_recovered;
     /* The same transfer with a meaningless opcode instead of Read-ID. If this
        matches qspi_cs1_id then nothing is answering and we are reading the
        floating bus, not a device in a wrong mode -- a distinction no amount of
@@ -46,10 +44,5 @@ typedef struct {
 } bsp_memory_report_t;
 
 bsp_memory_report_t bsp_memory_check(void);
-
-/* The four QMI clock divisors the chip-select-1 probe sweeps, matching the order
-   of qspi_cs1_sweep. Exposed so the reporting layer can name the bus clock each
-   result was taken at without duplicating the table. */
-const uint8_t *bsp_memory_probe_clkdivs(void);
 
 #endif
