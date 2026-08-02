@@ -79,3 +79,10 @@ if(FORGIX_FOREGROUND_USB_SERVICE)
   target_compile_definitions(forgix_bsp_usb PRIVATE FORGIX_FOREGROUND_USB_SERVICE=1)
   target_compile_definitions(forgix_hello_world PRIVATE PICO_STDIO_USB_ENABLE_IRQ_BACKGROUND_TASK=0)
 endif()
+
+# USB-free control image: same instrumented diagnostics loop, no USB code.
+add_executable(forgix_led_only_diagnostic src/diagnostics/led_only_main.c)
+target_link_libraries(forgix_led_only_diagnostic PRIVATE forgix_application forgix_bsp_usb_stub)
+pico_enable_stdio_usb(forgix_led_only_diagnostic 0)
+pico_enable_stdio_uart(forgix_led_only_diagnostic 0)
+pico_add_extra_outputs(forgix_led_only_diagnostic)

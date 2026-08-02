@@ -7,6 +7,7 @@ build_dir="$repo_root/build/firmware"
 fpga_image="$repo_root/fpga/outflow/forgix_hello_world.bin"
 firmware_binary="$build_dir/forgix_hello_world.bin"
 uf2="$build_dir/forgix_hello_world.uf2"
+led_only_uf2="$build_dir/forgix_led_only_diagnostic.uf2"
 
 if [[ ! -s "$fpga_image" ]]; then
   printf 'FPGA image not found: %s\nRun ./scripts/build_fpga.sh first.\n' "$fpga_image" >&2
@@ -42,9 +43,14 @@ cmake --build "$build_native"
   printf 'UF2 was not generated. Install picotool 2.3.0 and rebuild.\n' >&2
   exit 1
 }
+[[ -s "$led_only_uf2" ]] || {
+  printf 'USB-free diagnostic UF2 was not generated: %s\n' "$led_only_uf2" >&2
+  exit 1
+}
 firmware_size="$(wc -c < "$firmware_binary")"
 if (( firmware_size > 2 * 1024 * 1024 )); then
   printf 'Firmware exceeds the RP2354 2 MB flash: %s bytes\n' "$firmware_size" >&2
   exit 1
 fi
-printf 'Firmware image: %s bytes\nUF2: %s\n' "$firmware_size" "$uf2"
+printf 'Firmware image: %s bytes\nUF2: %s\nUSB-free diagnostic UF2: %s\n' \
+  "$firmware_size" "$uf2" "$led_only_uf2"
