@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "application_console.h"
 #include "bsp.h"
 
 static bool parse_byte(const char *text, uint8_t *value) {
@@ -20,8 +21,32 @@ static bool parse_byte(const char *text, uint8_t *value) {
     return true;
 }
 
+static bool parse_watch_period(const char *text, uint32_t *seconds) {
+    char *end = NULL;
+    long parsed = strtol(text, &end, 10);
+    if (end == text || *end || parsed < APPLICATION_WATCH_MIN_SECONDS ||
+            parsed > APPLICATION_WATCH_MAX_SECONDS) {
+        return false;
+    }
+    *seconds = (uint32_t)parsed;
+    return true;
+}
+
 static void print_help(void) {
-    bsp_console_puts("hello | color <r> <g> <b> [brightness] | off | status | reset | help");
+    bsp_console_puts(
+        "hello | color <r> <g> <b> [brightness] | off | status | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
+}
+
+void application_print_status(void) {
+    if (!bsp_fpga_is_ready()) {
+        bsp_console_puts("status unavailable: FPGA is not configured and responding");
+        return;
+    }
+
+    bsp_button_state_t button = bsp_button_get_state();
+    bsp_console_printf("id=%02X status=%02X button=%02X count=%u fpga_status=%u\n",
+                       bsp_fpga_ping(), bsp_fpga_read_status(), button.level,
+                       button.count, bsp_fpga_status_pin());
 }
 
 void application_process_command(char *line) {
@@ -36,6 +61,52 @@ void application_process_command(char *line) {
     }
     if (!strcmp(argv[0], "help") && argc == 1) {
         print_help();
+        return;
+    }
+    if (!strcmp(argv[0], "quiet")) {
+        if (argc == 1) {
+            bsp_console_puts("ok");
+            application_console_set_quiet(true);
+        } else {
+            bsp_console_puts("error: invalid command (try help)");
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "interactive")) {
+        if (argc == 1) {
+            application_console_set_quiet(false);
+            bsp_console_puts("ok");
+        } else {
+            bsp_console_puts("error: invalid command (try help)");
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "echo")) {
+        if (argc == 2 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) {
+            application_console_set_echo(!strcmp(argv[1], "on"));
+            bsp_console_puts("ok");
+        } else {
+            bsp_console_puts("error: usage: echo <on|off>");
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "watch")) {
+        uint32_t period_seconds = 0;
+        if (argc == 2 && !strcmp(argv[1], "off")) {
+            application_console_disable_watch();
+            bsp_console_puts("ok");
+        } else if (argc == 2 && parse_watch_period(argv[1], &period_seconds)) {
+            application_console_set_watch(period_seconds);
+            bsp_console_puts("ok");
+        } else {
+            bsp_console_printf("error: usage: watch <%u..%u seconds|off>\n",
+                               APPLICATION_WATCH_MIN_SECONDS,
+                               APPLICATION_WATCH_MAX_SECONDS);
+        }
+        return;
+    }
+    if (!strcmp(argv[0], "status") && argc == 1) {
+        application_print_status();
         return;
     }
     if (!bsp_fpga_is_ready()) {
@@ -70,11 +141,6 @@ void application_process_command(char *line) {
     } else if (!strcmp(argv[0], "off") && argc == 1) {
         bsp_led_off();
         bsp_console_puts("ok");
-    } else if (!strcmp(argv[0], "status") && argc == 1) {
-        bsp_button_state_t button = bsp_button_get_state();
-        bsp_console_printf("id=%02X status=%02X button=%02X count=%u fpga_status=%u\n",
-                           bsp_fpga_ping(), bsp_fpga_read_status(), button.level,
-                           button.count, bsp_fpga_status_pin());
     } else if (!strcmp(argv[0], "reset") && argc == 1) {
         bsp_fpga_reset();
         bsp_console_puts("ok");

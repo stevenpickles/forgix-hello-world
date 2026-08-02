@@ -14,6 +14,10 @@ int bsp_console_getchar_timeout_us(uint32_t timeout_us) {
     return character == PICO_ERROR_TIMEOUT ? BSP_CONSOLE_TIMEOUT : character;
 }
 
+int bsp_console_putchar(int character) {
+    return putchar(character);
+}
+
 int bsp_console_printf(const char *format, ...) {
     va_list arguments;
     va_start(arguments, format);
