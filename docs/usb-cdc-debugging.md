@@ -1,11 +1,24 @@
-# USB CDC communications debugging plan
+# Firmware lockup debugging plan (USB CDC and USB-free)
 
 ## Purpose and terminology
 
-This plan isolates a repeatable loss of the Forgix USB serial session on a
-Windows 11 host. USB-C is the physical connector. USB Communications Device
-Class, using its Abstract Control Model (CDC-ACM), is the protocol that makes
-the RP2354 firmware appear as a Windows COM port.
+This plan covers **two distinct failure modes** on the Forgix board:
+
+1. **USB shell hang, ~9-10 min.** A repeatable loss of the Forgix USB serial
+   session on a Windows 11 host.
+2. **USB-free LED hang, ~45-75 min.** The image with USB compiled out also
+   freezes, on every power source tried.
+
+The document originally scoped only the first. The second was discovered later
+and invalidated this plan's variant-A control result; see
+[Evidence collected so far](#evidence-collected-so-far). Both are now tracked
+here, and the instrumented-firmware approach that supersedes much of the serial
+ladder below is specified in
+[the lockup investigation plan](lockup-investigation-plan.md).
+
+USB-C is the physical connector. USB Communications Device Class, using its
+Abstract Control Model (CDC-ACM), is the protocol that makes the RP2354
+firmware appear as a Windows COM port.
 
 The relevant path is:
 
@@ -39,13 +52,22 @@ submodule, and a Forgix connected to a Windows 11 host as `COM3`:
 - A diagnostic image with USB support and stdio initialization compiled out
   drove the same FPGA LED for more than 45 minutes while powered through the
   same PC connection.
+- **Correction (2026-08-01).** Running that USB-free image for longer showed it
+  also freezes, after roughly 45 to 75 minutes, on a USB-C wall charger, a PC
+  port, **and** a USB battery pack. The LED stops (lit or dark) and a power
+  cycle recovers it. The ">45 min pass" above was simply not a long enough run.
 
-The USB-disabled result demonstrates sustained RP2354 execution, FPGA
-configuration, SPI register access, LED control, and PC-supplied power beyond
-the usual failure window. The remaining evidence points to functionality
-activated by USB, but it does not yet identify whether the foreground is
-blocked by application stdio, the device stack is stalled, or the Windows host
-is no longer completing transfers.
+That correction changes the shape of the investigation. The USB-free result is
+no longer a clean control, so it does **not** establish that the 9-10 minute
+failure is USB-specific; it only establishes that the two failures have
+different time constants. Occurring on three independent power sources, the
+second failure is board-local rather than host-driven.
+
+Because the RGB LED is driven by the **FPGA**, a frozen LED is ambiguous on its
+own: it is consistent with an MCU hang *and* with the FPGA losing configuration
+or its clock while the MCU keeps running. Distinguishing those two required
+instrumentation, which is why the firmware now carries a watchdog, retained
+progress markers, and a runtime FPGA health check.
 
 There is no documented fixed nine- or ten-minute RP2350 USB limit. The RP2350
 datasheet does document USB status synchronization erratum RP2350-E12 and
@@ -87,8 +109,11 @@ runs before it is considered cleared.
 
 ## Stage 1: confirm the existing boundary
 
-1. Run the USB-disabled LED image for 30 minutes from a power-only USB-C cable
-   and AC adapter.
+1. Run the USB-disabled LED image from a power-only USB-C cable and AC adapter.
+   Use at least two hours, not 30 minutes: this image is now known to fail in
+   the 45-75 minute window, so a short run reports a false pass. Use the
+   instrumented `forgix_led_only_diagnostic` image so the outcome is
+   attributable.
 2. Run the pre-diagnostic application firmware from the PC with every COM-port
    client closed for 20 minutes.
 3. Repeat with one simple client opening `COM3` but sending no data.
@@ -104,7 +129,7 @@ enable only the listed USB behavior:
 
 | Variant | Device behavior | Host behavior | Isolates |
 | --- | --- | --- | --- |
-| A | USB compiled out | No client | Established non-USB baseline |
+| A | USB compiled out | No client | **Not a baseline.** This variant fails on its own at 45-75 min; it is the second failure mode, now instrumented |
 | B | Initialize and enumerate; never read or write | No client | Device stack and Windows enumeration |
 | C | Same as B | Open `COM3`, then remain idle | CDC open, close, and control requests |
 | D | Transmit a numbered line once per second; never read | Open and continuously read | Device-to-host transfers and TX backpressure |
@@ -118,24 +143,129 @@ functionality. Also run the immediately preceding passing variant again under
 the same host conditions. This guards against treating an incidental cable,
 port, or host event as a firmware boundary.
 
-## Stage 3: make a stall observable
+## Stage 3: make a stall observable (implemented)
 
-Add a watchdog that is fed only after one complete foreground-loop iteration.
-Store a small progress marker before the important operations: FPGA/LED update,
-USB receive poll, USB transmit, status formatting, and command processing. On a
-watchdog reboot, report the reset cause and last marker before resuming the test.
+This stage is now built into the firmware. Both images run the same
+`application_diagnostics` loop; the decision trees that turn its output into a
+verdict live in [the lockup investigation plan](lockup-investigation-plan.md).
 
-Interpret the visible behavior as follows:
+Keep the instrumented images out of pure boundary tests: the watchdog converts
+a hang into a reset, which changes the failure symptom.
 
-- LED stops and the watchdog restarts the image: the foreground stopped making
-  progress.
-- LED continues while CDC traffic stops: the failure is isolated below the
-  application loop or within the USB data path.
-- The device disappears and returns with a boot indication: investigate a reset,
-  disconnect, or power event rather than a permanently blocked call.
+### Images and build knobs
 
-Keep the watchdog diagnostic separate from the initial boundary test because a
-periodic reset changes the failure symptom.
+| Image | Build | Purpose |
+| --- | --- | --- |
+| `forgix_hello_world.uf2` | default | Full shell with USB CDC and diagnostics |
+| `forgix_led_only_diagnostic.uf2` | default | USB compiled out; LED and FPGA instrumentation only |
+
+Both are produced by `./scripts/build_firmware.sh`. Load either with
+`./scripts/flash.sh <image-name>`, defaulting to `forgix_hello_world`.
+
+`cmake -DFORGIX_FOREGROUND_USB_SERVICE=ON` moves TinyUSB servicing into the
+foreground loop and disables the SDK's background IRQ task, which removes the
+alarm-pool dependency suspected in the mode-1 hypotheses. Never enable one
+without the other; two owners of `tud_task()` corrupt stack state.
+
+### Progress markers
+
+Written to watchdog `scratch[0]` before entering each path, so a watchdog reset
+names where the foreground stopped.
+
+| Value | Marker | Set before |
+| ---: | --- | --- |
+| 1 | `LOOP` | Each foreground iteration, and after each completed sample |
+| 2 | `CONSOLE_READ` | `bsp_console_getchar_timeout_us` |
+| 3 | `CONSOLE_WRITE` | Every console write, all of which reach the SDK's untimed stdio flush |
+| 4 | `COMMAND` | Command dispatch |
+| 5 | `USB_SNAPSHOT` | Reading USB health |
+| 6 | `FPGA_CHECK` | CDONE, design-ID ping, and LED register readback |
+
+### Retained scratch layout
+
+`scratch[0..3]` survive a watchdog reset; the SDK reserves `scratch[4..7]`.
+
+| Register | Contents |
+| --- | --- |
+| `scratch[0]` | Progress marker (table above) |
+| `scratch[1]` | Loop-seconds counter (uptime in whole seconds) |
+| `scratch[2]` | CDC activity counter (completed transfers) |
+| `scratch[3]` | Packed health word (below) |
+
+Packed health word, `scratch[3]`:
+
+| Bits | Field |
+| --- | --- |
+| 0-15 | Host start-of-frame number |
+| 16 | DTR asserted |
+| 17 | Bus suspended |
+| 18 | Transmit FIFO full |
+| 19-25 | FPGA failure count (modulo 128) |
+| 26-31 | FPGA reconfiguration count (modulo 64) |
+
+### Boot report
+
+Emitted before the watchdog is armed. In the USB image it is a serial line:
+
+```text
+diag: boot=watchdog marker=3 loop=612 usb=44 health=00010001
+```
+
+`boot=` is one of `power-on`, `brownout`, `watchdog`, or `other`; `brownout`
+comes from the RP2350 POWMAN chip-reset register and is the direct test for a
+supply droop. The remaining fields are the retained scratch registers from
+before the reset. The `diag` shell command prints the same line plus live
+counters at any time.
+
+The USB-free image has no console and blinks the same report instead:
+
+| Blink code | Meaning |
+| --- | --- |
+| White x1 | Clean power-on |
+| Yellow x2 | Brownout reset |
+| Cyan x3 | Unclassified reset |
+| Red x N | Watchdog reset; N is the retained marker value, clamped to 1-8 |
+
+### Live LED colors
+
+The 2 Hz heartbeat carries current health without needing a reset. These
+override the visual effect of `color` and `off` for the duration of the
+investigation; the commands still answer `ok`, so `test_hardware.ps1` passes.
+
+| Color | Meaning |
+| --- | --- |
+| Green | Connected and CDC transfers are completing |
+| Red | Connected, but no transfer has completed for 5 s: endpoint or stack wedge |
+| Magenta | Bus suspended, or start-of-frame frozen for 5 s |
+| Blue | Host has not asserted DTR, or this is the USB-free image |
+| White x3 | FPGA was reconfigured and recovered |
+
+The white recovery signature is the decisive observation for the second failure
+mode. The LED is FPGA-driven, so a freeze that ends with three white flashes and
+a growing reconfiguration count proves the MCU stayed alive and the FPGA lost
+its configuration -- a distinction that otherwise needs instruments on the board.
+
+### Running a soak
+
+```powershell
+./scripts/soak_serial.ps1 -Port COM3 -DurationMinutes 20
+./scripts/soak_serial.ps1 -Port COM3 -DurationMinutes 120 -SendIntervalSeconds 10
+```
+
+It opens the port once and never reopens it, because the single clean reopen is
+itself the experiment that separates a wedged device from a recoverable host
+session. Use `-ValidateOnly` to check parameters with no board attached.
+
+The USB-free image needs no harness: it needs only a power source and a note of
+the wall-clock time at which the LED froze and, if it happens, recovered.
+
+### Relationship to the ladder below
+
+Where the decision trees resolve a question, the corresponding serial variants
+in Stage 2 are redundant. The instrumented images subsume variants B through G:
+the markers, health snapshot, and LED colors report which layer stopped without
+requiring a separate build per layer. Fall back to the ladder only for a
+surviving ambiguity, or if an instrumented image stops reproducing the failure.
 
 ## Stage 4: capture the Windows side
 
@@ -181,8 +311,12 @@ stdio usage, Pico SDK/TinyUSB, or the RP2354 USB peripheral.
 
 ## Results log
 
-Append results as the ladder is executed:
+Append results as runs are executed. Record the LED color or blink code and the
+`diag:` boot report, not only pass or fail: those are what the decision trees
+consume. For the USB-free image, record the exact wall-clock time to freeze --
+a cluster near 71.6 minutes would implicate a 32-bit microsecond wrap.
 
 | Date | Commit / variant | Host and port | Client state | Duration | LED | COM port | Recovery | Result |
 | --- | --- | --- | --- | ---: | --- | --- | --- | --- |
-| 2026-08-01 | A, USB disabled | Windows 11 PC | Closed | >45 min | Continued at 2 Hz | Not enumerated by design | Not needed | Pass |
+| 2026-08-01 | A, USB disabled | Windows 11 PC | Closed | >45 min | Continued at 2 Hz | Not enumerated by design | Not needed | ~~Pass~~ **Superseded** |
+| 2026-08-01 | A, USB disabled | Wall charger, PC port, and battery pack | Closed | 45-75 min | Froze (lit or dark) | Not enumerated by design | Power cycle | **Fail** - invalidates the row above, which was too short to reach the failure |

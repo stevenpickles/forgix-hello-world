@@ -84,27 +84,43 @@ An active `watch` stops as soon as a key is received so its output cannot
 interrupt the next command. `scripts/test_hardware.sh` selects `quiet` mode
 before parsing responses, keeping the physical smoke test deterministic.
 
-### USB CDC stability investigation
+### Firmware stability investigation
 
-The USB serial console currently has a reproducible long-duration stability
-issue on the tested Windows 11 host. Three sessions stopped responding after
-approximately nine to ten minutes, including a quiet session in which the last
-character reached the host interface but was not echoed by the firmware.
+The board has two open long-duration stability failures, and they are not yet
+known to share a cause:
 
-A temporary diagnostic image made both the FPGA-driven RGB LED blink at 2 Hz
-and emitted a numbered USB serial heartbeat once per second. Both stopped
-together near the observed failure window while Windows still listed the COM
-port. In contrast, an image with USB support compiled out continued driving the
-LED for more than 45 minutes while connected to the same PC. This evidence
-narrows the investigation to behavior activated by the USB data path; it does
-not yet distinguish application blocking, Pico SDK/TinyUSB behavior, or the
-Windows CDC driver.
+1. **USB shell, ~9-10 minutes.** Three sessions on the tested Windows 11 host
+   stopped responding, including a quiet session in which the last character
+   reached the host interface but was not echoed by the firmware. A diagnostic
+   image that blinked the RGB LED at 2 Hz and emitted a serial heartbeat once
+   per second had both stop together, while Windows still listed the COM port.
+2. **USB compiled out, ~45-75 minutes.** The USB-free image also freezes, on a
+   wall charger, a PC port, and a battery pack alike; a power cycle recovers it.
+   This corrects an earlier ">45 minute pass" that was simply too short a run,
+   and it means the USB-free image is not a clean control. The RGB LED is driven
+   by the FPGA, so a frozen LED alone does not say whether the MCU hung or the
+   FPGA lost its configuration.
 
-See the [USB CDC communications debugging plan](docs/usb-cdc-debugging.md) for
-the controlled firmware ladder, Windows observations to capture before a power
-cycle, pass criteria, and follow-up host comparisons. The baseline shell remains
-the intended functionality, but its long-duration USB stability should not be
-considered validated until that plan is complete.
+Both firmware images are therefore instrumented: a watchdog fed only by the
+foreground loop, progress markers and health snapshots kept in watchdog scratch
+registers that survive a reset, boot-reason reporting including brownout, and a
+once-a-second FPGA health check that reconfigures and signals recovery. The
+heartbeat LED also encodes live USB health by color. `./scripts/build_firmware.sh`
+produces both `forgix_hello_world.uf2` and `forgix_led_only_diagnostic.uf2`;
+`./scripts/flash.sh <image-name>` loads either one, and the `diag` shell command
+prints the retained boot report with live counters.
+
+Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open for
+the whole run and never reopens it after a failure, since a single controlled
+reopen is itself one of the experiments.
+
+See the [lockup investigation plan](docs/lockup-investigation-plan.md) for the
+run sequence and the decision trees that turn an observation into a verdict, and
+the [firmware lockup debugging plan](docs/usb-cdc-debugging.md) for the marker
+and scratch layouts, LED codes, Windows observations to capture before a power
+cycle, and the results log. The baseline shell remains the intended
+functionality, but its long-duration stability should not be considered
+validated until those plans are complete.
 
 Application behavior can also be exercised without a board. The Ceedling toolchain
 is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools

@@ -26,7 +26,14 @@ The firmware currently has no watchdog and no observability, so each hang yields
 
 ## Implementation
 
-### 1. BSP module `bsp_watchdog` (into shared `forgix_bsp` lib)
+**Status: implemented** on `feature/6/investigate-firmware-lockup`. Layer check,
+Ceedling gate (100 % line and branch), and both firmware images build. The
+sections below record the design as built; where the delivered code departs from
+the original specification the difference is called out inline and in the
+[Learnings log](#learnings-log). Hardware runs are outstanding — start with
+[Run 0](#10-soak-sequence-log-each-run--precise-wall-clock-times-in-the-docs-results-table).
+
+### 1. BSP module `bsp_watchdog` (into shared `forgix_bsp` lib) — done
 
 New `firmware/src/bsp/bsp_watchdog.{h,c}`; aggregate the header in `firmware/src/bsp/bsp.h` (required by `scripts/check_firmware_layers.py`).
 
@@ -44,7 +51,7 @@ uint32_t bsp_watchdog_snapshot_get(uint32_t slot);
 
 Scratch[0..3] are free (SDK reserves scratch[4..7]). 5 s timeout is 10× any bounded stdio timeout (500 ms `PICO_STDIO_USB_STDOUT_TIMEOUT_US` + 1 s `PICO_STDIO_DEADLOCK_TIMEOUT_MS`). `BSP_BOOT_BROWNOUT` from the RP2350 POWMAN chip-reset register is the direct brownout detector for mode 2.
 
-### 2. BSP module `bsp_usb` (separate lib + stub — `forgix_bsp` is shared with the USB-free image)
+### 2. BSP module `bsp_usb` (separate lib + stub — `forgix_bsp` is shared with the USB-free image) — done
 
 New `firmware/src/bsp/bsp_usb.{h,c}` and `firmware/src/bsp/bsp_usb_stub.c`; header aggregated in `bsp.h`.
 
@@ -59,34 +66,88 @@ typedef struct {
 bsp_usb_health_t bsp_usb_health(void);
 bool bsp_usb_connected(void);
 void bsp_usb_service(void);   // tud_task() iff FORGIX_FOREGROUND_USB_SERVICE=1, else no-op
+bool bsp_usb_present(void);   // ADDED: true in the real lib, false in the stub
 ```
 
 Stub returns `connected=false`, zero counters, no-op service; links into the USB-free target.
 
-### 3. BSP FPGA health additions (`bsp_fpga.h/.c`)
+`bsp_usb_present()` was **added** beyond the original API. The diagnostics layer
+needs a compile-time-decided but runtime-readable answer to "does this image have
+a console at all", to choose between the serial boot report and the LED blink
+code, without the application layer learning about build variants or including
+SDK headers. Testing it is a matter of flipping one mock flag.
+
+**Build trap (cost an hour, worth recording):** `forgix_bsp_usb` must link
+`pico_stdio_usb` only, **never** `tinyusb_device`. The marked `tinyusb_device`
+library defines `LIB_TINYUSB_DEVICE`, and the SDK's own
+`pico_stdio_usb/include/tusb_config.h` is guarded by
+`#if !defined(LIB_TINYUSB_HOST) && !defined(LIB_TINYUSB_DEVICE)` — it stands down
+on the assumption that an application defining that symbol supplies its own
+TinyUSB configuration. The result is `CFG_TUD_ENABLED=0` across the whole image:
+`usbd.c` and `cdc_device.c` compile to nothing and the link fails on
+`tud_suspended` / `tud_cdc_write_available`. Also note `PRIVATE` is wrong for a
+static library here: these SDK libraries add their sources to the *consuming*
+target, so they must remain in the public link interface to reach the executable.
+
+### 3. BSP FPGA health additions (`bsp_fpga.h/.c`) — done
 
 - `bool bsp_fpga_cdone(void);` (read `PIN_CDONE`) — config-loss indicator.
-- `bool bsp_fpga_reconfigure(void);` — re-runs the existing static `configure()` + ping validation (refactor of `bsp_fpga_init` internals), so the diagnostics layer can attempt recovery after a runtime FPGA failure.
+- `bool bsp_fpga_reconfigure(void);` — recovery entry point. **Implemented as a call to `bsp_fpga_init()`** returning `result.ready`, rather than as a separate refactor of the static `configure()`: `bsp_fpga_init` already is exactly "configure, settle, ping-validate", and it additionally refreshes the `fpga_ready` flag that the command layer gates on. Splitting it would have duplicated that. Worst-case duration is roughly 2.5 s (bitstream write + 500 ms CDONE timeout + 1500 ms settle), which fits inside the 5 s watchdog with margin.
 
-### 4. Application-layer diagnostics (keeps 100 % Ceedling gate, mock-driven)
+`bsp_time_sleep_ms()` was **added** to `bsp_time`, for the boot blink code only.
+It is documented as usable exclusively in bounded boot-time sequences that run
+before the watchdog is armed; the foreground loop must never block.
+
+### 4. Application-layer diagnostics (keeps 100 % Ceedling gate, mock-driven) — done
 
 New `firmware/src/application/application_diagnostics.{h,c}` — seed from `stash@{0}^3` on feature/5 (2 Hz LED scaffold, `led_only_main.c`, CMake second-target pattern). **Audit stash code for `time_us_32`-style wrap-unsafe timing when restoring.**
 
-- Markers: `LOOP`, `CONSOLE_READ`, `CONSOLE_WRITE`, `COMMAND`, `USB_SNAPSHOT`, `FPGA_CHECK`.
-- `application_diagnostics_start()`: report boot reason + retained scratch (`diag: watchdog-reset marker=… loop=… usb=… fpga=… flags=…`, or `diag: brownout-reset …`, or `diag: clean boot`) **before** enabling the watchdog. In the LED-only image the same report is emitted as an LED blink code (no console): red blinks = watchdog (count = marker value), yellow blinks = brownout, white = power-on. Then `bsp_watchdog_start(5000)`.
-- `application_diagnostics_poll()` (first call in runner loop): feed watchdog → `marker_set(LOOP)`; 2 Hz LED toggle; once per second:
-  - `marker_set(FPGA_CHECK)`: `bsp_fpga_ping()` + `bsp_fpga_cdone()` + readback of the LED register after write. On failure: record in scratch (fpga-fail counter + which check failed), attempt `bsp_fpga_reconfigure()`, and on success resume with a distinctive 3-flash white recovery signature. **A frozen LED that self-recovers this way proves the MCU was alive and the FPGA lost config — mode 2 attributed without any instruments.**
-  - `marker_set(USB_SNAPSHOT)` (USB image only): snapshot `bsp_usb_health()` into scratch — slot 0 = loop-seconds counter, slot 1 = `activity_count`, slot 2 = packed `frame_number | connected<<16 | suspended<<17 | (write_available==0)<<18`. In the LED-only image slot 1 carries the fpga-fail/reconfig counter instead.
+- Markers: `LOOP`, `CONSOLE_READ`, `CONSOLE_WRITE`, `COMMAND`, `USB_SNAPSHOT`, `FPGA_CHECK` (values 1–6; the numeric value is what a red blink code counts out).
+- `application_diagnostics_start()`: report boot reason + retained scratch **before** enabling the watchdog, then `bsp_watchdog_start(5000)`. The report is emitted as **one uniform line** rather than a different sentence per reason, so the soak harness can match it with a single pattern and the fields line up across runs:
+
+  ```text
+  diag: boot=watchdog marker=3 loop=612 usb=44 health=00010001
+  ```
+
+  `boot=` is one of `power-on`, `brownout`, `watchdog`, `other`. In the LED-only image the same report is a blink code: white ×1 power-on, yellow ×2 brownout, cyan ×3 other, red ×N watchdog where N is the retained marker clamped to 1–8.
+- `application_diagnostics_poll()` (first call in runner loop): feed watchdog → `marker_set(LOOP)`; then, in this order, the one-second sample, the 2 Hz LED toggle, **a single LED write**, and the FPGA readback. Ordering the sample first means the heartbeat color always reflects health just read, and it makes the one LED write the same write the FPGA check reads back:
+  - `marker_set(USB_SNAPSHOT)`: snapshot `bsp_usb_health()`; a stall is measured from the last time `activity_count` or `frame_number` actually changed.
+  - `marker_set(FPGA_CHECK)`: `bsp_fpga_cdone()` + `bsp_fpga_ping()` + readback of the LED registers just written. On failure: increment the fpga-fail counter, attempt `bsp_fpga_reconfigure()`, and on success set the recovery signature and rewrite the LED, since a fresh configuration comes up with its registers cleared. **A frozen LED that self-recovers this way proves the MCU was alive and the FPGA lost config — mode 2 attributed without any instruments.**
+  - Writing immediately before reading back matters: it makes the check measure the FPGA bus rather than whatever a `color` command left behind between polls. Without it, an operator typing `color` during a soak would forge an FPGA fault and trigger a spurious reconfiguration.
+
+**Scratch layout, revised.** The original plan had slot 1 mean different things in
+the two images (`activity_count` in the USB image, FPGA counters in the LED-only
+image). As built, the layout is identical in both images, which keeps one code
+path and one decoding table — and, more importantly, retains the FPGA evidence in
+the USB image too, where a mode-2 fault surfacing under USB load is one of the
+outcomes the decision tree looks for:
+
+| Register | Contents |
+| --- | --- |
+| `scratch[0]` | progress marker |
+| `scratch[1]` (slot 0) | loop-seconds counter |
+| `scratch[2]` (slot 1) | `activity_count` (0 in the LED-only image via the stub) |
+| `scratch[3]` (slot 2) | `frame_number` \| `connected`<<16 \| `suspended`<<17 \| `(write_available==0)`<<18 \| fpga-fail<<19 (7 bits) \| fpga-reconfig<<26 (6 bits) |
+
+The two FPGA counters are narrow modulo fields in the packed word; their
+full-width values stay available live through `diag`.
 - LED health colors (USB image, live no-reset observability): **green** 2 Hz = connected + activity advancing; **red** = connected but activity frozen >5 s (endpoint/stack wedge); **blue** = DTR low; **magenta** = suspended / SOF frozen. Document that this overrides `color`/`off` visuals during the investigation (commands still reply `ok`, so `test_hardware.ps1` passes).
 - `firmware/src/application/application_console.c`: set `CONSOLE_READ` before `bsp_console_getchar_timeout_us`, `CONSOLE_WRITE` before status/echo/prompt bursts, `COMMAND` before dispatch; **gate the unsolicited status block on `bsp_usb_connected()`** (approved DTR-gate mitigation).
 - `firmware/src/application/application_runner.c`: `application_diagnostics_start()` + `application_diagnostics_poll()` before `application_console_poll()`.
 - Add a `diag` shell command in `application.c` printing live counters + last-reset report; update help text, `firmware/tests/test_application.c`, and the help assertion at `scripts/test_hardware.ps1:174`.
 
-### 5. USB-free control image — now fully instrumented
+### 5. USB-free control image — now fully instrumented — done
 
 Restore `firmware/src/diagnostics/led_only_main.c` from the stash (dir exempt from layer check and coverage gate); link against `forgix_bsp_usb_stub`. It runs the same diagnostics poll (watchdog, markers, FPGA check + auto-reconfigure, LED boot-blink report) — this image is the primary mode-2 instrument.
 
-### 6. CMake (`firmware/CMakeLists.txt`)
+**Stash audit result:** the restored `stash@{0}^3` code was clean. It already used
+`bsp_time_now_ms()` with a wrap-safe signed comparison (`(int32_t)(now - deadline) >= 0`);
+no `time_us_32`-style 32-bit microsecond arithmetic was present anywhere in it.
+The 71.6-minute wrap hypothesis therefore has no candidate site in tracked or
+restored project code, and can only be tested against SDK paths by logging
+precise wall-clock times to failure.
+
+### 6. CMake (`firmware/CMakeLists.txt`) — done
 
 - `forgix_bsp`: add `bsp_watchdog.c`, link `hardware_watchdog` (+ POWMAN access via SDK structs).
 - New `forgix_bsp_usb` (links `pico_stdlib pico_stdio_usb tinyusb_device`) and `forgix_bsp_usb_stub`.
@@ -95,16 +156,22 @@ Restore `firmware/src/diagnostics/led_only_main.c` from the stash (dir exempt fr
 - `option(FORGIX_FOREGROUND_USB_SERVICE OFF)`: when ON, define `PICO_STDIO_USB_ENABLE_IRQ_BACKGROUND_TASK=0` on the app target and `FORGIX_FOREGROUND_USB_SERVICE=1` on `forgix_bsp_usb`; runner then services TinyUSB via `bsp_usb_service()`. Never call `tud_task()` from the foreground while the background IRQ task is active.
 - `scripts/flash.sh`: accept an optional image name (default `forgix_hello_world`). CI needs no change; optionally assert the new UF2 in `scripts/build_firmware.sh`.
 
-### 7. Tests
+### 7. Tests — done
 
-- Handwritten mocks (pattern: `firmware/tests/support/mock_bsp_time.c`): `mock_bsp_watchdog.{h,c}`, `mock_bsp_usb.{h,c}`; extend the existing FPGA mock with `cdone`/`reconfigure`.
-- New `firmware/tests/test_application_diagnostics.c`: boot-report branches (watchdog/brownout/clean), feed-per-poll, LED color branches, FPGA-check failure → reconfigure → recovery-signature path, snapshot packing, stall threshold.
-- Extend `test_application_console.c` (marker ordering, both DTR-gate branches) and `test_application.c` (`diag` command, help text).
-- Gates: `python scripts/check_firmware_layers.py` and `./scripts/test_ceedling.sh` stay green at 100 % line+branch.
+- Handwritten mocks (pattern: `firmware/tests/support/mock_bsp_time.c`): `mock_bsp_watchdog.{h,c}`, `mock_bsp_usb.{h,c}`; `mock_bsp_time` also records `bsp_time_sleep_ms` so the blink code is assertable without slowing the suite. The FPGA mock needed no work: it is CMock-generated from the header, so `cdone`/`reconfigure` appeared automatically.
+- New `firmware/tests/test_application_diagnostics.c`: boot-report branches (all four reasons, both output forms), blink-count clamping, feed-per-poll, every LED color branch, FPGA-check failure → reconfigure → recovery-signature path (including a sample with no heartbeat toggle), each of the five LED-register readback mismatches, failed reconfiguration, snapshot packing, stall thresholds.
+- Extended `test_application_console.c` (marker coverage, both DTR-gate branches) and `test_application.c` (`diag` command, `diag extra` rejection, help text).
+- Gates green: `python scripts/check_firmware_layers.py` reports 7 BSP headers; `./scripts/test_ceedling.sh` passes 60/60 with line-rate 1.0 and branch-rate 1.0 on all of `src/application/`.
+- Firmware: both images build; `forgix_hello_world.bin` is 209 584 bytes against the 2 MB CI gate. `-DFORGIX_FOREGROUND_USB_SERVICE=ON` was verified to build and to compile `bsp_usb_service` into a `tud_task_ext` tail call with `PICO_STDIO_USB_ENABLE_IRQ_BACKGROUND_TASK=0` applied.
 
-### 8. Soak harness `scripts/soak_serial.ps1`
+### 8. Soak harness `scripts/soak_serial.ps1` — done
 
-Params: `-Port COM3 -BaudRate 115200 -Dtr $true -Rts $false -DurationMinutes 0 -GapWarnSeconds 5 -GapFailSeconds 30 -SendIntervalSeconds 0 -PingCommand status -LogDirectory build/soak-logs`. Opens the port **once**, never toggles control lines, never auto-reopens. Timestamped log of every RX line, TX pings with sequence numbers, gap warnings. On failure: log last-RX/last-seq/max-gap, print the Stage 4 capture checklist (record LED color; Device Manager/USBView; ETW; one manual reopen; `picotool reboot -f -u` last), exit. A `diag:` boot report arriving on the still-open port after a watchdog reset is captured automatically.
+Params: `-Port COM3 -BaudRate 115200 -Dtr $true -Rts $false -DurationMinutes 0 -GapWarnSeconds 5 -GapFailSeconds 30 -SendIntervalSeconds 0 -PingCommand status -LogDirectory build/soak-logs`, plus `-ValidateOnly`. Opens the port **once**, never toggles control lines, never auto-reopens. Timestamped log of every RX line, TX pings with sequence numbers, gap warnings. On failure: log last-RX/last-seq/max-gap, print the Stage 4 capture checklist (record LED color; Device Manager/USBView; ETW; one manual reopen; `picotool reboot -f -u` last), exit non-zero. A `diag:` boot report arriving on the still-open port after a watchdog reset is matched explicitly and flagged as a reset rather than logged as ordinary output.
+
+`-ValidateOnly` checks parameters and the log directory and exits without opening
+the port; it was used to verify the harness with no board attached (valid
+configurations accepted, and malformed port names, inverted gap thresholds,
+negative durations, and an empty ping command all rejected).
 
 ### 9. Decision tree (observation → verdict → next step)
 
@@ -152,19 +219,19 @@ If mode 2's root cause is FPGA/power, re-evaluate mode 1: a supply/FPGA event at
 6. **Host policy** — keep-open client (soak harness); device-level selective-suspend disable as documented operator option.
 7. **Upstream track** — watch pico-sdk #1932 (milestone 2.4.0) and TinyUSB post-0.18 dcd fixes; plan SDK/TinyUSB upgrade once experiments confirm relevance.
 
-### 12. Docs
+### 12. Docs — done
 
 - `docs/usb-cdc-debugging.md`: **correct the results log** (variant A did not pass — LED-only image freezes at ~45–75 min on all power sources; power cycle recovers); retitle/extend scope to both failure modes; add "Stage 3 implementation" (marker table, scratch layout, LED colors + blink codes, decision trees, build knobs, `soak_serial.ps1` usage); note the instrumented images supersede serial variants B–G where the trees resolve them.
 - `README.md`: update the stability-investigation paragraph (no longer "narrowed to USB" — two modes) and point to the soak harness and this plan.
 
 ## Execution order & verification
 
-1. BSP modules (`bsp_watchdog`, `bsp_usb` + stub, `bsp_fpga` additions) → CMake → app diagnostics + console markers + DTR gate → restore + audit LED-only target from stash.
-2. Mocks + tests green: `python scripts/check_firmware_layers.py`, `./scripts/test_ceedling.sh` (100 % gate).
-3. `./scripts/build_firmware.sh` — both UF2s build; flash-budget gate still passes.
-4. Write `scripts/soak_serial.ps1`; dry-check param parsing without hardware.
-5. Docs updates; commit on `feature/6/investigate-firmware-lockup`.
-6. Hardware (user-run): flash LED-only image first (Run 0 on wall supply), then USB image soaks per the sequence; interpret via the decision trees.
+1. ~~BSP modules (`bsp_watchdog`, `bsp_usb` + stub, `bsp_fpga` additions) → CMake → app diagnostics + console markers + DTR gate → restore + audit LED-only target from stash.~~ Done.
+2. ~~Mocks + tests green: `python scripts/check_firmware_layers.py`, `./scripts/test_ceedling.sh` (100 % gate).~~ Done — 60/60 tests, line and branch rate 1.0.
+3. ~~`./scripts/build_firmware.sh` — both UF2s build; flash-budget gate still passes.~~ Done — 209 584 bytes of a 2 097 152 byte budget.
+4. ~~Write `scripts/soak_serial.ps1`; dry-check param parsing without hardware.~~ Done via `-ValidateOnly`.
+5. ~~Docs updates; commit on `feature/6/investigate-firmware-lockup`.~~ Done.
+6. **Next — hardware (user-run):** flash the LED-only image first (Run 0 on the wall supply, ≥ 2 h), then the USB image soaks per the sequence; interpret via the decision trees.
 
 Critical files: `firmware/CMakeLists.txt`, `firmware/src/application/application_console.c`, `firmware/src/application/application_runner.c`, `firmware/src/application/application_diagnostics.c` (new, seed from stash@{0}^3), `firmware/src/bsp/bsp_watchdog.{h,c}` + `bsp_usb.{h,c}` + `bsp_usb_stub.c` (new), `firmware/src/bsp/bsp_fpga.{h,c}` (health additions), `firmware/src/diagnostics/led_only_main.c` (restore), `scripts/soak_serial.ps1` (new), `scripts/flash.sh`, `docs/usb-cdc-debugging.md`, `README.md`.
 
@@ -177,3 +244,8 @@ strike it through in the hypothesis list rather than deleting it.
 | Date | Source (run / code finding) | Evidence | Verdict / plan change |
 | --- | --- | --- | --- |
 | 2026-08-01 | User observation | USB-disabled 2 Hz LED image freezes at ~45–75 min on wall charger, PC port, and battery pack; LED frozen; power cycle recovers | Mode 2 established; variant-A "pass" row in usb-cdc-debugging.md invalidated; plan restructured to two tracks |
+| 2026-08-01 | Code finding — stash audit (`stash@{0}^3`) | Restored `application_diagnostics.c` and `led_only_main.c` use `bsp_time_now_ms()` with wrap-safe signed comparison; no `time_us_32` or other 32-bit µs arithmetic anywhere in the stashed code | The 71.6 min wrap hypothesis has **no candidate site in project code**. It survives only as an SDK-internal possibility, testable solely by logging precise wall-clock time-to-freeze across Run 0 repetitions |
+| 2026-08-01 | Build finding — CMake/TinyUSB | Linking the marked `tinyusb_device` library alongside `pico_stdio_usb` silently disables CDC: `LIB_TINYUSB_DEVICE` makes the SDK's `pico_stdio_usb/include/tusb_config.h` stand down, so `CFG_TUD_ENABLED=0` and `usbd.c`/`cdc_device.c` compile to nothing | `forgix_bsp_usb` links `pico_stdio_usb` only. Recorded because the failure mode is a link error far from its cause, and because a *partial* version of this mistake could plausibly produce a working-but-degraded USB build — worth ruling out if TinyUSB behavior looks anomalous later |
+| 2026-08-01 | Design change during implementation | Original scratch layout gave slot 1 different meanings per image | Unified: slot 1 is always `activity_count`, FPGA counters packed into slot 2 bits 19–31. One decode table, and FPGA evidence is now retained in the **USB** image too — which the mode-1 tree's "marker=`FPGA_CHECK`" row depends on |
+| 2026-08-01 | Design change during implementation | FPGA readback originally compared against state written up to 500 ms earlier | The check now writes the commanded LED state and reads it back in the same step. Without this, an operator typing `color` mid-soak would forge an FPGA fault and trigger a spurious reconfiguration — corrupting exactly the mode-2 evidence the check exists to gather |
+| 2026-08-01 | Verification | Layer check 7/7 BSP headers; Ceedling 60/60 with line-rate 1.0 and branch-rate 1.0 on `src/application/`; both UF2s build at 209 584 B against the 2 MB gate; `FORGIX_FOREGROUND_USB_SERVICE=ON` builds and emits `bsp_usb_service` → `tud_task_ext` | Implementation complete and gated. Hardware runs outstanding; Run 0 is next |
