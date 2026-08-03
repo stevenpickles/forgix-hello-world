@@ -27,7 +27,7 @@ def main() -> int:
     main_source = (SOURCE_ROOT / "main.c").read_text(encoding="utf-8")
     require('#include "bsp.h"' in main_source, "main.c must initialize through bsp.h")
     require('#include "application.h"' in main_source, "main.c must dispatch through application.h")
-    require("bsp_init()" in main_source, "main.c must initialize the BSP")
+    require("BSP_Init()" in main_source, "main.c must initialize the BSP")
     require("application_init(" in main_source, "main.c must initialize the application")
     require("application_run()" in main_source, "main.c must run the application")
 

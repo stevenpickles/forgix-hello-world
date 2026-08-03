@@ -44,7 +44,7 @@ typedef struct {
 
 typedef struct {
     bool usb_present;
-    bsp_boot_reason_t boot_reason;
+    bsp_boot_reason boot_reason;
     uint32_t boot_marker;
     uint32_t boot_snapshot[BSP_WATCHDOG_SNAPSHOT_SLOTS];
 
@@ -141,7 +141,7 @@ static void apply_led(uint32_t now_ms) {
         uint8_t green = 0;
         uint8_t blue = 0;
         heartbeat_color(now_ms, &red, &green, &blue);
-        bsp_led_set(red, green, blue, HEARTBEAT_BRIGHTNESS);
+        BSP_LedSet(red, green, blue, HEARTBEAT_BRIGHTNESS);
         diagnostics.commanded = (bsp_led_state_t){
             .red = red,
             .green = green,
@@ -150,13 +150,13 @@ static void apply_led(uint32_t now_ms) {
             .enabled = true,
         };
     } else {
-        bsp_led_off();
+        BSP_LedOff();
         diagnostics.commanded.enabled = false;
     }
 }
 
 static bool led_readback_matches(void) {
-    bsp_led_state_t led = bsp_led_get();
+    bsp_led_state_t led = BSP_LedGet();
     return led.red == diagnostics.commanded.red && led.green == diagnostics.commanded.green &&
            led.blue == diagnostics.commanded.blue &&
            led.brightness == diagnostics.commanded.brightness &&
@@ -166,9 +166,9 @@ static bool led_readback_matches(void) {
 /* Runs immediately after the heartbeat LED write, so the readback measures the
    FPGA bus rather than whatever a `color` command left behind between polls. */
 static void check_fpga(uint32_t now_ms) {
-    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_FPGA_CHECK);
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_FPGA_CHECK);
 
-    if (bsp_fpga_cdone() && bsp_fpga_ping() == BSP_FPGA_DESIGN_ID && led_readback_matches()) {
+    if (BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID && led_readback_matches()) {
         return;
     }
 
@@ -177,10 +177,10 @@ static void check_fpga(uint32_t now_ms) {
     /* Recovery is opt-in. Reloading the bitstream drives CRESET_N and rewrites
        173 KB on every failing sample, which is itself a disturbance; keeping it
        off establishes what the fault does when left alone. */
-    if (!bsp_fpga_auto_reconfigure_enabled()) {
+    if (!BSP_FpgaAutoReconfigureEnabled()) {
         return;
     }
-    if (bsp_fpga_reconfigure()) {
+    if (BSP_FpgaReconfigure()) {
         ++diagnostics.fpga_reconfigures;
         diagnostics.recovery_toggles = RECOVERY_TOGGLES;
         /* The fresh configuration comes up with its registers cleared, so the
@@ -190,8 +190,8 @@ static void check_fpga(uint32_t now_ms) {
 }
 
 static void sample_usb(uint32_t now_ms) {
-    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT);
-    diagnostics.health = bsp_usb_health();
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT);
+    diagnostics.health = BSP_UsbHealth();
 
     if (diagnostics.health.activity_count != diagnostics.last_activity_count) {
         diagnostics.last_activity_count = diagnostics.health.activity_count;
@@ -215,9 +215,9 @@ static uint32_t packed_health(void) {
 }
 
 static void store_snapshots(void) {
-    bsp_watchdog_snapshot_set(0, diagnostics.uptime_seconds);
-    bsp_watchdog_snapshot_set(1, diagnostics.health.activity_count);
-    bsp_watchdog_snapshot_set(2, packed_health());
+    BSP_WatchdogSnapshotSet(0, diagnostics.uptime_seconds);
+    BSP_WatchdogSnapshotSet(1, diagnostics.health.activity_count);
+    BSP_WatchdogSnapshotSet(2, packed_health());
 }
 
 static const char *boot_reason_name(void) {
@@ -234,7 +234,7 @@ static const char *boot_reason_name(void) {
 }
 
 static void print_boot_report(void) {
-    bsp_console_printf("diag: boot=%s marker=%lu loop=%lu usb=%lu health=%08lX\n",
+    BSP_ConsolePrintf("diag: boot=%s marker=%lu loop=%lu usb=%lu health=%08lX\n",
                        boot_reason_name(), (unsigned long)diagnostics.boot_marker,
                        (unsigned long)diagnostics.boot_snapshot[0],
                        (unsigned long)diagnostics.boot_snapshot[1],
@@ -242,11 +242,11 @@ static void print_boot_report(void) {
 }
 
 static void print_live_report(void) {
-    bsp_console_printf("diag: t=%lus led=%u fpga_fail=%lu fpga_reconfig=%lu marker=%lu\n",
+    BSP_ConsolePrintf("diag: t=%lus led=%u fpga_fail=%lu fpga_reconfig=%lu marker=%lu\n",
                        (unsigned long)diagnostics.uptime_seconds, diagnostics.led_on,
                        (unsigned long)diagnostics.fpga_failures,
                        (unsigned long)diagnostics.fpga_reconfigures,
-                       (unsigned long)bsp_watchdog_marker_get());
+                       (unsigned long)BSP_WatchdogMarkerGet());
 }
 
 static uint32_t clamp_blinks(uint32_t marker) {
@@ -284,27 +284,27 @@ static boot_signature_t boot_signature(void) {
 static void blink_boot_report(void) {
     boot_signature_t signature = boot_signature();
 
-    bsp_led_off();
-    bsp_time_sleep_ms(BOOT_BLINK_GAP_MS);
+    BSP_LedOff();
+    BSP_TimeSleepMs(BOOT_BLINK_GAP_MS);
     for (uint32_t pass = 0; pass < BOOT_REPORT_REPEATS; ++pass) {
         for (uint32_t blink = 0; blink < signature.blinks; ++blink) {
-            bsp_led_set(signature.red, signature.green, signature.blue, HEARTBEAT_BRIGHTNESS);
-            bsp_time_sleep_ms(BOOT_BLINK_ON_MS);
-            bsp_led_off();
-            bsp_time_sleep_ms(BOOT_BLINK_OFF_MS);
+            BSP_LedSet(signature.red, signature.green, signature.blue, HEARTBEAT_BRIGHTNESS);
+            BSP_TimeSleepMs(BOOT_BLINK_ON_MS);
+            BSP_LedOff();
+            BSP_TimeSleepMs(BOOT_BLINK_OFF_MS);
         }
-        bsp_time_sleep_ms(BOOT_BLINK_GAP_MS);
+        BSP_TimeSleepMs(BOOT_BLINK_GAP_MS);
     }
 }
 
 void application_diagnostics_start(void) {
     diagnostics = (diagnostics_state_t){0};
-    diagnostics.usb_present = bsp_usb_present();
-    diagnostics.boot_reason = bsp_watchdog_boot_reason();
-    diagnostics.boot_marker = bsp_watchdog_marker_get();
+    diagnostics.usb_present = BSP_UsbPresent();
+    diagnostics.boot_reason = BSP_WatchdogBootReason();
+    diagnostics.boot_marker = BSP_WatchdogMarkerGet();
     for (uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot) {
-        diagnostics.boot_snapshot[slot] = bsp_watchdog_snapshot_get(slot);
-        bsp_watchdog_snapshot_set(slot, 0);
+        diagnostics.boot_snapshot[slot] = BSP_WatchdogSnapshotGet(slot);
+        BSP_WatchdogSnapshotSet(slot, 0);
     }
 
     /* Printing is unconditional: with no stdio backend linked it costs nothing,
@@ -316,7 +316,7 @@ void application_diagnostics_start(void) {
         blink_boot_report();
     }
 
-    uint32_t now_ms = bsp_time_now_ms();
+    uint32_t now_ms = BSP_TimeNowMs();
     diagnostics.led_on = true;
     diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
     diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
@@ -324,15 +324,15 @@ void application_diagnostics_start(void) {
     diagnostics.last_frame_ms = now_ms;
     apply_led(now_ms);
 
-    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
-    bsp_watchdog_start(APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS);
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
+    BSP_WatchdogStart(APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS);
 }
 
 void application_diagnostics_poll(void) {
-    bsp_watchdog_feed();
-    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
+    BSP_WatchdogFeed();
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
 
-    uint32_t now_ms = bsp_time_now_ms();
+    uint32_t now_ms = BSP_TimeNowMs();
     bool led_due = deadline_reached(now_ms, diagnostics.next_led_ms);
     bool sample_due = deadline_reached(now_ms, diagnostics.next_sample_ms);
 
@@ -363,13 +363,13 @@ void application_diagnostics_poll(void) {
         if (!diagnostics.usb_present) {
             print_live_report();
         }
-        bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
+        BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_LOOP);
     }
 }
 
 void application_diagnostics_print_report(void) {
     print_boot_report();
-    bsp_console_printf(
+    BSP_ConsolePrintf(
         "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
         "fpga_fail=%lu fpga_reconfig=%lu\n",
         (unsigned long)diagnostics.uptime_seconds, diagnostics.health.connected,

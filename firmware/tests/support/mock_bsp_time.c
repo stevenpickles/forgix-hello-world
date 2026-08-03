@@ -1,32 +1,105 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "mock_bsp_time.h"
 
-static uint32_t current_time_ms;
-static uint32_t sleep_count;
-static uint32_t sleep_total_ms;
 
-void mock_bsp_time_reset(void) {
-    current_time_ms = 0;
-    sleep_count = 0;
-    sleep_total_ms = 0;
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
+static uint32_t _currentTimeMs;
+static uint32_t _sleepCount;
+static uint32_t _sleepTotalMs;
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+/// <summary>
+///     Returns the clock to zero and forgets recorded sleeps. Tests call this in
+///     setUp so one test's elapsed time cannot leak into the next.
+/// </summary>
+void MOCK_BSP_TimeReset( void )
+{
+    _currentTimeMs = 0;
+    _sleepCount = 0;
+    _sleepTotalMs = 0;
 }
 
-void mock_bsp_time_set_ms(uint32_t now_ms) {
-    current_time_ms = now_ms;
+
+/// <summary>
+///     Places the clock at an absolute instant. Tests step it explicitly rather
+///     than letting it run, so a timing-dependent path is exercised at exactly
+///     the boundary the test cares about.
+/// </summary>
+void MOCK_BSP_TimeSetMs( const uint32_t nowMs )
+{
+    _currentTimeMs = nowMs;
 }
 
-uint32_t mock_bsp_time_sleep_count(void) {
-    return sleep_count;
+
+/// <summary>
+///     How many sleeps were requested. Together with the total this distinguishes
+///     one long sleep from several short ones, which the boot blink code depends
+///     on.
+/// </summary>
+/// <returns>
+///     Number of BSP_TimeSleepMs calls since the last reset.
+/// </returns>
+uint32_t MOCK_BSP_TimeSleepCount( void )
+{
+    return _sleepCount;
 }
 
-uint32_t mock_bsp_time_sleep_total_ms(void) {
-    return sleep_total_ms;
+
+/// <summary>
+///     Milliseconds the code under test asked to sleep for, none of which actually
+///     elapsed.
+/// </summary>
+/// <returns>
+///     Summed duration of every sleep request since the last reset.
+/// </returns>
+uint32_t MOCK_BSP_TimeSleepTotalMs( void )
+{
+    return _sleepTotalMs;
 }
 
-uint32_t bsp_time_now_ms(void) {
-    return current_time_ms;
+
+/// <summary>
+///     Returns whatever the test last set, and never advances on its own. Time
+///     only moves when a test moves it.
+/// </summary>
+/// <returns>
+///     The current fake clock reading.
+/// </returns>
+uint32_t BSP_TimeNowMs( void )
+{
+    return _currentTimeMs;
 }
 
-void bsp_time_sleep_ms(uint32_t duration_ms) {
-    ++sleep_count;
-    sleep_total_ms += duration_ms;
+
+/// <summary>
+///     Records the request and returns immediately. Sleeping for real would make
+///     the boot blink code take its full wall-clock duration in every run.
+/// </summary>
+void BSP_TimeSleepMs( const uint32_t durationMs )
+{
+    ++_sleepCount;
+    _sleepTotalMs += durationMs;
 }

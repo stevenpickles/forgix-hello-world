@@ -1,45 +1,137 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "mock_bsp_usb.h"
 
-static bool present;
-static bool connected;
-static bsp_usb_health_t health;
-static uint32_t service_count;
 
-void mock_bsp_usb_reset(void) {
-    present = true;
-    connected = true;
-    health = (bsp_usb_health_t){0};
-    service_count = 0;
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
+static bool _present;
+static bool _connected;
+static bsp_usb_health_t _health;
+static uint32_t _serviceCount;
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+/// <summary>
+///     Restores the default of a present, connected host with zeroed health, so
+///     console tests that do not care about USB behave as though it is simply
+///     working.
+/// </summary>
+void MOCK_BSP_UsbReset( void )
+{
+    _present = true;
+    _connected = true;
+    _health = (bsp_usb_health_t) { 0 };
+    _serviceCount = 0;
 }
 
-void mock_bsp_usb_set_present(bool value) {
-    present = value;
+
+/// <summary>
+///     Chooses which image the code under test believes it is running in, which is
+///     what selects the serial boot report or the LED blink code.
+/// </summary>
+void MOCK_BSP_UsbSetPresent( const bool value )
+{
+    _present = value;
 }
 
-void mock_bsp_usb_set_connected(bool value) {
-    connected = value;
+
+/// <summary>
+///     Drives the DTR gate that gags unsolicited output, so a test can prove the
+///     firmware stays quiet into a port nobody has opened.
+/// </summary>
+void MOCK_BSP_UsbSetConnected( const bool value )
+{
+    _connected = value;
 }
 
-void mock_bsp_usb_set_health(bsp_usb_health_t value) {
-    health = value;
+
+/// <summary>
+///     Installs a health snapshot wholesale, letting a test pose combinations the
+///     real stack would take a live host to produce, such as a frozen frame
+///     number alongside an otherwise healthy link.
+/// </summary>
+void MOCK_BSP_UsbSetHealth( const bsp_usb_health_t value )
+{
+    _health = value;
 }
 
-uint32_t mock_bsp_usb_service_count(void) {
-    return service_count;
+
+/// <summary>
+///     How many times the foreground loop pumped the stack. The number matters
+///     because servicing from the loop is conditional on a build option.
+/// </summary>
+/// <returns>
+///     Calls to BSP_UsbService since the last reset.
+/// </returns>
+uint32_t MOCK_BSP_UsbServiceCount( void )
+{
+    return _serviceCount;
 }
 
-bool bsp_usb_present(void) {
-    return present;
+
+/// <summary>
+///     Whatever the test last chose.
+/// </summary>
+/// <returns>
+///     The staged presence flag.
+/// </returns>
+bool BSP_UsbPresent( void )
+{
+    return _present;
 }
 
-bsp_usb_health_t bsp_usb_health(void) {
-    return health;
+
+/// <summary>
+///     Returns the staged snapshot unchanged; nothing here derives fields from one
+///     another, so a test can stage a deliberately inconsistent link.
+/// </summary>
+/// <returns>
+///     The staged health snapshot.
+/// </returns>
+bsp_usb_health_t BSP_UsbHealth( void )
+{
+    return _health;
 }
 
-bool bsp_usb_connected(void) {
-    return connected;
+
+/// <summary>
+///     Whatever the test last chose, independent of the presence flag so absent
+///     but connected can be posed if a test wants it.
+/// </summary>
+/// <returns>
+///     The staged connection flag.
+/// </returns>
+bool BSP_UsbConnected( void )
+{
+    return _connected;
 }
 
-void bsp_usb_service(void) {
-    ++service_count;
+
+/// <summary>
+///     Counts the call and does nothing else.
+/// </summary>
+void BSP_UsbService( void )
+{
+    ++_serviceCount;
 }

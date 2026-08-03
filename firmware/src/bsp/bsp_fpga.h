@@ -1,12 +1,49 @@
 #ifndef FORGIX_BSP_FPGA_H
 #define FORGIX_BSP_FPGA_H
 
-#include <stdbool.h>
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-enum { BSP_FPGA_DESIGN_ID = 0xb5 };
 
-typedef struct {
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
+#include "bsp_types.h"
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Define Directives
+**
+***************************************************************************************/
+
+
+/* Identity byte the loaded FPGA design answers a ping with. A mismatch here is
+   treated as "this is not the design we expect" rather than a bus fault, since
+   the bus itself is clearly working well enough to return something. */
+#define BSP_FPGA_DESIGN_ID ( (uint8_t) 0xb5u )
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
+typedef struct bsp_fpga_init_result_t_tag
+{
     bool configured;
     uint8_t design_id;
     bool ready;
@@ -14,28 +51,47 @@ typedef struct {
     bool status_pin;
 } bsp_fpga_init_result_t;
 
-bsp_fpga_init_result_t bsp_fpga_init(void);
-bool bsp_fpga_is_ready(void);
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
+bsp_fpga_init_result_t BSP_FpgaInit( void );
+
+bool BSP_FpgaIsReady( void );
 
 /* Configuration-done pin. Low at runtime means the FPGA lost its configuration,
    which the diagnostics layer treats as a recoverable hardware fault. */
-bool bsp_fpga_cdone(void);
+bool BSP_FpgaCdone( void );
 
 /* Reloads the embedded bitstream and revalidates the design ID. Returns true
    when the FPGA is responding again. */
-bool bsp_fpga_reconfigure(void);
+bool BSP_FpgaReconfigure( void );
 
 /* Whether the image was built to attempt recovery after a runtime FPGA fault.
    Reported as a value rather than a compile switch in the application layer, so
    both policies stay reachable and testable. */
-bool bsp_fpga_auto_reconfigure_enabled(void);
+bool BSP_FpgaAutoReconfigureEnabled( void );
 
-uint8_t bsp_fpga_ping(void);
-uint8_t bsp_fpga_read_status(void);
-bool bsp_fpga_status_pin(void);
-void bsp_fpga_reset(void);
+uint8_t BSP_FpgaPing( void );
 
-uint8_t bsp_fpga_read_register(uint8_t address);
-void bsp_fpga_write_register(uint8_t address, uint8_t value);
+uint8_t BSP_FpgaReadStatus( void );
+
+bool BSP_FpgaStatusPin( void );
+
+void BSP_FpgaReset( void );
+
+uint8_t BSP_FpgaReadRegister( const uint8_t address );
+
+void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

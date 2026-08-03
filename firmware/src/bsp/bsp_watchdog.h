@@ -1,24 +1,85 @@
 #ifndef FORGIX_BSP_WATCHDOG_H
 #define FORGIX_BSP_WATCHDOG_H
 
-#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-enum { BSP_WATCHDOG_SNAPSHOT_SLOTS = 3 };
 
-typedef enum {
-    BSP_BOOT_POWER_ON,
-    BSP_BOOT_BROWNOUT,
-    BSP_BOOT_WATCHDOG,
-    BSP_BOOT_OTHER,
-} bsp_boot_reason_t;
 
-void bsp_watchdog_start(uint32_t timeout_ms);
-void bsp_watchdog_feed(void);
-bsp_boot_reason_t bsp_watchdog_boot_reason(void);
 
-void bsp_watchdog_marker_set(uint32_t marker);
-uint32_t bsp_watchdog_marker_get(void);
-void bsp_watchdog_snapshot_set(uint32_t slot, uint32_t value);
-uint32_t bsp_watchdog_snapshot_get(uint32_t slot);
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
+#include "bsp_types.h"
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Define Directives
+**
+***************************************************************************************/
+
+
+/* How many retained 32-bit words the BSP reserves for the diagnostics layer
+   in the watchdog scratch registers that survive a reset. Slot indices run
+   0..SLOTS-1; also used as the bound of the snapshot arrays in application
+   code and the fakes, so it must stay a compile-time constant. */
+#define BSP_WATCHDOG_SNAPSHOT_SLOTS ( (uint32_t) 3u )
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
+/* Why the last boot ended, as reported by the reset controller. Read once at
+   startup so the diagnostics layer can tell a clean power-up apart from a
+   watchdog-forced reboot. */
+typedef enum bsp_boot_reason_tag
+{
+    BSP_BOOT_POWER_ON, /* normal power-up from cold */
+    BSP_BOOT_BROWNOUT, /* supply dropped out of tolerance and the reset controller reacted */
+    BSP_BOOT_WATCHDOG, /* the watchdog timer expired without being fed */
+    BSP_BOOT_OTHER,    /* reset cause the BSP does not classify */
+} bsp_boot_reason;
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
+void BSP_WatchdogStart( const uint32_t timeoutMs );
+
+void BSP_WatchdogFeed( void );
+
+bsp_boot_reason BSP_WatchdogBootReason( void );
+
+void BSP_WatchdogMarkerSet( const uint32_t marker );
+
+uint32_t BSP_WatchdogMarkerGet( void );
+
+void BSP_WatchdogSnapshotSet( const uint32_t slot, const uint32_t value );
+
+uint32_t BSP_WatchdogSnapshotGet( const uint32_t slot );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,45 +1,85 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp_memory.h"
 
 #include "hardware/flash.h"
-
-#ifndef FORGIX_QSPI_CS1_GPIO
-#define FORGIX_QSPI_CS1_GPIO 0
-#endif
-
 #include "hardware/regs/addressmap.h"
 #include "hardware/sync.h"
-
 #include "pico/stdlib.h"
 
 #if FORGIX_QSPI_PSRAM
 #include "hardware/psram.h"
 #endif
 
-/* QMI chip select 1 is mapped here, immediately above the 16 MB chip-select-0
-   window. See the PSRAM region in the SDK linker script. */
-enum { PSRAM_WINDOW_BASE = 0x11000000u };
 
-/* AP Memory's known-good-die byte, at offset 5 of the Read-ID response. */
-enum { EXPECTED_KGD = 0x5du };
+
+
+/***************************************************************************************
+**
+** Compiler Define Directives
+**
+***************************************************************************************/
+
+
+#ifndef FORGIX_QSPI_CS1_GPIO
+#define FORGIX_QSPI_CS1_GPIO 0
+#endif
+
+/* QMI chip select 1 is mapped here, immediately above the 16 MB chip-select-0
+   window. See the PSRAM region in the SDK linker script. This is the XIP
+   address the chip-select-1 PSRAM appears at once it has been mapped. */
+#define PSRAM_WINDOW_BASE ( (uint32_t) 0x11000000u )
+
+/* AP Memory's known-good-die byte, at offset 5 of the Read-ID response: the
+   value the datasheet says the fitted part reports. A mismatch here means an
+   unexpected vendor answered, not that the memory itself is broken. */
+#define EXPECTED_KGD ( (uint8_t) 0x5du )
+
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
 
 /* Filled in by the psram_eid_to_size override below, which the SDK calls from
    runtime_init. Written before main runs, so plain statics are sufficient. */
-static uint8_t reported_kgd;
-static uint8_t reported_eid;
+static uint8_t _reportedKgd;
+static uint8_t _reportedEid;
 
-/* The boot flash is proven readable by the fact that this code is executing from
-   it, so the useful check is that it still reads back coherently: a stack
-   pointer in SRAM and a reset vector inside the flash window. Bus contention on
-   the shared QSPI lines corrupts reads rather than stopping them, so a garbled
-   vector table is exactly what a CS1 problem looks like from here. */
-static bool flash_reads_coherently(uint32_t flash_bytes) {
-    const uint32_t *vectors = (const uint32_t *)XIP_BASE;
-    uint32_t stack_pointer = vectors[0];
-    uint32_t reset_vector = vectors[1];
 
-    return stack_pointer > SRAM_BASE && stack_pointer <= SRAM_END &&
-           reset_vector >= XIP_BASE && reset_vector < XIP_BASE + flash_bytes;
-}
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bool _FlashReadsCoherently( const uint32_t flashBytes );
+#if FORGIX_QSPI_PSRAM
+static bool _ForcePsramFromDatasheet( void );
+static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Interrupt Handler Overrides
+**
+***************************************************************************************/
+
 
 #if FORGIX_QSPI_PSRAM
 /* The SDK declares psram_eid_to_size weak so applications can support parts it
@@ -49,31 +89,132 @@ static bool flash_reads_coherently(uint32_t flash_bytes) {
    runtime_init, and otherwise discarded once the size has been derived.
    Capturing them here costs no additional bus transaction and cannot disturb the
    device, which is precisely what every attempt to re-read them later did. */
-size_t psram_eid_to_size(uint8_t kgd, uint8_t eid) {
-    reported_kgd = kgd;
-    reported_eid = eid;
+/// <summary>
+///     Overrides the SDK's weak hook to capture the raw identity bytes in passing.
+///     The mapping is reproduced exactly; the point is the arguments, which exist
+///     nowhere else and are discarded once the SDK has derived a size.
+/// </summary>
+/// <returns>
+///     The device size in bytes, or zero if the vendor byte was unrecognised.
+/// </returns>
+size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
+{
+    _reportedKgd = kgd;
+    _reportedEid = eid;
 
-    if (kgd != EXPECTED_KGD) {
+    if ( kgd != EXPECTED_KGD )
+    {
         return 0;
     }
 
     /* Density lives in the top three bits of the EID, and the mapping is the
        SDK's, kept identical so overriding the hook changes nothing but
        observability. */
-    size_t psram_size = 1024u * 1024u;
-    uint8_t size_id = eid >> 5;
-    if (size_id == 4u) {
-        psram_size *= 16u;
-    } else if (eid == 0x26u || size_id == 2u || size_id == 3u) {
-        psram_size *= 8u;
-    } else if (size_id == 1u) {
-        psram_size *= 4u;
-    } else {
-        psram_size *= 2u;
+    uint32_t psramSize = 1024u * 1024u;
+    const uint8_t sizeId = eid >> 5;
+    if ( sizeId == 4u )
+    {
+        psramSize *= 16u;
     }
-    return psram_size;
+    else if ( eid == 0x26u || sizeId == 2u || sizeId == 3u )
+    {
+        psramSize *= 8u;
+    }
+    else if ( sizeId == 1u )
+    {
+        psramSize *= 4u;
+    }
+    else
+    {
+        psramSize *= 2u;
+    }
+    return (size_t) psramSize;
+}
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+/// <summary>
+///     Reports both QSPI memories together, because they share SCLK and SD0..SD3 --
+///     a fault on one shows up as the other misbehaving, and separate reports
+///     would hide that.
+/// </summary>
+/// <returns>
+///     Sizes, pass/fail, and the raw identity bytes captured during detection.
+/// </returns>
+bsp_memory_report_t BSP_MemoryCheck( void )
+{
+    bsp_memory_report_t report = { 0 };
+
+    report.psram_kgd = _reportedKgd;
+    report.psram_eid = _reportedEid;
+    report.flash_bytes = PICO_FLASH_SIZE_BYTES;
+    report.flash_ok = _FlashReadsCoherently( report.flash_bytes );
+
+#if FORGIX_QSPI_PSRAM
+    if ( psram_is_available() )
+    {
+        report.psram_bytes = (uint32_t) psram_get_size();
+        report.psram_ok = _PsramHoldsAPattern( report.psram_bytes );
+    }
+    else if ( _ForcePsramFromDatasheet() )
+    {
+        /* Auto-detection only compares the identity byte. This device answers
+           Read-ID selectively and correctly, it just does not report AP Memory's
+           vendor, so ask whether it works as memory rather than whether it says
+           the right name. */
+        report.psram_forced = true;
+        report.psram_bytes = (uint32_t) psram_get_size();
+        report.psram_ok = _PsramHoldsAPattern( report.psram_bytes );
+    }
+#endif
+
+    return report;
 }
 
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+/* The boot flash is proven readable by the fact that this code is executing from
+   it, so the useful check is that it still reads back coherently: a stack
+   pointer in SRAM and a reset vector inside the flash window. Bus contention on
+   the shared QSPI lines corrupts reads rather than stopping them, so a garbled
+   vector table is exactly what a CS1 problem looks like from here. */
+/// <summary>
+///     Checks the vector table rather than whether flash reads at all, which is
+///     already proven by this code executing. Bus contention corrupts reads
+///     instead of stopping them, so a garbled vector table is what a chip-select
+///     fault looks like from here.
+/// </summary>
+/// <returns>
+///     True if the stack pointer and reset vector are both plausible.
+/// </returns>
+static bool _FlashReadsCoherently( const uint32_t flashBytes )
+{
+    const uint32_t *ptr_vectors = (const uint32_t *) XIP_BASE;
+    const uint32_t stackPointer = ptr_vectors[ 0 ];
+    const uint32_t resetVector = ptr_vectors[ 1 ];
+
+    return stackPointer > SRAM_BASE && stackPointer <= SRAM_END && resetVector >= XIP_BASE &&
+           resetVector < XIP_BASE + flashBytes;
+}
+
+#if FORGIX_QSPI_PSRAM
 /* Configures chip select 1 from the datasheet instead of from what the device
    claims to be, then brings it up.
 
@@ -83,17 +224,30 @@ size_t psram_eid_to_size(uint8_t kgd, uint8_t eid) {
 
    psram_reinitialize is documented as unsafe against concurrent XIP, so it runs
    with interrupts off -- handlers live in flash. */
-static bool force_psram_from_datasheet(void) {
-    flash_devinfo_set_cs_gpio(1, FORGIX_QSPI_CS1_GPIO);
-    flash_devinfo_set_cs_size(1, FLASH_DEVINFO_SIZE_2M);
+/// <summary>
+///     Brings chip select 1 up from the datasheet rather than from what the device
+///     claims to be, for a part that works but reports an unexpected vendor.
+///     Runs with interrupts off because psram_reinitialize is unsafe against
+///     concurrent XIP and handlers live in flash.
+/// </summary>
+/// <returns>
+///     True if the device came up and reports a non-zero size.
+/// </returns>
+static bool _ForcePsramFromDatasheet( void )
+{
+    flash_devinfo_set_cs_gpio( 1, FORGIX_QSPI_CS1_GPIO );
+    flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_2M );
 
-    if (psram_configure_params(84u * 1000u * 1000u, 3000u, 50u) != PICO_OK) {
+    if ( psram_configure_params( 84u * 1000u * 1000u, 3000u, 50u ) != PICO_OK )
+    {
         return false;
     }
 
-    uint32_t interrupts = save_and_disable_interrupts();
-    int result = psram_reinitialize();
-    restore_interrupts(interrupts);
+    const uint32_t interrupts = save_and_disable_interrupts();
+    /* int is the SDK's own return type for psram_reinitialize; kept as-is
+       since that is the honest type at this boundary. */
+    const int result = psram_reinitialize();
+    restore_interrupts( interrupts );
 
     return result == PICO_OK && psram_get_size() > 0u;
 }
@@ -101,51 +255,38 @@ static bool force_psram_from_datasheet(void) {
 /* Writes every pattern before reading any of them back. Checking each write
    immediately would pass against a bus that merely echoes the last value, and
    would not catch address aliasing from a device smaller than it reports. */
-static bool psram_holds_a_pattern(uint32_t size_bytes) {
-    if (size_bytes < sizeof(uint32_t)) {
+/// <summary>
+///     Writes every pattern before reading any back. Checking each write
+///     immediately would pass against a bus that merely echoes the last value,
+///     and would miss address aliasing from a device smaller than it claims.
+/// </summary>
+/// <returns>
+///     True if all three patterns survived at their addresses.
+/// </returns>
+static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
+{
+    if ( sizeBytes < (uint32_t) sizeof( uint32_t ) )
+    {
         return false;
     }
 
-    volatile uint32_t *window = (volatile uint32_t *)PSRAM_WINDOW_BASE;
-    const uint32_t words = size_bytes / sizeof(uint32_t);
-    const uint32_t indices[] = {0, words / 2u, words - 1u};
-    const uint32_t patterns[] = {0xa5a5a5a5u, 0x5a5a5a5au, 0xdeadbeefu};
-    const uint32_t count = sizeof indices / sizeof indices[0];
+    volatile uint32_t *const ptr_window = (volatile uint32_t *) PSRAM_WINDOW_BASE;
+    const uint32_t words = sizeBytes / (uint32_t) sizeof( uint32_t );
+    const uint32_t indices[] = { 0, words / 2u, words - 1u };
+    const uint32_t patterns[] = { 0xa5a5a5a5u, 0x5a5a5a5au, 0xdeadbeefu };
+    const uint32_t count = (uint32_t) ( sizeof indices / sizeof indices[ 0 ] );
 
-    for (uint32_t index = 0; index < count; ++index) {
-        window[indices[index]] = patterns[index];
+    for ( uint32_t index = 0; index < count; ++index )
+    {
+        ptr_window[ indices[ index ] ] = patterns[ index ];
     }
-    for (uint32_t index = 0; index < count; ++index) {
-        if (window[indices[index]] != patterns[index]) {
+    for ( uint32_t index = 0; index < count; ++index )
+    {
+        if ( ptr_window[ indices[ index ] ] != patterns[ index ] )
+        {
             return false;
         }
     }
     return true;
 }
 #endif
-
-bsp_memory_report_t bsp_memory_check(void) {
-    bsp_memory_report_t report = {0};
-
-    report.psram_kgd = reported_kgd;
-    report.psram_eid = reported_eid;
-    report.flash_bytes = PICO_FLASH_SIZE_BYTES;
-    report.flash_ok = flash_reads_coherently(report.flash_bytes);
-
-#if FORGIX_QSPI_PSRAM
-    if (psram_is_available()) {
-        report.psram_bytes = (uint32_t)psram_get_size();
-        report.psram_ok = psram_holds_a_pattern(report.psram_bytes);
-    } else if (force_psram_from_datasheet()) {
-        /* Auto-detection only compares the identity byte. This device answers
-           Read-ID selectively and correctly, it just does not report AP Memory's
-           vendor, so ask whether it works as memory rather than whether it says
-           the right name. */
-        report.psram_forced = true;
-        report.psram_bytes = (uint32_t)psram_get_size();
-        report.psram_ok = psram_holds_a_pattern(report.psram_bytes);
-    }
-#endif
-
-    return report;
-}

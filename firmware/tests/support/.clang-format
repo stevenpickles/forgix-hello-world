@@ -1,0 +1,72 @@
+# Formatting for the hand-written BSP fakes.
+#
+# Identical to firmware/src/bsp/.clang-format. These files stand in for the BSP
+# at link time and are read side by side with it, so they follow the same
+# layout. Scoped to this directory because the test files one level up are
+# still K&R.
+#
+# See firmware/src/bsp/.clang-format for the full rationale, including the two
+# rules that gave way to the formatter, and docs/bsp-style-rubric.md for what
+# clang-format cannot express at all -- everything about naming, which is
+# clang-tidy territory rather than a formatter's.
+#
+# Apply with scripts/format_bsp.sh; `--check` verifies without writing.
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Allman everywhere except the extern "C" wrapper. See firmware/src/bsp for why
+# this is spelled out rather than using the Allman preset.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+IndentExternBlock: NoIndent
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+ColumnLimit: 100
+
+# Rubric A7's banner rhythm needs four; the default of 1 flattens it.
+MaxEmptyLinesToKeep: 4
+
+# Allman exists so a block advertises its extent. Collapsing one back onto a
+# single line defeats that, so every short-form allowance is off.
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# `const char *const text`, not `const char* const text`.
+PointerAlignment: Right
+
+# Rubric C1/C3/C4: `BSP_Foo( const uint8_t id )`, `list[ id ]`, `(uint32_t) value`.
+SpacesInParentheses: true
+SpacesInSquareBrackets: true
+SpaceAfterCStyleCast: true
+
+# Includes are grouped by hand -- own header first, then SDK, then system --
+# and the blank lines between the groups carry meaning.
+SortIncludes: Never
+
+# Kept for intent, though SpacesInParentheses wins over it for braced lists.
+Cpp11BracedListStyle: true

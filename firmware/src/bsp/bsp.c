@@ -1,7 +1,24 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp.h"
 
 #include "hardware/gpio.h"
 #include "hardware/structs/pads_bank0.h"
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Define Directives
+**
+***************************************************************************************/
+
 
 /* GPIO 0 is XIP_CS1n, the chip select for the secondary QSPI memory. That is the
    configuration Raspberry Pi documents in "Hardware design with RP2350" section
@@ -32,33 +49,81 @@
 #define FORGIX_QSPI_CS1_GPIO 0
 #endif
 
-static void configure_qspi_cs1(void) {
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static void _ConfigureQspiCs1( void );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+/// <summary>
+///     Brings the board up in the one order that works: the chip select fix
+///     first, because it decides whether flash reads stay coherent at all, then
+///     the console so later failures can be reported, then the FPGA.
+/// </summary>
+/// <returns>
+///     What the FPGA bring-up found, which the application uses to decide
+///     whether the board is fit to run.
+/// </returns>
+bsp_init_result_t BSP_Init( void )
+{
+    _ConfigureQspiCs1();
+    BSP_ConsoleInit();
+    return BSP_FpgaInit();
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+/// <summary>
+///     Takes GPIO 0 off its power-up pull-down and holds it deasserted, standing
+///     in for the 10K pull-up the board does not have. Runs before anything
+///     touches flash, since the fault it mitigates corrupts XIP fetches.
+/// </summary>
+static void _ConfigureQspiCs1( void )
+{
     /* RP2350-E14: the bootrom clears pad isolation for GPIO 0 rather than the
        configured chip select. Clear it explicitly so this does not depend on
        that erratum happening to name the right pin. */
-    hw_clear_bits(&pads_bank0_hw->io[FORGIX_QSPI_CS1_GPIO], PADS_BANK0_GPIO0_ISO_BITS);
+    hw_clear_bits( &pads_bank0_hw->io[ FORGIX_QSPI_CS1_GPIO ], PADS_BANK0_GPIO0_ISO_BITS );
 
     /* The pull is what matters most: swapping the power-up pull-down for a
        pull-up is the only stand-in available for the 10K resistor the board
        cannot fit, and on an active-low chip select it is the difference between
        the device being selected at rest and deselected at rest. */
-    gpio_set_pulls(FORGIX_QSPI_CS1_GPIO, true, false);
+    gpio_set_pulls( FORGIX_QSPI_CS1_GPIO, true, false );
 
 #if !FORGIX_QSPI_PSRAM
     /* Nothing is going to use the device, so hold it firmly deasserted. */
-    gpio_init(FORGIX_QSPI_CS1_GPIO);
+    gpio_init( FORGIX_QSPI_CS1_GPIO );
     /* Drive the output register before enabling the driver, so the pin never
        presents a low -- a momentary low is a chip select. */
-    gpio_put(FORGIX_QSPI_CS1_GPIO, 1);
-    gpio_set_dir(FORGIX_QSPI_CS1_GPIO, GPIO_OUT);
+    gpio_put( FORGIX_QSPI_CS1_GPIO, 1 );
+    gpio_set_dir( FORGIX_QSPI_CS1_GPIO, GPIO_OUT );
 #endif
     /* With FORGIX_QSPI_PSRAM the pin is left alone beyond the pull: runtime_init
        has already given it GPIO_FUNC_XIP_CS1 and the QMI drives it, idle high.
        Taking it back to SIO here would cut the DRAM off the bus. */
-}
-
-bsp_init_result_t bsp_init(void) {
-    configure_qspi_cs1();
-    bsp_console_init();
-    return bsp_fpga_init();
 }

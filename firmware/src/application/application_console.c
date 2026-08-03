@@ -41,13 +41,13 @@ static bool deadline_reached(uint32_t now_ms, uint32_t deadline_ms) {
    marker is set immediately before the call. After a watchdog reset the
    retained marker names the path the foreground was blocked in. */
 static void mark_write(void) {
-    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE);
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE);
 }
 
 static void print_prompt(void) {
     if (!console.quiet) {
         mark_write();
-        bsp_console_printf("forgix> ");
+        BSP_ConsolePrintf("forgix> ");
     }
 }
 
@@ -66,29 +66,29 @@ static void stop_active_status(void) {
     console.status_mode = STATUS_DISABLED;
 }
 
-static void echo_character(int character) {
+static void echo_character(int16_t character) {
     if (!console.quiet && console.echo_enabled) {
         mark_write();
-        bsp_console_putchar(character);
+        BSP_ConsolePutChar((uint8_t)character);
     }
 }
 
 static void erase_character(void) {
     if (!console.quiet && console.echo_enabled) {
         mark_write();
-        bsp_console_printf("\b \b");
+        BSP_ConsolePrintf("\b \b");
     }
 }
 
 static void complete_line(void) {
     if (!console.quiet && console.echo_enabled) {
         mark_write();
-        bsp_console_printf("\r\n");
+        BSP_ConsolePrintf("\r\n");
     }
 
     if (console.used) {
         console.line[console.used] = 0;
-        bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_COMMAND);
+        BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_COMMAND);
         application_process_command(console.line);
         console.used = 0;
     }
@@ -103,7 +103,7 @@ static void cancel_line(void) {
     console.used = 0;
     if (!console.quiet) {
         mark_write();
-        bsp_console_printf("^C\r\n");
+        BSP_ConsolePrintf("^C\r\n");
     }
     schedule_idle_status();
     print_prompt();
@@ -112,11 +112,11 @@ static void cancel_line(void) {
 static void redraw_line(void) {
     if (!console.quiet) {
         mark_write();
-        bsp_console_printf("\r\nforgix> %.*s", (int)console.used, console.line);
+        BSP_ConsolePrintf("\r\nforgix> %.*s", (int)console.used, console.line);
     }
 }
 
-static void process_character(int character) {
+static void process_character(int16_t character) {
     if (character == '\n' && console.swallow_lf) {
         console.swallow_lf = false;
         return;
@@ -160,15 +160,15 @@ void application_console_start(void) {
         .status_mode = STATUS_BOOT,
         .status_period_ms = APPLICATION_BOOT_STATUS_PERIOD_MS,
     };
-    console.current_time_ms = bsp_time_now_ms();
+    console.current_time_ms = BSP_TimeNowMs();
     console.next_status_ms = console.current_time_ms + console.status_period_ms;
     print_prompt();
 }
 
 void application_console_poll(void) {
-    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ);
-    int character = bsp_console_getchar_timeout_us(1000);
-    console.current_time_ms = bsp_time_now_ms();
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ);
+    int16_t character = BSP_ConsoleGetCharTimeoutUs(1000);
+    console.current_time_ms = BSP_TimeNowMs();
 
     if (character != BSP_CONSOLE_TIMEOUT) {
         process_character(character);
@@ -179,12 +179,12 @@ void application_console_poll(void) {
        untimed stdio flush loop. */
     if (console.quiet || console.used || console.status_mode == STATUS_DISABLED ||
             !deadline_reached(console.current_time_ms, console.next_status_ms) ||
-            !bsp_usb_connected()) {
+            !BSP_UsbConnected()) {
         return;
     }
 
     mark_write();
-    bsp_console_printf("\r\n");
+    BSP_ConsolePrintf("\r\n");
     application_print_status();
     print_prompt();
     console.next_status_ms = console.current_time_ms + console.status_period_ms;

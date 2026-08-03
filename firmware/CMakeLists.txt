@@ -25,7 +25,7 @@ add_custom_command(
   VERBATIM)
 
 # When enabled, TinyUSB is serviced from the foreground loop through
-# bsp_usb_service() and the SDK's background IRQ task is switched off. Never
+# BSP_UsbService() and the SDK's background IRQ task is switched off. Never
 # enable one without the other: two owners of tud_task() corrupt stack state.
 option(FORGIX_FOREGROUND_USB_SERVICE
   "Service TinyUSB from the foreground loop instead of the SDK background task" OFF)

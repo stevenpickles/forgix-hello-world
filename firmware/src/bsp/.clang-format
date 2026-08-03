@@ -1,0 +1,96 @@
+# Formatting for the BSP package. The full rules, including everything
+# clang-format cannot express, live in docs/bsp-style-rubric.md; this file is
+# the subset a formatter can apply. scripts/check_bsp_style.py scores the rest.
+#
+# Scoped to this directory on purpose. clang-format reads the nearest config
+# walking up from each file, and the application layer above us is still K&R,
+# so a repo-root version of this file would quietly reformat code nobody asked
+# to change. firmware/tests/support/ carries an identical copy for the fakes.
+#
+# Run it with scripts/format_bsp.sh, which locates clang-format even when the
+# Windows LLVM installer leaves it off PATH. `--check` verifies without writing.
+# Verified against clang-format 22.1.7; the BSP is a fixed point under it.
+#
+# Two rules gave way to the formatter, because a rule a machine cannot reproduce
+# is not a rule -- it is a habit that survives until someone runs a tool.
+#
+# 1. A multi-line initializer keeps its brace on the `=` line. Braced lists are
+#    governed by Cpp11BracedListStyle, which controls spacing rather than brace
+#    placement, and there is no AfterInitializer under BraceWrapping. Affects
+#    the initializers in bsp_button.c, bsp_led.c and bsp_usb.c.
+#
+# 2. Inline braced values are written `{ 0 }` rather than `{0}`. That is a side
+#    effect of the inner-paren spacing below, not an independent choice:
+#    SpacesInParentheses also spaces braced initializer lists, and no value of
+#    Cpp11BracedListStyle overrides it. The comms-v4 reference writes them tight,
+#    so this is a deliberate deviation, taken to keep the format reproducible.
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Allman everywhere except the extern "C" wrapper, which the reference keeps as
+# `extern "C" {` on one line. Spelled out rather than `BreakBeforeBraces: Allman`
+# because that preset forces AfterExternBlock on with no way to override it.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# The extern "C" block wraps the whole header, so indenting inside it would
+# indent the entire file.
+IndentExternBlock: NoIndent
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+ColumnLimit: 100
+
+# Rubric A7 spaces section banners with four blank lines before and two after.
+# The default of 1 silently flattens that rhythm.
+MaxEmptyLinesToKeep: 4
+
+# Allman exists so a block advertises its extent. Collapsing one back onto a
+# single line defeats that, so every short-form allowance is off.
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# `const char *const text`, not `const char* const text`.
+PointerAlignment: Right
+
+# Rubric C1/C3/C4: `BSP_Foo( const uint8_t id )`, `list[ id ]`, `(uint32_t) value`.
+# SpacesInParentheses is the pre-17 spelling; clang-format 17+ calls it
+# SpacesInParens and wants `Custom` plus a SpacesInParensOptions block. Written
+# the older way because that is what the widest range of versions accepts -- 22
+# still honours it, resolving to Custom with Other and InConditionalStatements
+# on and InEmptyParentheses off, which is exactly rubric C1 and C2.
+SpacesInParentheses: true
+SpacesInSquareBrackets: true
+SpaceAfterCStyleCast: true
+
+# Includes are grouped by hand -- own header first, then SDK, then system --
+# and the blank lines between the groups carry meaning.
+SortIncludes: Never
+
+# Kept for intent, though SpacesInParentheses above wins over it for braced
+# lists -- see note 2 in the header. clang-format 21 turned this from a bool
+# into an enum; `true` still parses and resolves to AlignFirstComment.
+Cpp11BracedListStyle: true

@@ -9,7 +9,7 @@ selected from reset and contended with the boot flash, corrupting XIP fetches
 and hanging the core. Raspberry Pi's *Hardware design with RP2350* section 3.2
 requires a 10K pull-up on that net; this board has no footprint for one.
 
-`bsp_init()` now swaps the pull-down for a pull-up. Against baselines of 240,
+`BSP_Init()` now swaps the pull-down for a pull-up. Against baselines of 240,
 520 and 554 seconds, the fixed image ran the full two hours twice -- once with
 the secondary memory deselected, once with it live. It remains a mitigation:
 the window before the first instruction executes cannot be covered from
@@ -196,7 +196,7 @@ names where the foreground stopped.
 | Value | Marker | Set before |
 | ---: | --- | --- |
 | 1 | `LOOP` | Each foreground iteration, and after each completed sample |
-| 2 | `CONSOLE_READ` | `bsp_console_getchar_timeout_us` |
+| 2 | `CONSOLE_READ` | `BSP_ConsoleGetCharTimeoutUs` |
 | 3 | `CONSOLE_WRITE` | Every console write, all of which reach the SDK's untimed stdio flush |
 | 4 | `COMMAND` | Command dispatch |
 | 5 | `USB_SNAPSHOT` | Reading USB health |

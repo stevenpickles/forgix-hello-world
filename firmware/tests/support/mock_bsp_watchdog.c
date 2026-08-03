@@ -1,109 +1,288 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "mock_bsp_watchdog.h"
 
-static bsp_boot_reason_t boot_reason;
-static uint32_t marker;
-static uint32_t snapshots[BSP_WATCHDOG_SNAPSHOT_SLOTS];
-static bool started;
-static uint32_t timeout_ms;
-static uint32_t feed_count;
-static uint32_t marker_history[MOCK_BSP_WATCHDOG_MARKER_HISTORY];
-static uint32_t marker_writes;
 
-void mock_bsp_watchdog_reset(void) {
-    boot_reason = BSP_BOOT_POWER_ON;
-    marker = 0;
-    for (uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot) {
-        snapshots[slot] = 0;
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
+static bsp_boot_reason _bootReason;
+static uint32_t _marker;
+static uint32_t _snapshots[ BSP_WATCHDOG_SNAPSHOT_SLOTS ];
+static bool _started;
+static uint32_t _timeoutMs;
+static uint32_t _feedCount;
+static uint32_t _markerHistory[ MOCK_BSP_WATCHDOG_MARKER_HISTORY ];
+static uint32_t _markerWrites;
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+/// <summary>
+///     Clears both the retained state and the record of what the code under test
+///     did, which are separate concerns: one models what survived a reset, the
+///     other is the test's observation of this run.
+/// </summary>
+void MOCK_BSP_WatchdogReset( void )
+{
+    _bootReason = BSP_BOOT_POWER_ON;
+    _marker = 0;
+    for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
+    {
+        _snapshots[ slot ] = 0;
     }
-    started = false;
-    timeout_ms = 0;
-    feed_count = 0;
-    marker_writes = 0;
+    _started = false;
+    _timeoutMs = 0;
+    _feedCount = 0;
+    _markerWrites = 0;
 }
 
-void mock_bsp_watchdog_set_boot_reason(bsp_boot_reason_t reason) {
-    boot_reason = reason;
+
+/// <summary>
+///     Poses the cause of the boot the code is waking from.
+/// </summary>
+void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason reason )
+{
+    _bootReason = reason;
 }
 
-void mock_bsp_watchdog_set_retained(uint32_t retained_marker, uint32_t slot0, uint32_t slot1,
-                                    uint32_t slot2) {
-    marker = retained_marker;
-    snapshots[0] = slot0;
-    snapshots[1] = slot1;
-    snapshots[2] = slot2;
+
+/// <summary>
+///     Stages the marker and snapshots as a prior boot would have left them, so
+///     the boot report can be tested without actually resetting anything.
+/// </summary>
+void MOCK_BSP_WatchdogSetRetained( const uint32_t retainedMarker, const uint32_t slot0,
+                                   const uint32_t slot1, const uint32_t slot2 )
+{
+    _marker = retainedMarker;
+    _snapshots[ 0 ] = slot0;
+    _snapshots[ 1 ] = slot1;
+    _snapshots[ 2 ] = slot2;
 }
 
-bool mock_bsp_watchdog_started(void) {
-    return started;
+
+/// <summary>
+///     Whether the code under test armed the watchdog. Arming is irreversible on
+///     hardware, so tests assert it happens exactly once and at the right point.
+/// </summary>
+/// <returns>
+///     True once BSP_WatchdogStart has been called.
+/// </returns>
+bool MOCK_BSP_WatchdogStarted( void )
+{
+    return _started;
 }
 
-uint32_t mock_bsp_watchdog_timeout_ms(void) {
-    return timeout_ms;
+
+/// <summary>
+///     The window the code asked for, which the real hardware would hold it to.
+/// </summary>
+/// <returns>
+///     The requested timeout, or zero if never armed.
+/// </returns>
+uint32_t MOCK_BSP_WatchdogTimeoutMs( void )
+{
+    return _timeoutMs;
 }
 
-uint32_t mock_bsp_watchdog_feed_count(void) {
-    return feed_count;
+
+/// <summary>
+///     How many times the loop fed the watchdog. A count rather than a flag,
+///     because feeding too often is as much a bug as not feeding at all.
+/// </summary>
+/// <returns>
+///     Feeds since the last reset.
+/// </returns>
+uint32_t MOCK_BSP_WatchdogFeedCount( void )
+{
+    return _feedCount;
 }
 
-uint32_t mock_bsp_watchdog_marker(void) {
-    return marker;
+
+/// <summary>
+///     The marker as it stands now, which is the last one written.
+/// </summary>
+/// <returns>
+///     The current marker value.
+/// </returns>
+uint32_t MOCK_BSP_WatchdogMarker( void )
+{
+    return _marker;
 }
 
-uint32_t mock_bsp_watchdog_snapshot(uint32_t slot) {
-    return slot < BSP_WATCHDOG_SNAPSHOT_SLOTS ? snapshots[slot] : 0;
+
+/// <summary>
+///     Reads a staged or written snapshot slot, mirroring the real out-of-range
+///     behaviour so a test cannot pass against the fake and fail on hardware.
+/// </summary>
+/// <returns>
+///     The slot contents, or zero if the slot is out of range.
+/// </returns>
+uint32_t MOCK_BSP_WatchdogSnapshot( const uint32_t slot )
+{
+    if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
+    {
+        return _snapshots[ slot ];
+    }
+    return 0;
 }
 
-uint32_t mock_bsp_watchdog_marker_writes(void) {
-    return marker_writes;
+
+/// <summary>
+///     How many markers were written, counting past the history bound even though
+///     only the first few are retained.
+/// </summary>
+/// <returns>
+///     Total marker writes since the last reset.
+/// </returns>
+uint32_t MOCK_BSP_WatchdogMarkerWrites( void )
+{
+    return _markerWrites;
 }
 
-uint32_t mock_bsp_watchdog_marker_at(uint32_t index) {
-    return index < marker_writes && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY
-               ? marker_history[index]
-               : 0;
+
+/// <summary>
+///     One entry from the ordered history, which is what lets a test assert that a
+///     path was marked before it ran rather than only that the final marker is
+///     right.
+/// </summary>
+/// <returns>
+///     The marker at that position, or zero past the end of the record.
+/// </returns>
+uint32_t MOCK_BSP_WatchdogMarkerAt( const uint32_t index )
+{
+    if ( index < _markerWrites && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY )
+    {
+        return _markerHistory[ index ];
+    }
+    return 0;
 }
 
-bool mock_bsp_watchdog_marker_was_written(uint32_t wanted) {
-    for (uint32_t index = 0; index < marker_writes && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY;
-         ++index) {
-        if (marker_history[index] == wanted) {
+
+/// <summary>
+///     Whether a marker was set at any point, not just last. Answers "did the code
+///     reach here" for a path something else has since moved past.
+/// </summary>
+/// <returns>
+///     True if the marker appears anywhere in the retained history.
+/// </returns>
+bool MOCK_BSP_WatchdogMarkerWasWritten( const uint32_t wanted )
+{
+    for ( uint32_t index = 0; index < _markerWrites && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY;
+          ++index )
+    {
+        if ( _markerHistory[ index ] == wanted )
+        {
             return true;
         }
     }
     return false;
 }
 
-void bsp_watchdog_start(uint32_t requested_timeout_ms) {
-    started = true;
-    timeout_ms = requested_timeout_ms;
+
+/// <summary>
+///     Records the arming instead of performing it.
+/// </summary>
+void BSP_WatchdogStart( const uint32_t requestedTimeoutMs )
+{
+    _started = true;
+    _timeoutMs = requestedTimeoutMs;
 }
 
-void bsp_watchdog_feed(void) {
-    ++feed_count;
+
+/// <summary>
+///     Counts the feed. Never resets anything, so a test can watch the count grow
+///     across a whole run.
+/// </summary>
+void BSP_WatchdogFeed( void )
+{
+    ++_feedCount;
 }
 
-bsp_boot_reason_t bsp_watchdog_boot_reason(void) {
-    return boot_reason;
+
+/// <summary>
+///     Returns the staged cause, which never changes on its own.
+/// </summary>
+/// <returns>
+///     The boot reason the test posed.
+/// </returns>
+bsp_boot_reason BSP_WatchdogBootReason( void )
+{
+    return _bootReason;
 }
 
-void bsp_watchdog_marker_set(uint32_t value) {
-    marker = value;
-    if (marker_writes < MOCK_BSP_WATCHDOG_MARKER_HISTORY) {
-        marker_history[marker_writes] = value;
+
+/// <summary>
+///     Records the marker and appends it to the history, dropping the append once
+///     the history is full while still counting the write.
+/// </summary>
+void BSP_WatchdogMarkerSet( const uint32_t value )
+{
+    _marker = value;
+    if ( _markerWrites < MOCK_BSP_WATCHDOG_MARKER_HISTORY )
+    {
+        _markerHistory[ _markerWrites ] = value;
     }
-    ++marker_writes;
+    ++_markerWrites;
 }
 
-uint32_t bsp_watchdog_marker_get(void) {
-    return marker;
+
+/// <summary>
+///     Reads the marker back, staged or written -- the fake does not distinguish
+///     them, matching hardware where a retained register reads the same either
+///     way.
+/// </summary>
+/// <returns>
+///     The current marker.
+/// </returns>
+uint32_t BSP_WatchdogMarkerGet( void )
+{
+    return _marker;
 }
 
-void bsp_watchdog_snapshot_set(uint32_t slot, uint32_t value) {
-    if (slot < BSP_WATCHDOG_SNAPSHOT_SLOTS) {
-        snapshots[slot] = value;
+
+/// <summary>
+///     Writes a snapshot slot, ignoring out-of-range slots exactly as the real
+///     implementation does.
+/// </summary>
+void BSP_WatchdogSnapshotSet( const uint32_t slot, const uint32_t value )
+{
+    if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
+    {
+        _snapshots[ slot ] = value;
     }
 }
 
-uint32_t bsp_watchdog_snapshot_get(uint32_t slot) {
-    return slot < BSP_WATCHDOG_SNAPSHOT_SLOTS ? snapshots[slot] : 0;
+
+/// <summary>
+///     Reads a snapshot slot.
+/// </summary>
+/// <returns>
+///     The slot contents, or zero if out of range.
+/// </returns>
+uint32_t BSP_WatchdogSnapshotGet( const uint32_t slot )
+{
+    if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
+    {
+        return _snapshots[ slot ];
+    }
+    return 0;
 }
