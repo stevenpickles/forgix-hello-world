@@ -5,20 +5,20 @@
 
 #include "pico/stdlib.h"
 
-void bsp_console_init(void) {
+void BSP_ConsoleInit(void) {
     stdio_init_all();
 }
 
-int bsp_console_getchar_timeout_us(const uint32_t timeout_us) {
+int BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us) {
     const int character = getchar_timeout_us(timeout_us);
     return character == PICO_ERROR_TIMEOUT ? BSP_CONSOLE_TIMEOUT : character;
 }
 
-int bsp_console_putchar(const int character) {
+int BSP_ConsolePutChar(const int character) {
     return putchar(character);
 }
 
-int bsp_console_printf(const char *const format, ...) {
+int BSP_ConsolePrintf(const char *const format, ...) {
     va_list arguments;
     va_start(arguments, format);
     const int result = vprintf(format, arguments);
@@ -26,6 +26,6 @@ int bsp_console_printf(const char *const format, ...) {
     return result;
 }
 
-int bsp_console_puts(const char *const text) {
+int BSP_ConsolePuts(const char *const text) {
     return puts(text);
 }

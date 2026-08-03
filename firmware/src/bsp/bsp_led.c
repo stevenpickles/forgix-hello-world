@@ -10,25 +10,25 @@ enum {
     REG_LED_ENABLE = 0x14,
 };
 
-void bsp_led_set(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness) {
-    bsp_fpga_write_register(REG_LED_R, red);
-    bsp_fpga_write_register(REG_LED_G, green);
-    bsp_fpga_write_register(REG_LED_B, blue);
-    bsp_fpga_write_register(REG_LED_GLOBAL, brightness);
-    bsp_fpga_write_register(REG_LED_ENABLE, 1);
+void BSP_LedSet(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness) {
+    BSP_FpgaWriteRegister(REG_LED_R, red);
+    BSP_FpgaWriteRegister(REG_LED_G, green);
+    BSP_FpgaWriteRegister(REG_LED_B, blue);
+    BSP_FpgaWriteRegister(REG_LED_GLOBAL, brightness);
+    BSP_FpgaWriteRegister(REG_LED_ENABLE, 1);
 }
 
-void bsp_led_off(void) {
-    bsp_fpga_write_register(REG_LED_ENABLE, 0);
+void BSP_LedOff(void) {
+    BSP_FpgaWriteRegister(REG_LED_ENABLE, 0);
 }
 
-bsp_led_state_t bsp_led_get(void) {
+bsp_led_state_t BSP_LedGet(void) {
     const bsp_led_state_t state = {
-        .red = bsp_fpga_read_register(REG_LED_R),
-        .green = bsp_fpga_read_register(REG_LED_G),
-        .blue = bsp_fpga_read_register(REG_LED_B),
-        .brightness = bsp_fpga_read_register(REG_LED_GLOBAL),
-        .enabled = (bsp_fpga_read_register(REG_LED_ENABLE) & 1u) != 0,
+        .red = BSP_FpgaReadRegister(REG_LED_R),
+        .green = BSP_FpgaReadRegister(REG_LED_G),
+        .blue = BSP_FpgaReadRegister(REG_LED_B),
+        .brightness = BSP_FpgaReadRegister(REG_LED_GLOBAL),
+        .enabled = (BSP_FpgaReadRegister(REG_LED_ENABLE) & 1u) != 0,
     };
     return state;
 }

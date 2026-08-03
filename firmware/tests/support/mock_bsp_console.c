@@ -39,10 +39,10 @@ const char *mock_bsp_console_output(void) {
     return output;
 }
 
-void bsp_console_init(void) {
+void BSP_ConsoleInit(void) {
 }
 
-int bsp_console_getchar_timeout_us(const uint32_t timeout_us) {
+int BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us) {
     (void)timeout_us;
     if (input_position < input_count) {
         return input[input_position++];
@@ -50,13 +50,13 @@ int bsp_console_getchar_timeout_us(const uint32_t timeout_us) {
     return BSP_CONSOLE_TIMEOUT;
 }
 
-int bsp_console_putchar(const int character) {
+int BSP_ConsolePutChar(const int character) {
     char text[2] = {(char)character, 0};
     append(text);
     return character;
 }
 
-int bsp_console_printf(const char *const format, ...) {
+int BSP_ConsolePrintf(const char *const format, ...) {
     char formatted[512];
     va_list arguments;
     va_start(arguments, format);
@@ -66,7 +66,7 @@ int bsp_console_printf(const char *const format, ...) {
     return result;
 }
 
-int bsp_console_puts(const char *const text) {
+int BSP_ConsolePuts(const char *const text) {
     append(text);
     append("\n");
     return 0;

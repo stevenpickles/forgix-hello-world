@@ -73,20 +73,20 @@ bool mock_bsp_watchdog_marker_was_written(const uint32_t wanted) {
     return false;
 }
 
-void bsp_watchdog_start(const uint32_t requested_timeout_ms) {
+void BSP_WatchdogStart(const uint32_t requested_timeout_ms) {
     started = true;
     timeout_ms = requested_timeout_ms;
 }
 
-void bsp_watchdog_feed(void) {
+void BSP_WatchdogFeed(void) {
     ++feed_count;
 }
 
-bsp_boot_reason_t bsp_watchdog_boot_reason(void) {
+bsp_boot_reason_t BSP_WatchdogBootReason(void) {
     return boot_reason;
 }
 
-void bsp_watchdog_marker_set(const uint32_t value) {
+void BSP_WatchdogMarkerSet(const uint32_t value) {
     marker = value;
     if (marker_writes < MOCK_BSP_WATCHDOG_MARKER_HISTORY) {
         marker_history[marker_writes] = value;
@@ -94,16 +94,16 @@ void bsp_watchdog_marker_set(const uint32_t value) {
     ++marker_writes;
 }
 
-uint32_t bsp_watchdog_marker_get(void) {
+uint32_t BSP_WatchdogMarkerGet(void) {
     return marker;
 }
 
-void bsp_watchdog_snapshot_set(const uint32_t slot, const uint32_t value) {
+void BSP_WatchdogSnapshotSet(const uint32_t slot, const uint32_t value) {
     if (slot < BSP_WATCHDOG_SNAPSHOT_SLOTS) {
         snapshots[slot] = value;
     }
 }
 
-uint32_t bsp_watchdog_snapshot_get(const uint32_t slot) {
+uint32_t BSP_WatchdogSnapshotGet(const uint32_t slot) {
     return slot < BSP_WATCHDOG_SNAPSHOT_SLOTS ? snapshots[slot] : 0;
 }

@@ -57,8 +57,8 @@ static void configure_qspi_cs1(void) {
        Taking it back to SIO here would cut the DRAM off the bus. */
 }
 
-bsp_init_result_t bsp_init(void) {
+bsp_init_result_t BSP_Init(void) {
     configure_qspi_cs1();
-    bsp_console_init();
-    return bsp_fpga_init();
+    BSP_ConsoleInit();
+    return BSP_FpgaInit();
 }

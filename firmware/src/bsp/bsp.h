@@ -12,6 +12,6 @@
 
 typedef bsp_fpga_init_result_t bsp_init_result_t;
 
-bsp_init_result_t bsp_init(void);
+bsp_init_result_t BSP_Init(void);
 
 #endif

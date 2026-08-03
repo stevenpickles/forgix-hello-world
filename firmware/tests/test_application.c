@@ -36,7 +36,7 @@ static void process(const char *command) {
 static bsp_memory_report_t memory_report(void);
 
 static void expect_memory_report(void) {
-    bsp_memory_check_ExpectAndReturn(memory_report());
+    BSP_MemoryCheck_ExpectAndReturn(memory_report());
 }
 
 static bsp_memory_report_t memory_report(void) {
@@ -61,10 +61,10 @@ static bsp_led_state_t expected_hello_led(void) {
 }
 
 static void expect_hello_readback(uint8_t design_id, bsp_led_state_t led) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_led_set_Expect(0, 255, 255, 64);
-    bsp_fpga_ping_ExpectAndReturn(design_id);
-    bsp_led_get_ExpectAndReturn(led);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_LedSet_Expect(0, 255, 255, 64);
+    BSP_FpgaPing_ExpectAndReturn(design_id);
+    BSP_LedGet_ExpectAndReturn(led);
 }
 
 void test_application_init_reports_ready_hardware_and_help(void) {
@@ -113,7 +113,7 @@ void test_help_remains_available_without_fpga_access(void) {
 }
 
 void test_hardware_command_is_rejected_when_fpga_is_unavailable(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(false);
+    BSP_FpgaIsReady_ExpectAndReturn(false);
 
     process("hello");
 
@@ -121,8 +121,8 @@ void test_hardware_command_is_rejected_when_fpga_is_unavailable(void) {
 }
 
 void test_color_uses_default_brightness(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_led_set_Expect(1, 2, 3, 255);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_LedSet_Expect(1, 2, 3, 255);
 
     process("color 1 2 3");
 
@@ -130,8 +130,8 @@ void test_color_uses_default_brightness(void) {
 }
 
 void test_color_forwards_explicit_brightness(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_led_set_Expect(4, 5, 6, 7);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_LedSet_Expect(4, 5, 6, 7);
 
     process("color 4 5 6 7");
 
@@ -139,7 +139,7 @@ void test_color_forwards_explicit_brightness(void) {
 }
 
 void test_color_rejects_values_above_a_byte_without_writing_hardware(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("color 1 2 256");
 
@@ -147,7 +147,7 @@ void test_color_rejects_values_above_a_byte_without_writing_hardware(void) {
 }
 
 void test_color_rejects_negative_values_without_writing_hardware(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("color -1 2 3");
 
@@ -155,7 +155,7 @@ void test_color_rejects_negative_values_without_writing_hardware(void) {
 }
 
 void test_color_rejects_non_numeric_values_without_writing_hardware(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("color red 2 3");
 
@@ -163,7 +163,7 @@ void test_color_rejects_non_numeric_values_without_writing_hardware(void) {
 }
 
 void test_color_rejects_trailing_characters_without_writing_hardware(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("color 1 2 3x");
 
@@ -171,7 +171,7 @@ void test_color_rejects_trailing_characters_without_writing_hardware(void) {
 }
 
 void test_color_rejects_the_wrong_argument_count(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("color 1 2");
 
@@ -220,8 +220,8 @@ void test_hello_reports_each_led_readback_mismatch(void) {
 }
 
 void test_off_disables_the_led(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_led_off_Expect();
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_LedOff_Expect();
 
     process("off");
 
@@ -230,11 +230,11 @@ void test_off_disables_the_led(void) {
 
 void test_status_reports_fpga_and_button_state(void) {
     bsp_button_state_t button = {.level = 0x03, .count = 7};
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_button_get_state_ExpectAndReturn(button);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_fpga_read_status_ExpectAndReturn(0x01);
-    bsp_fpga_status_pin_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_ButtonGetState_ExpectAndReturn(button);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_FpgaReadStatus_ExpectAndReturn(0x01);
+    BSP_FpgaStatusPin_ExpectAndReturn(true);
 
     process("status");
 
@@ -283,7 +283,7 @@ void test_console_control_commands_report_invalid_usage(void) {
 }
 
 void test_status_reports_unavailable_hardware_without_accessing_registers(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(false);
+    BSP_FpgaIsReady_ExpectAndReturn(false);
 
     process("status");
 
@@ -307,8 +307,8 @@ void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access(vo
 }
 
 void test_reset_reaches_the_fpga(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_fpga_reset_Expect();
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaReset_Expect();
 
     process("reset");
 
@@ -316,7 +316,7 @@ void test_reset_reaches_the_fpga(void) {
 }
 
 void test_unknown_command_is_rejected(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("unknown");
 
@@ -334,7 +334,7 @@ void test_known_commands_with_extra_arguments_are_rejected(void) {
     };
 
     for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
-        bsp_fpga_is_ready_ExpectAndReturn(true);
+        BSP_FpgaIsReady_ExpectAndReturn(true);
         process(commands[index]);
 
         TEST_ASSERT_EQUAL_STRING("error: invalid command (try help)\n",
@@ -344,7 +344,7 @@ void test_known_commands_with_extra_arguments_are_rejected(void) {
 }
 
 void test_command_tokenization_is_safely_limited_to_the_argument_capacity(void) {
-    bsp_fpga_is_ready_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
 
     process("unknown 1 2 3 4 5 6");
 

@@ -22,11 +22,11 @@ uint32_t mock_bsp_time_sleep_total_ms(void) {
     return sleep_total_ms;
 }
 
-uint32_t bsp_time_now_ms(void) {
+uint32_t BSP_TimeNowMs(void) {
     return current_time_ms;
 }
 
-void bsp_time_sleep_ms(const uint32_t duration_ms) {
+void BSP_TimeSleepMs(const uint32_t duration_ms) {
     ++sleep_count;
     sleep_total_ms += duration_ms;
 }

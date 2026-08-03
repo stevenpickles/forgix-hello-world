@@ -12,8 +12,8 @@ typedef struct {
     bool enabled;
 } bsp_led_state_t;
 
-void bsp_led_set(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness);
-void bsp_led_off(void);
-bsp_led_state_t bsp_led_get(void);
+void BSP_LedSet(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness);
+void BSP_LedOff(void);
+bsp_led_state_t BSP_LedGet(void);
 
 #endif

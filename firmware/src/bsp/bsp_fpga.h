@@ -14,28 +14,28 @@ typedef struct {
     bool status_pin;
 } bsp_fpga_init_result_t;
 
-bsp_fpga_init_result_t bsp_fpga_init(void);
-bool bsp_fpga_is_ready(void);
+bsp_fpga_init_result_t BSP_FpgaInit(void);
+bool BSP_FpgaIsReady(void);
 
 /* Configuration-done pin. Low at runtime means the FPGA lost its configuration,
    which the diagnostics layer treats as a recoverable hardware fault. */
-bool bsp_fpga_cdone(void);
+bool BSP_FpgaCdone(void);
 
 /* Reloads the embedded bitstream and revalidates the design ID. Returns true
    when the FPGA is responding again. */
-bool bsp_fpga_reconfigure(void);
+bool BSP_FpgaReconfigure(void);
 
 /* Whether the image was built to attempt recovery after a runtime FPGA fault.
    Reported as a value rather than a compile switch in the application layer, so
    both policies stay reachable and testable. */
-bool bsp_fpga_auto_reconfigure_enabled(void);
+bool BSP_FpgaAutoReconfigureEnabled(void);
 
-uint8_t bsp_fpga_ping(void);
-uint8_t bsp_fpga_read_status(void);
-bool bsp_fpga_status_pin(void);
-void bsp_fpga_reset(void);
+uint8_t BSP_FpgaPing(void);
+uint8_t BSP_FpgaReadStatus(void);
+bool BSP_FpgaStatusPin(void);
+void BSP_FpgaReset(void);
 
-uint8_t bsp_fpga_read_register(const uint8_t address);
-void bsp_fpga_write_register(const uint8_t address, const uint8_t value);
+uint8_t BSP_FpgaReadRegister(const uint8_t address);
+void BSP_FpgaWriteRegister(const uint8_t address, const uint8_t value);
 
 #endif

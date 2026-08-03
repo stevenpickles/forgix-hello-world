@@ -9,7 +9,7 @@ void application_run(void) {
     application_console_start();
     while (true) {
         application_diagnostics_poll();
-        bsp_usb_service();
+        BSP_UsbService();
         application_console_poll();
     }
 }

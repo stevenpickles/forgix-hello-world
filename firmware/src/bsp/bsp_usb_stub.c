@@ -4,18 +4,18 @@
    host so the shared application code takes its non-USB paths: no unsolicited
    status output, and an LED blink code instead of a serial boot report. */
 
-bool bsp_usb_present(void) {
+bool BSP_UsbPresent(void) {
     return false;
 }
 
-bsp_usb_health_t bsp_usb_health(void) {
+bsp_usb_health_t BSP_UsbHealth(void) {
     const bsp_usb_health_t health = {0};
     return health;
 }
 
-bool bsp_usb_connected(void) {
+bool BSP_UsbConnected(void) {
     return false;
 }
 
-void bsp_usb_service(void) {
+void BSP_UsbService(void) {
 }

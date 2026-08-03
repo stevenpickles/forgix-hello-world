@@ -53,7 +53,7 @@ static bsp_usb_health_t health_of(bool connected, bool suspended, uint32_t write
 static void start_usb_at(uint32_t now_ms) {
     mock_bsp_usb_set_present(true);
     mock_bsp_time_set_ms(now_ms);
-    bsp_led_set_Expect(0, 0, 255, BRIGHTNESS);
+    BSP_LedSet_Expect(0, 0, 255, BRIGHTNESS);
     application_diagnostics_start();
 }
 
@@ -69,14 +69,14 @@ static void start_led_only(bsp_boot_reason_t reason, uint32_t marker, uint8_t re
     mock_bsp_watchdog_set_retained(marker, 0, 0, 0);
     mock_bsp_time_set_ms(0);
 
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     for (uint32_t pass = 0; pass < BOOT_REPEATS; ++pass) {
         for (uint32_t blink = 0; blink < blinks; ++blink) {
-            bsp_led_set_Expect(red, green, blue, BRIGHTNESS);
-            bsp_led_off_Expect();
+            BSP_LedSet_Expect(red, green, blue, BRIGHTNESS);
+            BSP_LedOff_Expect();
         }
     }
-    bsp_led_set_Expect(rest_red, rest_green, rest_blue, BRIGHTNESS);
+    BSP_LedSet_Expect(rest_red, rest_green, rest_blue, BRIGHTNESS);
     application_diagnostics_start();
 }
 
@@ -88,10 +88,10 @@ static void poll_at(uint32_t now_ms) {
 /* Advances to the first one-second sample with the supplied health, leaving the
    heartbeat lit so the color under test is observable. */
 static void expect_sample(uint8_t red, uint8_t green, uint8_t blue) {
-    bsp_led_set_Expect(red, green, blue, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(led_state(red, green, blue, true));
+    BSP_LedSet_Expect(red, green, blue, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_LedGet_ExpectAndReturn(led_state(red, green, blue, true));
 }
 
 void test_start_reports_the_retained_watchdog_evidence_and_arms_the_watchdog(void) {
@@ -151,14 +151,14 @@ void test_usb_free_image_blinks_a_white_power_on_code_and_still_prints_it(void) 
    only on the foreground loop, so the last logged second dates a freeze exactly. */
 void test_usb_free_image_logs_a_line_every_second(void) {
     start_led_only(BSP_BOOT_POWER_ON, 0, 255, 255, 255, 1, 0, 0, 255);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
     mock_bsp_console_reset();
 
-    bsp_led_set_Expect(0, 0, 255, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(led_state(0, 0, 255, true));
+    BSP_LedSet_Expect(0, 0, 255, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_LedGet_ExpectAndReturn(led_state(0, 0, 255, true));
     poll_at(1000);
 
     TEST_ASSERT_EQUAL_STRING("diag: t=1s led=1 fpga_fail=0 fpga_reconfig=0 marker=6\n",
@@ -167,13 +167,13 @@ void test_usb_free_image_logs_a_line_every_second(void) {
 
 void test_recovery_is_skipped_when_auto_reconfigure_is_disabled(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
-    bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(false);
-    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(false);
+    BSP_LedSet_Expect(0, 255, 0, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(false);
+    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn(false);
     poll_at(1000);
 
     /* the fault is still counted, so a run records it without disturbing it */
@@ -204,18 +204,18 @@ void test_watchdog_blink_count_is_clamped_to_a_readable_range(void) {
 void test_usb_free_heartbeat_keeps_reporting_the_boot_reason_while_it_runs(void) {
     start_led_only(BSP_BOOT_WATCHDOG, APPLICATION_DIAGNOSTICS_MARKER_LOOP, 255, 0, 0, 1, 255, 0, 0);
 
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
-    bsp_led_set_Expect(255, 0, 0, BRIGHTNESS);
+    BSP_LedSet_Expect(255, 0, 0, BRIGHTNESS);
     poll_at(500);
 
     /* the stub reports no host, so the one-second sample must not repaint it blue */
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(750);
-    bsp_led_set_Expect(255, 0, 0, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(led_state(255, 0, 0, true));
+    BSP_LedSet_Expect(255, 0, 0, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_LedGet_ExpectAndReturn(led_state(255, 0, 0, true));
     poll_at(1000);
 }
 
@@ -232,11 +232,11 @@ void test_led_heartbeat_toggles_at_two_hertz(void) {
     start_usb_at(0);
 
     poll_at(249);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
-    bsp_led_set_Expect(0, 0, 255, BRIGHTNESS);
+    BSP_LedSet_Expect(0, 0, 255, BRIGHTNESS);
     poll_at(500);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(750);
 
     TEST_ASSERT_EQUAL_UINT32(4, mock_bsp_watchdog_feed_count());
@@ -244,7 +244,7 @@ void test_led_heartbeat_toggles_at_two_hertz(void) {
 
 void test_sample_shows_green_and_snapshots_health_while_traffic_advances(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
@@ -263,7 +263,7 @@ void test_sample_shows_green_and_snapshots_health_while_traffic_advances(void) {
 
 void test_heartbeat_stays_blue_while_the_host_has_not_asserted_dtr(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(false, false, 64, 5, 100));
@@ -275,7 +275,7 @@ void test_heartbeat_stays_blue_while_the_host_has_not_asserted_dtr(void) {
 
 void test_heartbeat_turns_magenta_while_the_bus_is_suspended(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, true, 64, 5, 100));
@@ -287,14 +287,14 @@ void test_heartbeat_turns_magenta_while_the_bus_is_suspended(void) {
 
 void test_heartbeat_turns_magenta_when_the_frame_counter_freezes(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
     expect_sample(0, 255, 0);
     poll_at(1000);
 
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(1250);
 
     /* transfers still complete, but the host has stopped sending start-of-frame */
@@ -305,14 +305,14 @@ void test_heartbeat_turns_magenta_when_the_frame_counter_freezes(void) {
 
 void test_heartbeat_turns_red_when_a_full_fifo_stops_draining(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
     expect_sample(0, 255, 0);
     poll_at(1000);
 
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(1250);
 
     /* transmit FIFO full and nothing completing: a genuine endpoint wedge */
@@ -327,7 +327,7 @@ void test_heartbeat_turns_red_when_a_full_fifo_stops_draining(void) {
    also stops draining. */
 void test_a_full_fifo_that_is_still_draining_stays_green(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 0, 5, 100));
@@ -342,14 +342,14 @@ void test_a_full_fifo_that_is_still_draining_stays_green(void) {
    10 s idle-status cadence, reporting an endpoint wedge on every cycle. */
 void test_a_quiet_link_with_room_in_the_fifo_stays_green(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
     expect_sample(0, 255, 0);
     poll_at(1000);
 
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(1250);
 
     /* far beyond the activity threshold, but the FIFO has room, so nothing is
@@ -361,15 +361,15 @@ void test_a_quiet_link_with_room_in_the_fifo_stays_green(void) {
 
 void test_a_sample_without_a_heartbeat_toggle_still_refreshes_the_led(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(999);
 
     /* 999 moved the heartbeat deadline to 1249, so only the sample is due here */
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
-    bsp_led_off_Expect();
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(led_state(0, 0, 255, false));
+    BSP_LedOff_Expect();
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_LedGet_ExpectAndReturn(led_state(0, 0, 255, false));
     poll_at(1000);
 
     TEST_ASSERT_EQUAL_UINT32(1, mock_bsp_watchdog_snapshot(0));
@@ -377,37 +377,37 @@ void test_a_sample_without_a_heartbeat_toggle_still_refreshes_the_led(void) {
 
 void test_lost_configuration_reconfigures_and_flies_the_recovery_signature(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
-    bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(false);
-    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(true);
-    bsp_fpga_reconfigure_ExpectAndReturn(true);
-    bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
+    BSP_LedSet_Expect(0, 255, 0, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(false);
+    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn(true);
+    BSP_FpgaReconfigure_ExpectAndReturn(true);
+    BSP_LedSet_Expect(255, 255, 255, BRIGHTNESS);
     poll_at(1000);
 
     TEST_ASSERT_EQUAL_UINT32(100u | (1u << 16) | (1u << 19) | (1u << 26),
                              mock_bsp_watchdog_snapshot(2));
 
     /* the signature survives the following toggles, then healthy color resumes */
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(1250);
-    bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
+    BSP_LedSet_Expect(255, 255, 255, BRIGHTNESS);
     poll_at(1500);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(1750);
-    bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(led_state(255, 255, 255, true));
+    BSP_LedSet_Expect(255, 255, 255, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_LedGet_ExpectAndReturn(led_state(255, 255, 255, true));
     poll_at(2000);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(2250);
-    bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
+    BSP_LedSet_Expect(255, 255, 255, BRIGHTNESS);
     poll_at(2500);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(2750);
     expect_sample(0, 255, 0);
     poll_at(3000);
@@ -415,16 +415,16 @@ void test_lost_configuration_reconfigures_and_flies_the_recovery_signature(void)
 
 void test_a_wrong_design_id_reconfigures_without_reading_the_led_back(void) {
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
-    bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(0x00);
-    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(true);
-    bsp_fpga_reconfigure_ExpectAndReturn(true);
-    bsp_led_set_Expect(255, 255, 255, BRIGHTNESS);
+    BSP_LedSet_Expect(0, 255, 0, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(0x00);
+    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn(true);
+    BSP_FpgaReconfigure_ExpectAndReturn(true);
+    BSP_LedSet_Expect(255, 255, 255, BRIGHTNESS);
     poll_at(1000);
 
     TEST_ASSERT_EQUAL_UINT32((1u << 19) | (1u << 26),
@@ -440,16 +440,16 @@ static void run_readback_mismatch(bsp_led_state_t readback, const char *field_na
     mock_bsp_watchdog_reset();
 
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
 
     mock_bsp_usb_set_health(health_of(true, false, 64, 5, 100));
-    bsp_led_set_Expect(0, 255, 0, BRIGHTNESS);
-    bsp_fpga_cdone_ExpectAndReturn(true);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_led_get_ExpectAndReturn(readback);
-    bsp_fpga_auto_reconfigure_enabled_ExpectAndReturn(true);
-    bsp_fpga_reconfigure_ExpectAndReturn(false);
+    BSP_LedSet_Expect(0, 255, 0, BRIGHTNESS);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_LedGet_ExpectAndReturn(readback);
+    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn(true);
+    BSP_FpgaReconfigure_ExpectAndReturn(false);
     poll_at(1000);
 
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u << 19, mock_bsp_watchdog_snapshot(2) & (0x7fu << 19),
@@ -479,7 +479,7 @@ void test_diag_report_lists_the_previous_boot_and_the_live_counters(void) {
     mock_bsp_watchdog_set_boot_reason(BSP_BOOT_BROWNOUT);
     mock_bsp_watchdog_set_retained(2, 7, 8, 9);
     start_usb_at(0);
-    bsp_led_off_Expect();
+    BSP_LedOff_Expect();
     poll_at(250);
     mock_bsp_usb_set_health(health_of(true, false, 32, 5, 100));
     expect_sample(0, 255, 0);

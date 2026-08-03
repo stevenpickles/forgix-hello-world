@@ -124,7 +124,7 @@ static bool psram_holds_a_pattern(const uint32_t size_bytes) {
 }
 #endif
 
-bsp_memory_report_t bsp_memory_check(void) {
+bsp_memory_report_t BSP_MemoryCheck(void) {
     bsp_memory_report_t report = {0};
 
     report.psram_kgd = reported_kgd;

@@ -28,18 +28,18 @@ uint32_t mock_bsp_usb_service_count(void) {
     return service_count;
 }
 
-bool bsp_usb_present(void) {
+bool BSP_UsbPresent(void) {
     return present;
 }
 
-bsp_usb_health_t bsp_usb_health(void) {
+bsp_usb_health_t BSP_UsbHealth(void) {
     return health;
 }
 
-bool bsp_usb_connected(void) {
+bool BSP_UsbConnected(void) {
     return connected;
 }
 
-void bsp_usb_service(void) {
+void BSP_UsbService(void) {
     ++service_count;
 }

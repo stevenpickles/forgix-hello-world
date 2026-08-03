@@ -25,6 +25,6 @@ typedef struct {
     uint8_t psram_eid;
 } bsp_memory_report_t;
 
-bsp_memory_report_t bsp_memory_check(void);
+bsp_memory_report_t BSP_MemoryCheck(void);
 
 #endif

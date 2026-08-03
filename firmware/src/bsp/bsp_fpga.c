@@ -123,12 +123,12 @@ static uint8_t transaction(const uint8_t *const tx, const size_t count, const bo
     return result;
 }
 
-bsp_fpga_init_result_t bsp_fpga_init(void) {
+bsp_fpga_init_result_t BSP_FpgaInit(void) {
     bsp_fpga_init_result_t result = {0};
     result.configured = configure();
 
     sleep_ms(1500);
-    result.design_id = result.configured ? bsp_fpga_ping() : 0;
+    result.design_id = result.configured ? BSP_FpgaPing() : 0;
     result.ready = result.configured && result.design_id == BSP_FPGA_DESIGN_ID;
     result.cdone = gpio_get(PIN_CDONE);
     result.status_pin = gpio_get(PIN_STATUS);
@@ -136,12 +136,12 @@ bsp_fpga_init_result_t bsp_fpga_init(void) {
     return result;
 }
 
-bool bsp_fpga_reconfigure(void) {
-    const bsp_fpga_init_result_t result = bsp_fpga_init();
+bool BSP_FpgaReconfigure(void) {
+    const bsp_fpga_init_result_t result = BSP_FpgaInit();
     return result.ready;
 }
 
-bool bsp_fpga_auto_reconfigure_enabled(void) {
+bool BSP_FpgaAutoReconfigureEnabled(void) {
 #if FORGIX_FPGA_AUTO_RECONFIGURE
     return true;
 #else
@@ -149,38 +149,38 @@ bool bsp_fpga_auto_reconfigure_enabled(void) {
 #endif
 }
 
-bool bsp_fpga_is_ready(void) {
+bool BSP_FpgaIsReady(void) {
     return fpga_ready;
 }
 
-bool bsp_fpga_cdone(void) {
+bool BSP_FpgaCdone(void) {
     return gpio_get(PIN_CDONE);
 }
 
-uint8_t bsp_fpga_ping(void) {
+uint8_t BSP_FpgaPing(void) {
     const uint8_t tx[] = {CMD_PING};
     return transaction(tx, 1, true);
 }
 
-uint8_t bsp_fpga_read_status(void) {
-    return bsp_fpga_read_register(REG_STATUS);
+uint8_t BSP_FpgaReadStatus(void) {
+    return BSP_FpgaReadRegister(REG_STATUS);
 }
 
-bool bsp_fpga_status_pin(void) {
+bool BSP_FpgaStatusPin(void) {
     return gpio_get(PIN_STATUS);
 }
 
-void bsp_fpga_reset(void) {
+void BSP_FpgaReset(void) {
     const uint8_t tx[] = {CMD_RESET};
     transaction(tx, 1, false);
 }
 
-uint8_t bsp_fpga_read_register(const uint8_t address) {
+uint8_t BSP_FpgaReadRegister(const uint8_t address) {
     const uint8_t tx[] = {CMD_READ, address};
     return transaction(tx, 2, true);
 }
 
-void bsp_fpga_write_register(const uint8_t address, const uint8_t value) {
+void BSP_FpgaWriteRegister(const uint8_t address, const uint8_t value) {
     const uint8_t tx[] = {CMD_WRITE, address, value};
     transaction(tx, 3, false);
 }

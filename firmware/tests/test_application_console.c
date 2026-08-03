@@ -44,11 +44,11 @@ static void poll_text_at(const char *text, uint32_t now_ms) {
 
 static void expect_ready_status(uint8_t count) {
     bsp_button_state_t button = {.level = 0x03, .count = count};
-    bsp_fpga_is_ready_ExpectAndReturn(true);
-    bsp_button_get_state_ExpectAndReturn(button);
-    bsp_fpga_ping_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
-    bsp_fpga_read_status_ExpectAndReturn(0x01);
-    bsp_fpga_status_pin_ExpectAndReturn(true);
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_ButtonGetState_ExpectAndReturn(button);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_FpgaReadStatus_ExpectAndReturn(0x01);
+    BSP_FpgaStatusPin_ExpectAndReturn(true);
 }
 
 void test_console_starts_with_a_prompt_and_reports_boot_status_each_second(void) {
