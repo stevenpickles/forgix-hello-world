@@ -26,6 +26,9 @@ jobs:
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
 
+      - name: Enforce BSP style
+        run: python scripts/check_bsp_style.py --strict
+
       - name: Verify coverage summary rendering
         run: python scripts/test_render_coverage_summary.py
 

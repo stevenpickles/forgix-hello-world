@@ -10,11 +10,13 @@ no `.clang-format`, no `.editorconfig`, no style guide, and no C linter enabled 
 `.trunk/trunk.yaml`. The convention survives there by copy-paste, which is why its newest files
 carry the most drift. This document is the written form.
 
-**Status: partly applied.** Everything clang-format can do has been done — run
-`scripts/format_bsp.sh` to reproduce it, or `--check` to verify. The naming and documentation
-rules, which no formatter can apply, are still outstanding.
-`scripts/check_bsp_style.py` scores files against the automated rules and exits 0 by default; it
-is deliberately not wired into CI until those land. See [Adoption](#adoption).
+**Status: applied.** All 28 files score 100% on the automated rules. `scripts/check_bsp_style.py
+--strict` runs in CI, so a regression fails the build. Reproduce the formatter half with
+`scripts/format_bsp.sh`, or `--check` to verify without writing.
+
+That score is not a claim that the BSP is well documented — D2, the rule that a summary must add
+information, is the most important one here and no script can judge it. The checker confirms the
+blocks exist.
 
 Every rule has a stable ID. The checker cites these, so renumbering them breaks its output.
 
@@ -427,12 +429,29 @@ tags, and **enum typedefs lose their `_t`**, so `bsp_boot_reason_t` becomes `bsp
 reaches application code, the fakes and the tests, and it partly reverses the "functions only"
 scope of the earlier rename.
 
-Sequence:
+Done, in this order:
 
-1. ~~Apply everything a formatter can apply~~ — done, via `scripts/format_bsp.sh`.
-2. The naming and documentation rules, by hand and in commits grouped by concern, verifying
-   against the existing gates each time.
-3. Add `scripts/format_bsp.sh --check` to `.github/workflows/ci.yml`, and flip
-   `scripts/check_bsp_style.py` to `--strict`.
+1. Everything a formatter can apply, via `scripts/format_bsp.sh`.
+2. Naming and documentation by hand, in commits grouped by concern.
+3. `scripts/check_bsp_style.py --strict` in `.github/workflows/ci.yml`.
 
-Until step 3, the checker is advisory and reports a score.
+**`scripts/format_bsp.sh --check` is deliberately not in CI.** The config uses options whose
+spelling and behaviour changed across clang-format versions — `SpacesInParentheses` became
+`SpacesInParens` in 17, `Cpp11BracedListStyle` became an enum in 21 — and the runner's version is
+not pinned. A version mismatch would fail the build over formatting that is locally correct.
+Adding it means pinning a clang-format version in the workflow first; until then the Python
+checker, which has no such dependency, is what CI enforces.
+
+### What conforming cost
+
+Worth recording, because the rubric was written before any of it was applied and three rules did
+not survive contact:
+
+- **Multi-line initializer braces** stay on the `=` line (C6). No clang-format option breaks there.
+- **Inline braced values** are `{ 0 }`, not the reference's `{0}` (C10). A side effect of the
+  inner-paren spacing, not separately controllable.
+- **Trailing `/*!<` comments at column 89** (C8) cannot coexist with a 100-column limit. The
+  reference only manages it because nothing there enforces a limit. forgix uses a preceding block
+  comment instead.
+
+Each was resolved the same way: a rule a machine cannot reproduce is not a rule.
