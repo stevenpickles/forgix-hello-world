@@ -114,6 +114,10 @@ static void print_steps(void) {
 }
 
 static void enter_menu(void) {
+    /* Unconditional, including on paths where the shell was never started. The
+       `menu` command reaches here from inside command dispatch, and the shell
+       would otherwise print one last prompt after the menu that replaced it. */
+    application_console_release();
     ui.mode = UI_MODE_MENU;
     print_menu();
 }

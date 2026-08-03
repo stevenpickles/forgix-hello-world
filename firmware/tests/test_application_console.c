@@ -293,6 +293,28 @@ void test_console_marks_the_write_and_command_paths_for_the_watchdog(void) {
     TEST_ASSERT_TRUE(MOCK_BSP_WatchdogMarkerWasWritten(APPLICATION_DIAGNOSTICS_MARKER_COMMAND));
 }
 
+/* The `menu` command runs inside command dispatch, so the shell finishes the line
+   it was given after the menu has already been drawn. Without releasing it, that
+   prints one last `forgix> ` under the menu and the screen claims two different
+   things about which prompt is live. */
+void test_released_console_stops_prompting_and_stops_scheduling_status(void) {
+    start_at(0);
+    MOCK_BSP_ConsoleReset();
+
+    application_console_release();
+    poll_text_at("help\r", 100);
+
+    TEST_ASSERT_EQUAL_STRING(
+        "help\r\n"
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
+        "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
+        MOCK_BSP_ConsoleOutput());
+
+    MOCK_BSP_ConsoleReset();
+    poll_at(60000);
+    TEST_ASSERT_EQUAL_STRING("", MOCK_BSP_ConsoleOutput());
+}
+
 void test_ctrl_c_and_ctrl_l_remain_silent_in_quiet_mode(void) {
     start_at(0);
     poll_text_at("quiet\r", 100);

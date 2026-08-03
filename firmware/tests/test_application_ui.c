@@ -55,6 +55,7 @@ void setUp(void) {
     activity_polls = 0;
     activity_stops = 0;
     activity_polls_before_finishing = 3;
+    application_console_release_Ignore();
     application_ibit_step_count_IgnoreAndReturn(14);
     application_ibit_step_name_IgnoreAndReturn("a step");
 }
@@ -82,6 +83,7 @@ static void key_at(char key, uint32_t now_ms) {
    test left in the module's static state. */
 static void open_menu_at(uint32_t now_ms) {
     start_at(now_ms);
+    application_console_release_Ignore();
     BSP_FpgaIsReady_ExpectAndReturn(true);
     key_at(' ', now_ms);
     MOCK_BSP_ConsoleReset();

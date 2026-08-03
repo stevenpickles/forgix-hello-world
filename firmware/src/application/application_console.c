@@ -26,6 +26,7 @@ typedef struct {
     size_t used;
     bool echo_enabled;
     bool quiet;
+    bool released;
     bool auto_status_enabled;
     bool swallow_lf;
     status_mode_t status_mode;
@@ -48,14 +49,14 @@ static void mark_write(void) {
 }
 
 static void print_prompt(void) {
-    if (!console.quiet) {
+    if (!console.quiet && !console.released) {
         mark_write();
         BSP_ConsolePrintf("forgix> ");
     }
 }
 
 static void schedule_idle_status(void) {
-    if (console.quiet || !console.auto_status_enabled) {
+    if (console.quiet || console.released || !console.auto_status_enabled) {
         console.status_mode = STATUS_DISABLED;
         return;
     }
@@ -188,6 +189,11 @@ void application_console_idle(void) {
     application_print_status();
     print_prompt();
     console.next_status_ms = console.current_time_ms + console.status_period_ms;
+}
+
+void application_console_release(void) {
+    console.released = true;
+    stop_active_status();
 }
 
 void application_console_set_echo(bool enabled) {
