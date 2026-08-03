@@ -188,4 +188,16 @@ validation, and an RP2354 USB firmware compile with a 2 MB flash-budget gate
 against Pico SDK 2.3.0. The application job publishes its JUnit, detailed HTML,
 Cobertura XML, and text reports as a workflow artifact. The firmware CI build
 embeds `tests/fixtures/fpga-test.bin`; it is a compile fixture, not a loadable FPGA
-image. Licensed Efinity synthesis and hardware tests remain local.
+image. Hardware tests remain local.
+
+Efinity synthesis also runs in CI, in a private container image built from the
+registration-gated Linux tarball, so a routing or timing regression surfaces on
+the push that caused it. Pushing a `v*` tag runs `release.yml`, which places and
+routes the T8F49 design, builds the RP2354 firmware against that exact bitstream,
+checks the image appears byte-for-byte in the linked binary, and publishes the
+UF2, ELF, bitstream, pinout and timing reports, and `SHA256SUMS` as a GitHub
+release. Fork pull requests skip the synthesis job: they are never issued the
+registry secret, so they cannot pull the tools however the workflow is rewritten.
+Every other job still runs for them. See `docs/fpga-ci.md` for the one-time image
+setup, the reason the package is never granted to this repository, and the
+licensing constraints that shape both.
