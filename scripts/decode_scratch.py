@@ -27,6 +27,9 @@ MARKERS = {
     4: "COMMAND - dispatching a shell command",
     5: "USB_SNAPSHOT - sampling USB health",
     6: "FPGA_CHECK - CDONE, design-ID ping, LED register readback",
+    7: "MENU - drawing or dispatching the front-panel menu",
+    8: "IBIT - running a built-in test step",
+    9: "EFFECT - painting the blinker or the advanced blinker",
 }
 
 WATCHDOG_REASON_TIMER = 1 << 0

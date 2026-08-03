@@ -201,6 +201,9 @@ names where the foreground stopped.
 | 4 | `COMMAND` | Command dispatch |
 | 5 | `USB_SNAPSHOT` | Reading USB health |
 | 6 | `FPGA_CHECK` | CDONE, design-ID ping, and LED register readback |
+| 7 | `MENU` | Drawing or dispatching the front-panel menu |
+| 8 | `IBIT` | Running a built-in test step |
+| 9 | `EFFECT` | Painting the blinker or the advanced blinker |
 
 ### Retained scratch layout
 
