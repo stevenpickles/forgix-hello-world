@@ -35,7 +35,7 @@ uint8_t bsp_fpga_read_status(void);
 bool bsp_fpga_status_pin(void);
 void bsp_fpga_reset(void);
 
-uint8_t bsp_fpga_read_register(uint8_t address);
-void bsp_fpga_write_register(uint8_t address, uint8_t value);
+uint8_t bsp_fpga_read_register(const uint8_t address);
+void bsp_fpga_write_register(const uint8_t address, const uint8_t value);
 
 #endif

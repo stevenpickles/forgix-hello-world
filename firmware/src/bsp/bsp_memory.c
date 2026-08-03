@@ -32,7 +32,7 @@ static uint8_t reported_eid;
    pointer in SRAM and a reset vector inside the flash window. Bus contention on
    the shared QSPI lines corrupts reads rather than stopping them, so a garbled
    vector table is exactly what a CS1 problem looks like from here. */
-static bool flash_reads_coherently(uint32_t flash_bytes) {
+static bool flash_reads_coherently(const uint32_t flash_bytes) {
     const uint32_t *vectors = (const uint32_t *)XIP_BASE;
     uint32_t stack_pointer = vectors[0];
     uint32_t reset_vector = vectors[1];
@@ -49,7 +49,7 @@ static bool flash_reads_coherently(uint32_t flash_bytes) {
    runtime_init, and otherwise discarded once the size has been derived.
    Capturing them here costs no additional bus transaction and cannot disturb the
    device, which is precisely what every attempt to re-read them later did. */
-size_t psram_eid_to_size(uint8_t kgd, uint8_t eid) {
+size_t psram_eid_to_size(const uint8_t kgd, const uint8_t eid) {
     reported_kgd = kgd;
     reported_eid = eid;
 
@@ -101,7 +101,7 @@ static bool force_psram_from_datasheet(void) {
 /* Writes every pattern before reading any of them back. Checking each write
    immediately would pass against a bus that merely echoes the last value, and
    would not catch address aliasing from a device smaller than it reports. */
-static bool psram_holds_a_pattern(uint32_t size_bytes) {
+static bool psram_holds_a_pattern(const uint32_t size_bytes) {
     if (size_bytes < sizeof(uint32_t)) {
         return false;
     }

@@ -10,7 +10,7 @@ void mock_bsp_time_reset(void) {
     sleep_total_ms = 0;
 }
 
-void mock_bsp_time_set_ms(uint32_t now_ms) {
+void mock_bsp_time_set_ms(const uint32_t now_ms) {
     current_time_ms = now_ms;
 }
 
@@ -26,7 +26,7 @@ uint32_t bsp_time_now_ms(void) {
     return current_time_ms;
 }
 
-void bsp_time_sleep_ms(uint32_t duration_ms) {
+void bsp_time_sleep_ms(const uint32_t duration_ms) {
     ++sleep_count;
     sleep_total_ms += duration_ms;
 }

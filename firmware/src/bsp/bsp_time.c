@@ -6,6 +6,6 @@ uint32_t bsp_time_now_ms(void) {
     return to_ms_since_boot(get_absolute_time());
 }
 
-void bsp_time_sleep_ms(uint32_t duration_ms) {
+void bsp_time_sleep_ms(const uint32_t duration_ms) {
     sleep_ms(duration_ms);
 }

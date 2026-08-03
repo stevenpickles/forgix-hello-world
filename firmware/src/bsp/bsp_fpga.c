@@ -82,7 +82,7 @@ static bool configure(void) {
     return done;
 }
 
-static void send_byte(uint8_t value, bool release_after_sample) {
+static void send_byte(const uint8_t value, const bool release_after_sample) {
     gpio_set_dir(PIN_SDIO, GPIO_OUT);
     for (int bit = 7; bit >= 0; --bit) {
         gpio_put(PIN_SDIO, (value >> bit) & 1u);
@@ -110,7 +110,7 @@ static uint8_t receive_byte(void) {
     return value;
 }
 
-static uint8_t transaction(const uint8_t *tx, size_t count, bool read) {
+static uint8_t transaction(const uint8_t *const tx, const size_t count, const bool read) {
     gpio_put(PIN_CS, 0);
     busy_wait_us_32(1);
     for (size_t index = 0; index < count; ++index) {
@@ -175,12 +175,12 @@ void bsp_fpga_reset(void) {
     transaction(tx, 1, false);
 }
 
-uint8_t bsp_fpga_read_register(uint8_t address) {
+uint8_t bsp_fpga_read_register(const uint8_t address) {
     const uint8_t tx[] = {CMD_READ, address};
     return transaction(tx, 2, true);
 }
 
-void bsp_fpga_write_register(uint8_t address, uint8_t value) {
+void bsp_fpga_write_register(const uint8_t address, const uint8_t value) {
     const uint8_t tx[] = {CMD_WRITE, address, value};
     transaction(tx, 3, false);
 }

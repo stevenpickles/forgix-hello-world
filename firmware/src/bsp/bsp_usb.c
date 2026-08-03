@@ -8,12 +8,12 @@
    them to count completed transfers without disturbing SDK stdio behavior. */
 static volatile uint32_t cdc_activity_count;
 
-void tud_cdc_rx_cb(uint8_t interface) {
+void tud_cdc_rx_cb(const uint8_t interface) {
     (void)interface;
     ++cdc_activity_count;
 }
 
-void tud_cdc_tx_complete_cb(uint8_t interface) {
+void tud_cdc_tx_complete_cb(const uint8_t interface) {
     (void)interface;
     ++cdc_activity_count;
 }

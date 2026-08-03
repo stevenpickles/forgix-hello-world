@@ -10,7 +10,7 @@ enum {
     REG_LED_ENABLE = 0x14,
 };
 
-void bsp_led_set(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness) {
+void bsp_led_set(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness) {
     bsp_fpga_write_register(REG_LED_R, red);
     bsp_fpga_write_register(REG_LED_G, green);
     bsp_fpga_write_register(REG_LED_B, blue);

@@ -9,7 +9,7 @@
    watchdog reset, which is what makes a hang self-attributing. */
 enum { MARKER_REGISTER = 0, SNAPSHOT_BASE_REGISTER = 1 };
 
-void bsp_watchdog_start(uint32_t timeout_ms) {
+void bsp_watchdog_start(const uint32_t timeout_ms) {
     watchdog_enable(timeout_ms, true);
 }
 
@@ -32,7 +32,7 @@ bsp_boot_reason_t bsp_watchdog_boot_reason(void) {
     return BSP_BOOT_OTHER;
 }
 
-void bsp_watchdog_marker_set(uint32_t marker) {
+void bsp_watchdog_marker_set(const uint32_t marker) {
     watchdog_hw->scratch[MARKER_REGISTER] = marker;
 }
 
@@ -40,13 +40,13 @@ uint32_t bsp_watchdog_marker_get(void) {
     return watchdog_hw->scratch[MARKER_REGISTER];
 }
 
-void bsp_watchdog_snapshot_set(uint32_t slot, uint32_t value) {
+void bsp_watchdog_snapshot_set(const uint32_t slot, const uint32_t value) {
     if (slot < BSP_WATCHDOG_SNAPSHOT_SLOTS) {
         watchdog_hw->scratch[SNAPSHOT_BASE_REGISTER + slot] = value;
     }
 }
 
-uint32_t bsp_watchdog_snapshot_get(uint32_t slot) {
+uint32_t bsp_watchdog_snapshot_get(const uint32_t slot) {
     if (slot < BSP_WATCHDOG_SNAPSHOT_SLOTS) {
         return watchdog_hw->scratch[SNAPSHOT_BASE_REGISTER + slot];
     }

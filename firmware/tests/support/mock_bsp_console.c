@@ -9,7 +9,7 @@ static int input[512];
 static size_t input_count;
 static size_t input_position;
 
-static void append(const char *text) {
+static void append(const char *const text) {
     size_t used = strlen(output);
     size_t remaining = sizeof output - used;
     if (remaining > 1) {
@@ -23,7 +23,7 @@ void mock_bsp_console_reset(void) {
     input_position = 0;
 }
 
-void mock_bsp_console_queue_character(int character) {
+void mock_bsp_console_queue_character(const int character) {
     if (input_count < sizeof input / sizeof input[0]) {
         input[input_count++] = character;
     }
@@ -42,7 +42,7 @@ const char *mock_bsp_console_output(void) {
 void bsp_console_init(void) {
 }
 
-int bsp_console_getchar_timeout_us(uint32_t timeout_us) {
+int bsp_console_getchar_timeout_us(const uint32_t timeout_us) {
     (void)timeout_us;
     if (input_position < input_count) {
         return input[input_position++];
@@ -50,13 +50,13 @@ int bsp_console_getchar_timeout_us(uint32_t timeout_us) {
     return BSP_CONSOLE_TIMEOUT;
 }
 
-int bsp_console_putchar(int character) {
+int bsp_console_putchar(const int character) {
     char text[2] = {(char)character, 0};
     append(text);
     return character;
 }
 
-int bsp_console_printf(const char *format, ...) {
+int bsp_console_printf(const char *const format, ...) {
     char formatted[512];
     va_list arguments;
     va_start(arguments, format);
@@ -66,7 +66,7 @@ int bsp_console_printf(const char *format, ...) {
     return result;
 }
 
-int bsp_console_puts(const char *text) {
+int bsp_console_puts(const char *const text) {
     append(text);
     append("\n");
     return 0;

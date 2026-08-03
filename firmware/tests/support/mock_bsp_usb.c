@@ -12,15 +12,15 @@ void mock_bsp_usb_reset(void) {
     service_count = 0;
 }
 
-void mock_bsp_usb_set_present(bool value) {
+void mock_bsp_usb_set_present(const bool value) {
     present = value;
 }
 
-void mock_bsp_usb_set_connected(bool value) {
+void mock_bsp_usb_set_connected(const bool value) {
     connected = value;
 }
 
-void mock_bsp_usb_set_health(bsp_usb_health_t value) {
+void mock_bsp_usb_set_health(const bsp_usb_health_t value) {
     health = value;
 }
 
