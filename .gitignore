@@ -8,3 +8,12 @@ fpga/work-obj*.cf
 *.ghw
 __pycache__/
 *.py[cod]
+
+# The Efinity installer is licensed software that may not be redistributed, and
+# this repository is public. build_image.sh is usually pointed at a download
+# outside the tree, but the tarball is easy to leave here after using it -- and
+# one `git add -A` would publish it. Never commit these, whatever the extension.
+efinity-*.tar.*
+efinity-*.tar
+efinity-*.msi
+efinity-*.exe
