@@ -173,8 +173,12 @@ artifacts without publishing anything.
   The Interface Designer reaches `PyQt6.QtGui` via `qtpy`, so `libGL` and the
   rest are load-bearing; `QT_QPA_PLATFORM=offscreen` is what keeps Qt from
   looking for a display that a runner does not have.
-- The image is roughly 2.7 GB. `pgm/`, `ipm/`, and `debugger/` are unused by the
-  compile flow and could be pruned (~880 MB) if pull time becomes the bottleneck,
-  but only a full CI compile proves a prune safe.
+- The built image is 4.2 GB, which every run pays as pull time. `ipm/` (~451 MB)
+  and `debugger/` (~145 MB) are untouched by a compile and are the obvious
+  candidates if that becomes the bottleneck. `pgm/` is *not*: `bin/efx_pgm`
+  generates the bitstream. Neither is `pt/` — that is the Interface Designer,
+  without which the flow silently produces nothing. A prune is only proven by a
+  full compile afterwards, for exactly the reason described above: this flow
+  fails green.
 - Efinity output stays out of git; `fpga/outflow/` is ignored. The artifacts and
   releases are the only published copies.
