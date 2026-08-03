@@ -5,8 +5,9 @@
 #
 # The Efinix license (license.txt 2.3(a)) forbids distributing or giving others
 # access to the software, so the pushed package MUST stay private. This script
-# refuses to run against a registry path that is not under your own account, but
-# it cannot check package visibility for you -- see docs/fpga-ci.md.
+# refuses to push anywhere but ghcr.io, so a mistyped EFINITY_IMAGE cannot put
+# the tools on a public registry; it cannot check the package's visibility for
+# you, and that setting is what actually keeps it private -- see docs/fpga-ci.md.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -29,6 +30,18 @@ if ! command -v docker >/dev/null 2>&1; then
   printf 'docker is required to build the Efinity CI image.\n' >&2
   exit 2
 fi
+# Checked before the build rather than before the push, so a bad destination
+# costs nothing. Docker Hub is the dangerous default: an unqualified image name
+# resolves there, and there is no such thing as an accidental private push.
+case "$image" in
+  ghcr.io/*/*) ;;
+  *)
+    printf 'Refusing to build Efinity for a destination outside GHCR: %s\n' "$image" >&2
+    printf 'The license forbids giving anyone else access to the software.\n' >&2
+    printf 'Set EFINITY_IMAGE to ghcr.io/<your-account>/<package>.\n' >&2
+    exit 2
+    ;;
+esac
 
 # The build context is the directory holding the tarball, so the multi-gigabyte
 # archive is never copied into a temporary context first.
