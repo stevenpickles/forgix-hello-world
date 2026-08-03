@@ -1,8 +1,30 @@
 name: CI
 
 on:
+  # A documentation-only change cannot alter what any check produces: nothing in
+  # scripts/ or .github/ reads these files, they are only named in comments and
+  # help text. Without this, fixing a typo in a README costs a full
+  # place-and-route and a 4.2 GB image pull.
+  #
+  # Two things to know before touching this list. It skips the entire run rather
+  # than only synthesis, because `paths-ignore` exists at workflow level and not
+  # per job. That is harmless today, but if main ever gains branch protection
+  # with required checks, a skipped run never reports them and a docs-only pull
+  # request becomes unmergeable with no visible reason -- at that point filter
+  # the expensive jobs instead of the workflow. And a push touching both docs and
+  # code still runs in full: a run is skipped only when every changed file
+  # matches. workflow_dispatch is deliberately unfiltered, so a manual run is
+  # always available.
   push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
