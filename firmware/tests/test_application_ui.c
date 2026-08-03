@@ -10,6 +10,7 @@
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
 #include "mock_auto_application_console.h"
+#include "mock_auto_application_effects.h"
 #include "mock_auto_application_ibit.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
@@ -290,6 +291,21 @@ void test_step_submenu_redraws_an_unknown_key_and_leaves_on_x(void) {
     BSP_FpgaIsReady_ExpectAndReturn(true);
     key_at('x', 300);
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== Forgix menu ==="));
+}
+
+void test_blinker_and_advanced_blinker_start_from_the_menu(void) {
+    open_menu_at(0);
+
+    application_effects_blinker_ExpectAndReturn(&FAKE_ACTIVITY);
+    key_at('5', 100);
+    TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
+
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    key_at('q', 200);
+
+    application_effects_advanced_ExpectAndReturn(&FAKE_ACTIVITY);
+    key_at('6', 300);
+    TEST_ASSERT_EQUAL_UINT32(2, activity_starts);
 }
 
 void test_board_report_prints_and_comes_straight_back_to_the_menu(void) {

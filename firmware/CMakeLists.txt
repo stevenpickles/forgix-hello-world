@@ -113,6 +113,7 @@ add_library(forgix_application STATIC
   src/application/application.c
   src/application/application_console.c
   src/application/application_diagnostics.c
+  src/application/application_effects.c
   src/application/application_ibit.c
   src/application/application_runner.c
   src/application/application_ui.c)

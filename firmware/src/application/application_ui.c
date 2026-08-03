@@ -6,6 +6,7 @@
 
 #include "application_console.h"
 #include "application_diagnostics.h"
+#include "application_effects.h"
 #include "application_ibit.h"
 #include "bsp.h"
 
@@ -39,6 +40,8 @@ static void action_ibit(void);
 static void action_soak(void);
 static void action_steps(void);
 static void action_report(void);
+static void action_blinker(void);
+static void action_advanced(void);
 static void action_shell(void);
 static void action_reboot(void);
 static void action_bootsel(void);
@@ -51,6 +54,8 @@ static const menu_entry_t MENU[] = {
     {'2', "Built-in test soak", "repeat with a tally until a key is pressed", action_soak},
     {'3', "One test at a time", "re-run a single step without the other thirteen", action_steps},
     {'4', "Board report", "what this board is, without judging it", action_report},
+    {'5', "Blinker", "red, green, blue at 1 Hz until a key is pressed", action_blinker},
+    {'6', "Advanced blinker", "heartbeat, colour wheel, aurora", action_advanced},
     {'c', "Command shell", "the forgix> prompt; `menu` returns here", action_shell},
     {'r', "Reboot", "restart the board and reconfigure the FPGA", action_reboot},
     {'b', "Reboot to BOOTSEL", "hand the board to the USB loader for reflashing", action_bootsel},
@@ -144,6 +149,14 @@ static void action_steps(void) {
 static void action_report(void) {
     application_ibit_print_board_report();
     enter_menu();
+}
+
+static void action_blinker(void) {
+    start_activity(application_effects_blinker());
+}
+
+static void action_advanced(void) {
+    start_activity(application_effects_advanced());
 }
 
 static void action_shell(void) {

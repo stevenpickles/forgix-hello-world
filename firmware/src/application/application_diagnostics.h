@@ -17,6 +17,7 @@ enum {
        reset from either would be attributed to whatever ran last instead. */
     APPLICATION_DIAGNOSTICS_MARKER_MENU = 7,
     APPLICATION_DIAGNOSTICS_MARKER_IBIT = 8,
+    APPLICATION_DIAGNOSTICS_MARKER_EFFECT = 9,
 };
 
 enum {
