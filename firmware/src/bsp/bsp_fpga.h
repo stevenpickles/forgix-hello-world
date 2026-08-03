@@ -3,10 +3,10 @@
 
 #include "bsp_types.h"
 
-enum
-{
-    BSP_FPGA_DESIGN_ID = 0xb5
-};
+/* Identity byte the loaded FPGA design answers a ping with. A mismatch here is
+   treated as "this is not the design we expect" rather than a bus fault, since
+   the bus itself is clearly working well enough to return something. */
+#define BSP_FPGA_DESIGN_ID ((uint8_t)0xb5u)
 
 typedef struct
 {
