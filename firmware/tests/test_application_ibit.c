@@ -8,6 +8,7 @@
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
+#include "mock_auto_application_diagnostics.h"
 #include "mock_bsp_watchdog.h"
 #include "mock_auto_bsp_adc.h"
 #include "mock_auto_bsp_button.h"
@@ -397,7 +398,7 @@ void test_usb_fails_on_each_unhealthy_condition_in_isolation(void) {
 }
 
 void test_watchdog_passes_after_a_clean_power_up(void) {
-    MOCK_BSP_WatchdogSetBootReason(BSP_BOOT_POWER_ON);
+    application_diagnostics_boot_reason_ExpectAndReturn(BSP_BOOT_POWER_ON);
 
     const char *output = run_step(STEP_WATCHDOG);
 
@@ -410,7 +411,7 @@ void test_watchdog_passes_after_a_clean_power_up(void) {
    across a reset, so a register that accepts a write and drops it has to be a
    failure and not a footnote. */
 void test_watchdog_fails_when_the_marker_does_not_read_back(void) {
-    MOCK_BSP_WatchdogSetBootReason(BSP_BOOT_POWER_ON);
+    application_diagnostics_boot_reason_ExpectAndReturn(BSP_BOOT_POWER_ON);
     MOCK_BSP_WatchdogSetMarkerReadbackFaulty(true);
 
     const char *output = run_step(STEP_WATCHDOG);
@@ -422,7 +423,7 @@ void test_watchdog_fails_when_the_marker_does_not_read_back(void) {
 /* The board is plainly running now, but something stopped feeding the loop and
    the retained marker is the only witness to where. */
 void test_watchdog_fails_when_the_previous_boot_was_forced_by_the_watchdog(void) {
-    MOCK_BSP_WatchdogSetBootReason(BSP_BOOT_WATCHDOG);
+    application_diagnostics_boot_reason_ExpectAndReturn(BSP_BOOT_WATCHDOG);
 
     const char *output = run_step(STEP_WATCHDOG);
 
@@ -680,7 +681,7 @@ static void drive_to_completion(const application_activity_t *activity, uint32_t
    with no pass criterion. The point is that all four land in different columns
    rather than collapsing into one number. */
 void test_the_sequence_runs_every_step_and_summarises_the_tally(void) {
-    MOCK_BSP_WatchdogSetBootReason(BSP_BOOT_POWER_ON);
+    application_diagnostics_boot_reason_IgnoreAndReturn(BSP_BOOT_POWER_ON);
     MOCK_BSP_UsbSetHealth(usb_health(100, true, false, 256));
     expect_sequence_without_the_fpga();
 
@@ -700,7 +701,7 @@ void test_the_sequence_runs_every_step_and_summarises_the_tally(void) {
 /* The soak never finishes on its own; it is stopped by the abort path, which is
    also what has to put the LED back. */
 void test_the_soak_tallies_across_iterations_and_starts_the_next_run(void) {
-    MOCK_BSP_WatchdogSetBootReason(BSP_BOOT_POWER_ON);
+    application_diagnostics_boot_reason_IgnoreAndReturn(BSP_BOOT_POWER_ON);
     MOCK_BSP_UsbSetHealth(usb_health(100, true, false, 256));
     expect_sequence_without_the_fpga();
 
@@ -779,7 +780,7 @@ static void ignore_a_healthy_board(void) {
     BSP_LedSet_Ignore();
     BSP_LedGet_StubWithCallback(led_get_callback);
     BSP_ButtonGetState_StubWithCallback(button_callback);
-    MOCK_BSP_WatchdogSetBootReason(BSP_BOOT_POWER_ON);
+    application_diagnostics_boot_reason_IgnoreAndReturn(BSP_BOOT_POWER_ON);
 }
 
 /* The soak counts iterations that had a failure, not iterations, so a clean run

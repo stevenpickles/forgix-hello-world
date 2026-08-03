@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "bsp.h"
+
 /* Progress markers written to the watchdog marker register. After a watchdog
    reset the retained value names the code path that stopped making progress. */
 enum {
@@ -44,5 +46,12 @@ void application_diagnostics_poll(void);
 
 /* Live counters plus the retained report from the previous boot. */
 void application_diagnostics_print_report(void);
+
+/* The boot cause as it was latched by application_diagnostics_start, before the
+   watchdog was armed. Anything asking later must come here rather than call
+   BSP_WatchdogBootReason again: arming the watchdog writes the scratch word that
+   watchdog_enable_caused_reboot consults, so a live query minutes into a session
+   reports a watchdog reset on a board that powered up cleanly. */
+bsp_boot_reason application_diagnostics_boot_reason(void);
 
 #endif

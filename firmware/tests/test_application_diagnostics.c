@@ -135,6 +135,18 @@ void test_start_names_every_boot_reason_on_the_console(void) {
     }
 }
 
+/* The snapshot is taken before the watchdog is armed and has to stay readable
+   afterwards. Arming writes the scratch word watchdog_enable_caused_reboot
+   consults, so anything that asks the BSP again later is told every board came
+   back from a watchdog reset -- which is precisely what the built-in test
+   reported on hardware that had powered up cleanly. */
+void test_boot_reason_is_published_from_the_snapshot_taken_before_the_watchdog_was_armed(void) {
+    start_led_only(BSP_BOOT_BROWNOUT, 0, 255, 255, 0, 2, 255, 255, 0);
+
+    TEST_ASSERT_TRUE(MOCK_BSP_WatchdogStarted());
+    TEST_ASSERT_EQUAL_INT(BSP_BOOT_BROWNOUT, application_diagnostics_boot_reason());
+}
+
 void test_usb_free_image_blinks_a_white_power_on_code_and_still_prints_it(void) {
     start_led_only(BSP_BOOT_POWER_ON, 0, 255, 255, 255, 1, 0, 0, 255);
 

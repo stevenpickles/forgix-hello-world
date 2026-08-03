@@ -293,9 +293,15 @@ static application_ibit_outcome_t step_usb(char *detail, size_t capacity) {
 
 /* A previous watchdog reset is a failure even though the board is plainly
    running now: it means something stopped feeding the loop, and the retained
-   marker is the only witness to where. */
+   marker is the only witness to where.
+
+   The reason comes from the diagnostics layer's boot-time snapshot rather than
+   from a fresh BSP_WatchdogBootReason call. Arming the watchdog writes the
+   scratch word watchdog_enable_caused_reboot consults, so asking again once the
+   foreground loop is running reports a watchdog reset on every board -- which is
+   how this step first failed on hardware that had powered up perfectly. */
 static application_ibit_outcome_t step_watchdog(char *detail, size_t capacity) {
-    const bsp_boot_reason reason = BSP_WatchdogBootReason();
+    const bsp_boot_reason reason = application_diagnostics_boot_reason();
     static const char *const REASON_TEXT[] = {"power-on", "brownout", "watchdog", "other"};
 
     BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_IBIT);
