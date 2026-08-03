@@ -200,7 +200,7 @@ void test_hello_reports_each_led_readback_mismatch(void) {
     const char *field_names[] = {"red", "green", "blue", "brightness", "enabled"};
     bsp_led_state_t mismatches[5];
 
-    for (size_t index = 0; index < 5; ++index) {
+    for (uint32_t index = 0; index < 5u; ++index) {
         mismatches[index] = expected_hello_led();
     }
     mismatches[0].red = 1;
@@ -209,7 +209,7 @@ void test_hello_reports_each_led_readback_mismatch(void) {
     mismatches[3].brightness = 63;
     mismatches[4].enabled = false;
 
-    for (size_t index = 0; index < 5; ++index) {
+    for (uint32_t index = 0; index < 5u; ++index) {
         expect_hello_readback(BSP_FPGA_DESIGN_ID, mismatches[index]);
         process("hello");
 
@@ -253,7 +253,7 @@ void test_console_control_commands_remain_available_without_fpga_access(void) {
         "interactive",
     };
 
-    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
+    for (uint32_t index = 0; index < (uint32_t)(sizeof commands / sizeof commands[0]); ++index) {
         process(commands[index]);
         TEST_ASSERT_EQUAL_STRING("ok\n", MOCK_BSP_ConsoleOutput());
         MOCK_BSP_ConsoleReset();
@@ -275,7 +275,7 @@ void test_console_control_commands_report_invalid_usage(void) {
         "interactive extra",
     };
 
-    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
+    for (uint32_t index = 0; index < (uint32_t)(sizeof commands / sizeof commands[0]); ++index) {
         process(commands[index]);
         TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "error:"));
         MOCK_BSP_ConsoleReset();
@@ -333,7 +333,7 @@ void test_known_commands_with_extra_arguments_are_rejected(void) {
         "reset extra",
     };
 
-    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index) {
+    for (uint32_t index = 0; index < (uint32_t)(sizeof commands / sizeof commands[0]); ++index) {
         BSP_FpgaIsReady_ExpectAndReturn(true);
         process(commands[index]);
 

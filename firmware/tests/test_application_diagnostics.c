@@ -123,7 +123,7 @@ void test_start_names_every_boot_reason_on_the_console(void) {
         {BSP_BOOT_OTHER, "boot=other"},
     };
 
-    for (size_t index = 0; index < sizeof cases / sizeof cases[0]; ++index) {
+    for (uint32_t index = 0; index < (uint32_t)(sizeof cases / sizeof cases[0]); ++index) {
         MOCK_BSP_ConsoleReset();
         MOCK_BSP_WatchdogReset();
         MOCK_BSP_WatchdogSetBootReason(cases[index].reason);
@@ -461,7 +461,7 @@ void test_each_led_register_readback_mismatch_is_treated_as_an_fpga_fault(void) 
     const char *field_names[] = {"red", "green", "blue", "brightness", "enabled"};
     bsp_led_state_t mismatches[5];
 
-    for (size_t index = 0; index < 5; ++index) {
+    for (uint32_t index = 0; index < 5u; ++index) {
         mismatches[index] = led_state(0, 255, 0, true);
     }
     mismatches[0].red = 1;
@@ -470,7 +470,7 @@ void test_each_led_register_readback_mismatch_is_treated_as_an_fpga_fault(void) 
     mismatches[3].brightness = BRIGHTNESS - 1;
     mismatches[4].enabled = false;
 
-    for (size_t index = 0; index < 5; ++index) {
+    for (uint32_t index = 0; index < 5u; ++index) {
         run_readback_mismatch(mismatches[index], field_names[index]);
     }
 }

@@ -37,7 +37,7 @@ static void poll_at(uint32_t now_ms) {
 
 static void poll_text_at(const char *text, uint32_t now_ms) {
     MOCK_BSP_ConsoleQueueText(text);
-    for (size_t index = 0; index < strlen(text); ++index) {
+    for (uint32_t index = 0; index < (uint32_t)strlen(text); ++index) {
         poll_at(now_ms);
     }
 }
@@ -112,7 +112,7 @@ void test_backspace_delete_and_ctrl_u_edit_the_local_line(void) {
     MOCK_BSP_ConsoleQueueCharacter(127);
     MOCK_BSP_ConsoleQueueText("cd");
     MOCK_BSP_ConsoleQueueCharacter(21);
-    for (int index = 0; index < 8; ++index) {
+    for (uint32_t index = 0; index < 8u; ++index) {
         poll_at(100);
     }
 
@@ -140,7 +140,7 @@ void test_nonprinting_input_is_ignored_and_overflow_rings_the_bell(void) {
 
     MOCK_BSP_ConsoleQueueCharacter(1);
     poll_at(100);
-    for (int index = 0; index < 128; ++index) {
+    for (uint32_t index = 0; index < 128u; ++index) {
         MOCK_BSP_ConsoleQueueCharacter('x');
         poll_at(100);
     }
