@@ -7,6 +7,7 @@
 
 #include "application_console.h"
 #include "application_diagnostics.h"
+#include "application_ui.h"
 #include "bsp.h"
 
 static bool parse_byte(const char *text, uint8_t *value) {
@@ -35,7 +36,7 @@ static bool parse_watch_period(const char *text, uint32_t *seconds) {
 
 static void print_help(void) {
     BSP_ConsolePuts(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
 }
 
 /* Both QSPI memories share the same data lines, so a fault on one shows up as
@@ -124,6 +125,13 @@ void application_process_command(char *line) {
     if (!strcmp(argv[0], "diag") && argc == 1) {
         print_memory_report();
         application_diagnostics_print_report();
+        return;
+    }
+    /* Above the FPGA gate: getting back to the menu is how a user reaches the
+       tests that diagnose a dead FPGA, so it cannot be one of the things a dead
+       FPGA takes away. */
+    if (!strcmp(argv[0], "menu") && argc == 1) {
+        application_ui_enter_menu();
         return;
     }
     if (!BSP_FpgaIsReady()) {

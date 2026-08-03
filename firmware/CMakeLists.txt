@@ -55,10 +55,13 @@ option(FORGIX_QSPI_PSRAM
 
 add_library(forgix_bsp STATIC
   src/bsp/bsp.c
+  src/bsp/bsp_adc.c
   src/bsp/bsp_button.c
+  src/bsp/bsp_clocks.c
   src/bsp/bsp_console.c
   src/bsp/bsp_fpga.c
   src/bsp/bsp_led.c
+  src/bsp/bsp_mcu.c
   src/bsp/bsp_memory.c
   src/bsp/bsp_time.c
   src/bsp/bsp_watchdog.c
@@ -68,7 +71,16 @@ target_include_directories(forgix_bsp
   PRIVATE ${GENERATED_DIR})
 # hardware_flash is unconditional: bsp_memory uses it to identify the QSPI
 # devices whether or not the chip-select-1 device is brought up.
-target_link_libraries(forgix_bsp PUBLIC pico_stdlib hardware_spi hardware_watchdog hardware_flash)
+# hardware_clocks and hardware_adc back the built-in test's read-only view of the
+# MCU, and pico_unique_id supplies the board identity it reports.
+target_link_libraries(forgix_bsp PUBLIC
+  pico_stdlib
+  hardware_spi
+  hardware_watchdog
+  hardware_flash
+  hardware_clocks
+  hardware_adc
+  pico_unique_id)
 
 if(FORGIX_QSPI_PSRAM)
   target_link_libraries(forgix_bsp PUBLIC hardware_psram)
@@ -101,7 +113,10 @@ add_library(forgix_application STATIC
   src/application/application.c
   src/application/application_console.c
   src/application/application_diagnostics.c
-  src/application/application_runner.c)
+  src/application/application_effects.c
+  src/application/application_ibit.c
+  src/application/application_runner.c
+  src/application/application_ui.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
 target_link_libraries(forgix_application PUBLIC forgix_bsp)

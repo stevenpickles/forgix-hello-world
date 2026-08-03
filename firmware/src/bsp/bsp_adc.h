@@ -1,5 +1,5 @@
-#ifndef FORGIX_BSP_H
-#define FORGIX_BSP_H
+#ifndef FORGIX_BSP_ADC_H
+#define FORGIX_BSP_ADC_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -15,18 +15,7 @@ extern "C" {
 ***************************************************************************************/
 
 
-#include "bsp_adc.h"
-#include "bsp_button.h"
-#include "bsp_clocks.h"
-#include "bsp_console.h"
-#include "bsp_fpga.h"
-#include "bsp_led.h"
-#include "bsp_mcu.h"
-#include "bsp_memory.h"
-#include "bsp_time.h"
 #include "bsp_types.h"
-#include "bsp_usb.h"
-#include "bsp_watchdog.h"
 
 
 
@@ -38,7 +27,11 @@ extern "C" {
 ***************************************************************************************/
 
 
-typedef bsp_fpga_init_result_t bsp_init_result_t;
+typedef struct bsp_adc_temperature_t_tag
+{
+    uint16_t raw;          /* 12-bit conversion result, reported so a rail fault is visible */
+    int32_t milli_celsius; /* converted with the RP2350 datasheet transfer function */
+} bsp_adc_temperature_t;
 
 
 
@@ -50,7 +43,9 @@ typedef bsp_fpga_init_result_t bsp_init_result_t;
 ***************************************************************************************/
 
 
-bsp_init_result_t BSP_Init( void );
+void BSP_AdcInit( void );
+
+bsp_adc_temperature_t BSP_AdcTemperature( void );
 
 #ifdef __cplusplus
 }

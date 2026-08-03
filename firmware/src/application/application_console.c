@@ -11,9 +11,12 @@
 
 enum { COMMAND_CAPACITY = 128 };
 
+/* There is no boot mode here any more. Reporting status once a second until a
+   key arrived used to be how the board proved it was alive; the banner the UI
+   layer prints before the shell is ever entered does that job now, and does it
+   in words a user who has just plugged the board in can act on. */
 typedef enum {
     STATUS_DISABLED,
-    STATUS_BOOT,
     STATUS_IDLE,
     STATUS_WATCH,
 } status_mode_t;
@@ -23,6 +26,7 @@ typedef struct {
     size_t used;
     bool echo_enabled;
     bool quiet;
+    bool released;
     bool auto_status_enabled;
     bool swallow_lf;
     status_mode_t status_mode;
@@ -45,14 +49,14 @@ static void mark_write(void) {
 }
 
 static void print_prompt(void) {
-    if (!console.quiet) {
+    if (!console.quiet && !console.released) {
         mark_write();
         BSP_ConsolePrintf("forgix> ");
     }
 }
 
 static void schedule_idle_status(void) {
-    if (console.quiet || !console.auto_status_enabled) {
+    if (console.quiet || console.released || !console.auto_status_enabled) {
         console.status_mode = STATUS_DISABLED;
         return;
     }
@@ -157,23 +161,20 @@ void application_console_start(void) {
     console = (console_state_t){
         .echo_enabled = true,
         .auto_status_enabled = true,
-        .status_mode = STATUS_BOOT,
-        .status_period_ms = APPLICATION_BOOT_STATUS_PERIOD_MS,
     };
     console.current_time_ms = BSP_TimeNowMs();
-    console.next_status_ms = console.current_time_ms + console.status_period_ms;
+    schedule_idle_status();
     print_prompt();
 }
 
-void application_console_poll(void) {
-    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ);
-    int16_t character = BSP_ConsoleGetCharTimeoutUs(1000);
+void application_console_feed(int16_t character) {
+    console.current_time_ms = BSP_TimeNowMs();
+    process_character(character);
+}
+
+void application_console_idle(void) {
     console.current_time_ms = BSP_TimeNowMs();
 
-    if (character != BSP_CONSOLE_TIMEOUT) {
-        process_character(character);
-        return;
-    }
     /* Unsolicited output is gated on DTR. Writing status into a port no host has
        opened is the firmware's only unbounded, self-inflicted trip through the
        untimed stdio flush loop. */
@@ -188,6 +189,11 @@ void application_console_poll(void) {
     application_print_status();
     print_prompt();
     console.next_status_ms = console.current_time_ms + console.status_period_ms;
+}
+
+void application_console_release(void) {
+    console.released = true;
+    stop_active_status();
 }
 
 void application_console_set_echo(bool enabled) {

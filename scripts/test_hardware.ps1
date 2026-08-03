@@ -165,13 +165,28 @@ try {
     $resetNeeded = $true
     Start-Sleep -Milliseconds 250
 
+    # Two bytes that reach the shell from wherever the board happens to be. The
+    # firmware boots into a banner, any key opens the menu, and 'c' opens the
+    # shell -- but this script cannot know whether a previous run already moved
+    # it on, and the board is not reset by opening the port. So: CR dismisses the
+    # banner, aborts a running test, or is an ignored empty line; 'c' then opens
+    # the shell from the menu, or is a harmless invalid command if the shell is
+    # already up. Sending "quiet" first would not survive this -- the 'q' would
+    # be eaten as the banner-dismissing keypress and "uiet" read as menu keys.
+    Write-Step "Reaching the command shell from whatever state the board is in"
+    $serial.Write("`r")
+    Start-Sleep -Milliseconds 250
+    $serial.Write("c")
+    Start-Sleep -Milliseconds 250
+    $serial.DiscardInBuffer()
+
     Write-Step "Selecting quiet protocol mode"
     $quiet = Invoke-ForgixCommand $serial "quiet" -IgnoreInteractiveNoise
     Assert-Response $quiet '^ok$' "Quiet mode"
 
     Write-Step "Checking command shell and FPGA identity"
     $help = Invoke-ForgixCommand $serial "help"
-    Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| diag \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
+    Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| diag \| menu \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
 
     $initialStatus = Invoke-ForgixCommand $serial "status"
     Assert-Response $initialStatus '^id=B5 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "FPGA status"

@@ -378,3 +378,7 @@ void application_diagnostics_print_report(void) {
         (unsigned long)diagnostics.health.frame_number,
         (unsigned long)diagnostics.fpga_failures, (unsigned long)diagnostics.fpga_reconfigures);
 }
+
+bsp_boot_reason application_diagnostics_boot_reason(void) {
+    return diagnostics.boot_reason;
+}

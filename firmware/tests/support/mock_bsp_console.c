@@ -24,7 +24,10 @@
 /* The queue holds only bytes a host could actually send. BSP_CONSOLE_TIMEOUT is
    produced when the queue runs dry rather than stored in it, so the element type
    does not have to carry the sentinel. */
-static char _output[ 2048 ];
+/* Sized for a whole built-in test run. Fourteen result lines, their headings and
+   the summary run past two kilobytes, and a capture that truncates turns a
+   passing tail assertion into a confusing failure about the wrong thing. */
+static char _output[ 8192 ];
 static uint8_t _input[ 512 ];
 static uint32_t _inputCount;
 static uint32_t _inputPosition;

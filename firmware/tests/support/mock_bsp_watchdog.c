@@ -25,6 +25,7 @@ static uint32_t _timeoutMs;
 static uint32_t _feedCount;
 static uint32_t _markerHistory[ MOCK_BSP_WATCHDOG_MARKER_HISTORY ];
 static uint32_t _markerWrites;
+static bool _markerReadbackFaulty;
 
 
 
@@ -53,6 +54,18 @@ void MOCK_BSP_WatchdogReset( void )
     _timeoutMs = 0;
     _feedCount = 0;
     _markerWrites = 0;
+    _markerReadbackFaulty = false;
+}
+
+
+/// <summary>
+///     Poses a scratch register that accepts a write and does not hold it. The
+///     built-in test round-trips the marker precisely because that register
+///     failing would silently invalidate every watchdog diagnosis.
+/// </summary>
+void MOCK_BSP_WatchdogSetMarkerReadbackFaulty( const bool faulty )
+{
+    _markerReadbackFaulty = faulty;
 }
 
 
@@ -255,6 +268,10 @@ void BSP_WatchdogMarkerSet( const uint32_t value )
 /// </returns>
 uint32_t BSP_WatchdogMarkerGet( void )
 {
+    if ( _markerReadbackFaulty )
+    {
+        return ~_marker;
+    }
     return _marker;
 }
 

@@ -5,15 +5,27 @@
 #include <stdint.h>
 
 enum {
-    APPLICATION_BOOT_STATUS_PERIOD_MS = 1000,
     APPLICATION_IDLE_TIMEOUT_MS = 10000,
     APPLICATION_IDLE_STATUS_PERIOD_MS = 10000,
     APPLICATION_WATCH_MIN_SECONDS = 1,
     APPLICATION_WATCH_MAX_SECONDS = 3600,
 };
 
+/* The console no longer reads its own characters. The UI layer owns the terminal
+   and decides whether a byte belongs to the shell, so it hands one in through
+   application_console_feed and calls application_console_idle on the polls where
+   nothing arrived. Splitting it this way keeps exactly one reader, which matters
+   because that read is the only thing in the foreground loop that yields. */
 void application_console_start(void);
-void application_console_poll(void);
+void application_console_feed(int16_t character);
+void application_console_idle(void);
+
+/* Tells the shell it no longer owns the terminal, so it stops printing its
+   prompt and stops scheduling status. Needed because the `menu` command runs
+   inside command dispatch: without it the shell prints one last `forgix> ` after
+   the menu it was just dismissed by, leaving the screen claiming two different
+   things about which prompt is live. */
+void application_console_release(void);
 void application_console_set_echo(bool enabled);
 void application_console_set_quiet(bool enabled);
 void application_console_set_watch(uint32_t period_seconds);

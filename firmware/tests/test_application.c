@@ -12,6 +12,7 @@
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
+#include "mock_auto_application_ui.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
@@ -110,6 +111,14 @@ void test_empty_command_has_no_effect(void) {
 void test_help_remains_available_without_fpga_access(void) {
     process("help");
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "hello | color"));
+}
+
+/* The menu is how a user reaches the tests that diagnose a dead FPGA, so getting
+   back to it must not be one of the things a dead FPGA takes away. */
+void test_menu_returns_to_the_ui_without_consulting_the_fpga(void) {
+    application_ui_enter_menu_Expect();
+    process("menu");
+    TEST_ASSERT_EQUAL_STRING("", MOCK_BSP_ConsoleOutput());
 }
 
 void test_hardware_command_is_rejected_when_fpga_is_unavailable(void) {
@@ -330,6 +339,7 @@ void test_known_commands_with_extra_arguments_are_rejected(void) {
         "off extra",
         "status extra",
         "diag extra",
+        "menu extra",
         "reset extra",
     };
 

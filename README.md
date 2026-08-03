@@ -84,28 +84,76 @@ result. The default dim-blue LED state is restored at the end. Use
 physical test remains local because GitHub-hosted runners have no attached
 Forgix hardware.
 
+For an interactive check of the same hardware plus the microcontroller itself,
+press `1` at the board's own menu instead. The on-board built-in test needs no
+host tooling and covers ground the smoke test cannot reach from the far side of a
+serial link — measured clock frequencies, the die temperature, the boot reason,
+and both QSPI memories.
+
 ### USB serial console
 
 Open the board's USB serial port at 115200 baud with terminal local echo
-disabled. The firmware provides device-side echo and a `forgix> ` prompt, maps
-both CR and LF to one command terminator, and supports Backspace/Delete,
-`Ctrl-C` to cancel a line, `Ctrl-U` to erase it, and `Ctrl-L` to redraw it.
+disabled. Whenever you get there, the board is already repeating:
 
-After boot, the board reports status once per second until it receives a key.
-Status output is suppressed while a partial command is present. Ten seconds
-after a completed command, idle status reporting resumes at ten-second
-intervals. The following commands control the terminal policy:
+```text
+hello world - 47 - press any key
+```
+
+The count is seconds since boot rather than bytes sent, so it keeps advancing
+while nothing is listening: reading `47` means the board has been up and
+transmitting for the three quarters of a minute it took to find the port. The
+board boots the instant it is powered, so anything printed once at boot is gone
+before a terminal can be opened, and this is what replaces it. The message needs
+nothing from the host, which is the point — it proves the assembly can transmit
+and the host can receive even when host-to-board is broken.
+
+Any key opens a single-keypress menu. That key is consumed by opening the menu
+and is not also read as a selection, so reaching for "any key" cannot start
+something.
+
+```text
+  1  Built-in test          the whole sequence, once
+  2  Built-in test soak     repeat with a tally until a key is pressed
+  3  One test at a time     re-run a single step without the other thirteen
+  4  Board report           what this board is, without judging it
+  5  Blinker                red, green, blue at 1 Hz until a key is pressed
+  6  Advanced blinker       heartbeat, colour wheel, aurora
+  c  Command shell          the forgix> prompt; `menu` returns here
+  r  Reboot                 restart the board and reconfigure the FPGA
+  b  Reboot to BOOTSEL      hand the board to the USB loader for reflashing
+  ?  Redraw this menu
+```
+
+Any key aborts a running test or show and returns to the menu; anything that
+changed the LED puts it back first. The menu names the FPGA as `ready` or
+`UNAVAILABLE` in its header, because the tests that diagnose a dead FPGA are
+reached from here. See [the built-in test reference](docs/ibit.md) for every
+step, what a failure means, and what the sequence deliberately does not check.
+
+`c` opens the command shell. It provides device-side echo and a `forgix> `
+prompt, maps both CR and LF to one command terminator, and supports
+Backspace/Delete, `Ctrl-C` to cancel a line, `Ctrl-U` to erase it, and `Ctrl-L`
+to redraw it. Ten seconds after a completed command, idle status reporting starts
+at ten-second intervals; it is suppressed while a partial command is present. The
+following commands control the terminal policy:
 
 ```text
 echo on|off             Enable or disable device-side character echo
 watch <1..3600>|off     Report status at that interval, or disable idle reports
 quiet                   Disable echo, prompts, and unsolicited status
 interactive             Restore the default interactive behavior
+menu                    Leave the shell and redraw the menu
 ```
 
+`menu` sits above the FPGA-ready gate that the hardware commands sit behind:
+getting back to the tests must not be one of the things a dead FPGA takes away.
+
 An active `watch` stops as soon as a key is received so its output cannot
-interrupt the next command. `scripts/test_hardware.sh` selects `quiet` mode
-before parsing responses, keeping the physical smoke test deterministic.
+interrupt the next command. `scripts/test_hardware.sh` sends `CR` then `c` to
+reach the shell from whichever state it finds the board in — the port does not
+reset the board, so a previous run may have left it anywhere — and then selects
+`quiet` mode before parsing responses, keeping the physical smoke test
+deterministic.
 
 ### Firmware lockup: cause and fix
 

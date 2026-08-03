@@ -51,6 +51,12 @@ void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason reason );
 void MOCK_BSP_WatchdogSetRetained( const uint32_t marker, const uint32_t slot0,
                                    const uint32_t slot1, const uint32_t slot2 );
 
+/* Makes the scratch register swallow writes, so the built-in test's marker
+   round-trip has a failing case. The real register can fail this way and the
+   whole diagnostics story rests on it holding, so the fake has to be able to
+   pose it. */
+void MOCK_BSP_WatchdogSetMarkerReadbackFaulty( const bool faulty );
+
 bool MOCK_BSP_WatchdogStarted( void );
 
 uint32_t MOCK_BSP_WatchdogTimeoutMs( void );

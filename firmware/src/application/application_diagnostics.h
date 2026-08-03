@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "bsp.h"
+
 /* Progress markers written to the watchdog marker register. After a watchdog
    reset the retained value names the code path that stopped making progress. */
 enum {
@@ -12,6 +14,12 @@ enum {
     APPLICATION_DIAGNOSTICS_MARKER_COMMAND = 4,
     APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT = 5,
     APPLICATION_DIAGNOSTICS_MARKER_FPGA_CHECK = 6,
+    /* The menu and the built-in test are the newest code in the foreground loop
+       and so the likeliest to stall it. Without their own markers a watchdog
+       reset from either would be attributed to whatever ran last instead. */
+    APPLICATION_DIAGNOSTICS_MARKER_MENU = 7,
+    APPLICATION_DIAGNOSTICS_MARKER_IBIT = 8,
+    APPLICATION_DIAGNOSTICS_MARKER_EFFECT = 9,
 };
 
 enum {
@@ -38,5 +46,12 @@ void application_diagnostics_poll(void);
 
 /* Live counters plus the retained report from the previous boot. */
 void application_diagnostics_print_report(void);
+
+/* The boot cause as it was latched by application_diagnostics_start, before the
+   watchdog was armed. Anything asking later must come here rather than call
+   BSP_WatchdogBootReason again: arming the watchdog writes the scratch word that
+   watchdog_enable_caused_reboot consults, so a live query minutes into a session
+   reports a watchdog reset on a board that powered up cleanly. */
+bsp_boot_reason application_diagnostics_boot_reason(void);
 
 #endif
