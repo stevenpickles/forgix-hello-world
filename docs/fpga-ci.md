@@ -152,13 +152,19 @@ artifacts without publishing anything.
   itself, so setting it in the image has no effect — the source overwrites it.
   `run_efinity.sh` pins it to a writable path *after* the source instead, so the
   compile does not depend on whatever `$HOME` the runner gives the container.
-- The image has been built and a full T8F49 compile run in it: map, interface,
-  pnr, and pgm all pass, with the same slacks as a local build (setup 8.701 ns,
-  hold 0.643 ns). The resulting bitstream is byte-identical to the
-  Windows-built one from offset 176 onward; the first 176 bytes are a header
-  holding the build timestamp and project path, so the configuration itself is
-  reproducible across platforms but the file's SHA-256 is not. Compare payloads,
-  not hashes, if you ever need to confirm two builds agree.
+- **The bitstream is reproducible, but its SHA-256 is not.** The first **256
+  bytes** are a fixed-size text header holding the tool version, a build
+  timestamp, and the project path. Everything after that is the configuration
+  itself. Three compiles — Windows locally, the container locally, and CI on a
+  GitHub runner — produced the same 173124-byte payload, at the same slacks
+  (setup 8.701 ns, hold 0.643 ns). So compare `bin[256:]`, never the whole file
+  and never the hash the workflow prints.
+
+  Beware of concluding the header is shorter than 256 bytes by diffing two
+  builds: the timestamp and path sit near the front, so the differences stop
+  early and the boundary looks closer than it is. A runner's project path
+  (`/__w/<repo>/<repo>/fpga`) is much longer than a local one, which is what
+  makes the padding visible. The header is 256 bytes regardless.
 - **A failed Interface Designer import does not fail the build.** `efx_run.py`
   catches it, writes "Skipping Interface Designer step" to a log file, and
   continues. map, pnr, and pgm then all report PASS and the flow exits 0 — but
