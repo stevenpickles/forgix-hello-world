@@ -28,11 +28,11 @@
 /* Indices into watchdog_hw->scratch naming the two regions described above:
    the single progress marker slot and the first of the contiguous snapshot
    slots that follow it. */
-typedef enum
+typedef enum bsp_watchdog_scratch_register_tag
 {
     MARKER_REGISTER = 0,
     SNAPSHOT_BASE_REGISTER = 1
-} bsp_watchdog_scratch_register_t;
+} bsp_watchdog_scratch_register;
 
 
 
@@ -54,7 +54,7 @@ void BSP_WatchdogFeed( void )
     watchdog_update();
 }
 
-bsp_boot_reason_t BSP_WatchdogBootReason( void )
+bsp_boot_reason BSP_WatchdogBootReason( void )
 {
     if ( watchdog_enable_caused_reboot() )
     {

@@ -42,7 +42,7 @@ extern "C" {
 ***************************************************************************************/
 
 
-typedef struct
+typedef struct bsp_fpga_init_result_t_tag
 {
     bool configured;
     uint8_t design_id;

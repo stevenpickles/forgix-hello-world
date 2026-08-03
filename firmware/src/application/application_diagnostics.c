@@ -44,7 +44,7 @@ typedef struct {
 
 typedef struct {
     bool usb_present;
-    bsp_boot_reason_t boot_reason;
+    bsp_boot_reason boot_reason;
     uint32_t boot_marker;
     uint32_t boot_snapshot[BSP_WATCHDOG_SNAPSHOT_SLOTS];
 

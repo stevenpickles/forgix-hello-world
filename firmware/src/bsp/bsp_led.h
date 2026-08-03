@@ -27,7 +27,7 @@ extern "C" {
 ***************************************************************************************/
 
 
-typedef struct
+typedef struct bsp_led_state_t_tag
 {
     uint8_t red;
     uint8_t green;

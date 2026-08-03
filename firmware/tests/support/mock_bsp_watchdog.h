@@ -46,7 +46,7 @@ extern "C" {
 void MOCK_BSP_WatchdogReset( void );
 
 /* Retained state a reset would have left behind, read by the boot report. */
-void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason_t reason );
+void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason reason );
 
 void MOCK_BSP_WatchdogSetRetained( const uint32_t marker, const uint32_t slot0,
                                    const uint32_t slot1, const uint32_t slot2 );

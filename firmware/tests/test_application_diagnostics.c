@@ -61,7 +61,7 @@ static void start_usb_at(uint32_t now_ms) {
    it again would reset the scratch registers it is reporting. */
 enum { BOOT_REPEATS = 3 };
 
-static void start_led_only(bsp_boot_reason_t reason, uint32_t marker, uint8_t red, uint8_t green,
+static void start_led_only(bsp_boot_reason reason, uint32_t marker, uint8_t red, uint8_t green,
                            uint8_t blue, uint32_t blinks, uint8_t rest_red, uint8_t rest_green,
                            uint8_t rest_blue) {
     MOCK_BSP_UsbSetPresent(false);
@@ -114,7 +114,7 @@ void test_start_reports_the_retained_watchdog_evidence_and_arms_the_watchdog(voi
 
 void test_start_names_every_boot_reason_on_the_console(void) {
     const struct {
-        bsp_boot_reason_t reason;
+        bsp_boot_reason reason;
         const char *name;
     } cases[] = {
         {BSP_BOOT_POWER_ON, "boot=power-on"},

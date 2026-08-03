@@ -17,7 +17,7 @@
 ***************************************************************************************/
 
 
-static bsp_boot_reason_t _bootReason;
+static bsp_boot_reason _bootReason;
 static uint32_t _marker;
 static uint32_t _snapshots[ BSP_WATCHDOG_SNAPSHOT_SLOTS ];
 static bool _started;
@@ -51,7 +51,7 @@ void MOCK_BSP_WatchdogReset( void )
 }
 
 
-void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason_t reason )
+void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason reason )
 {
     _bootReason = reason;
 }
@@ -144,7 +144,7 @@ void BSP_WatchdogFeed( void )
 }
 
 
-bsp_boot_reason_t BSP_WatchdogBootReason( void )
+bsp_boot_reason BSP_WatchdogBootReason( void )
 {
     return _bootReason;
 }

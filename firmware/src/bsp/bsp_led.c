@@ -22,14 +22,14 @@
 /* Addresses in the FPGA register map this module writes and reads back: the
    three colour channels, the global brightness, and the enable bit that
    latches them into the physical LED. */
-typedef enum
+typedef enum bsp_led_register_tag
 {
     REG_LED_R = 0x10,
     REG_LED_G = 0x11,
     REG_LED_B = 0x12,
     REG_LED_GLOBAL = 0x13,
     REG_LED_ENABLE = 0x14,
-} bsp_led_register_t;
+} bsp_led_register;
 
 
 

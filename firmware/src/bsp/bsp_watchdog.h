@@ -46,13 +46,13 @@ extern "C" {
 /* Why the last boot ended, as reported by the reset controller. Read once at
    startup so the diagnostics layer can tell a clean power-up apart from a
    watchdog-forced reboot. */
-typedef enum
+typedef enum bsp_boot_reason_tag
 {
     BSP_BOOT_POWER_ON, /* normal power-up from cold */
     BSP_BOOT_BROWNOUT, /* supply dropped out of tolerance and the reset controller reacted */
     BSP_BOOT_WATCHDOG, /* the watchdog timer expired without being fed */
     BSP_BOOT_OTHER,    /* reset cause the BSP does not classify */
-} bsp_boot_reason_t;
+} bsp_boot_reason;
 
 
 
@@ -68,7 +68,7 @@ void BSP_WatchdogStart( const uint32_t timeoutMs );
 
 void BSP_WatchdogFeed( void );
 
-bsp_boot_reason_t BSP_WatchdogBootReason( void );
+bsp_boot_reason BSP_WatchdogBootReason( void );
 
 void BSP_WatchdogMarkerSet( const uint32_t marker );
 

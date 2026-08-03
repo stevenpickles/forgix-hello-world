@@ -27,7 +27,7 @@ extern "C" {
 ***************************************************************************************/
 
 
-typedef struct
+typedef struct bsp_usb_health_t_tag
 {
     bool connected;           /* host asserted DTR on the CDC interface */
     bool suspended;           /* device stack reports USB bus suspend */

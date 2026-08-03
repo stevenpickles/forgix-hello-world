@@ -41,7 +41,7 @@
 /* The physical pin assignment for the bit-banged link between the RP2350 and
    the FPGA: which GPIO carries chip select, clock, the shared data line, and
    the reset/handshake/oscillator-enable signals that bring the FPGA up. */
-typedef enum
+typedef enum bsp_fpga_pin_tag
 {
     PIN_CS = 1,
     PIN_SCK = 2,
@@ -50,18 +50,18 @@ typedef enum
     PIN_CDONE = 5,
     PIN_STATUS = 6,
     PIN_OSC_EN = 19,
-} bsp_fpga_pin_t;
+} bsp_fpga_pin;
 
 /* Opcodes understood by the FPGA's register protocol, sent as the first byte
    of a transaction to select whether the bytes that follow write a register,
    read one back, reset the design, or just ping it for its design ID. */
-typedef enum
+typedef enum bsp_fpga_command_tag
 {
     CMD_WRITE = 0x02,
     CMD_READ = 0x03,
     CMD_RESET = 0x7f,
     CMD_PING = 0x9f,
-} bsp_fpga_command_t;
+} bsp_fpga_command;
 
 
 

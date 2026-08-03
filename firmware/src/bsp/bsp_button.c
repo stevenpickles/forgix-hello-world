@@ -22,11 +22,11 @@
 /* Addresses in the FPGA register map that this module reads through
    BSP_FpgaReadRegister: REG_BUTTON holds the live pressed/released level and
    REG_BUTTON_COUNT holds the FPGA's running count of press edges. */
-typedef enum
+typedef enum bsp_button_register_tag
 {
     REG_BUTTON = 0x20,
     REG_BUTTON_COUNT = 0x21,
-} bsp_button_register_t;
+} bsp_button_register;
 
 
 

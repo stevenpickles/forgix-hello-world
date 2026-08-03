@@ -27,7 +27,7 @@ extern "C" {
 ***************************************************************************************/
 
 
-typedef struct
+typedef struct bsp_button_state_t_tag
 {
     uint8_t level;
     uint8_t count;
