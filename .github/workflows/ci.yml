@@ -118,6 +118,19 @@ jobs:
 
   firmware:
     name: RP2354 firmware compile
+    # Waits for synthesis so the firmware carries the bitstream this same run
+    # produced, instead of the compile fixture -- otherwise the pair that CI
+    # verifies is never the pair that ships.
+    #
+    # The dependency is deliberately soft. A fork pull request skips the
+    # bitstream job, and a plain `needs:` would then skip this job too, quietly
+    # removing firmware coverage from exactly the changes that get the least
+    # trust. `!cancelled()` runs it regardless of what happened upstream, and
+    # the fixture is used when no bitstream was produced. A failed synthesis
+    # still fails the run; it just does not also hide whether the firmware
+    # compiles.
+    needs: bitstream
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -138,11 +151,35 @@ jobs:
             cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
             libstdc++-arm-none-eabi-newlib
 
+      - name: Download the bitstream this run produced
+        if: needs.bitstream.result == 'success'
+        uses: actions/download-artifact@v7
+        with:
+          name: forgix-fpga-bitstream-${{ env.ARTIFACT_SUFFIX }}
+          path: dist/fpga
+
+      - name: Choose the image to embed
+        id: image
+        run: |
+          real="$GITHUB_WORKSPACE/dist/fpga/forgix_hello_world.bin"
+          if [[ -s "$real" ]]; then
+            echo "path=$real" >> "$GITHUB_OUTPUT"
+            echo "real=true" >> "$GITHUB_OUTPUT"
+            echo "Embedding the bitstream built by this run: $(wc -c < "$real") bytes"
+          else
+            echo "path=$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" >> "$GITHUB_OUTPUT"
+            echo "real=false" >> "$GITHUB_OUTPUT"
+            echo "No bitstream from this run; embedding the compile fixture."
+            echo "Expected for a fork pull request, which cannot pull the tools."
+          fi
+
       - name: Configure RP2354 firmware
         run: |
+          # PICO_NO_PICOTOOL: CI only needs to know this compiles and links.
+          # release.yml omits it so the SDK builds picotool and emits a UF2.
           cmake -S firmware -B build/firmware-ci -G Ninja \
             -DPICO_SDK_PATH="$GITHUB_WORKSPACE/.ci/pico-sdk" \
-            -DFPGA_IMAGE="$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" \
+            -DFPGA_IMAGE="${{ steps.image.outputs.path }}" \
             -DPICO_NO_PICOTOOL=1
 
       - name: Compile and link
@@ -162,6 +199,26 @@ jobs:
             exit 1
           fi
           echo "Firmware binary: $firmware_size / 2097152 bytes"
+
+      - name: Verify the linked firmware carries this run's bitstream
+        if: steps.image.outputs.real == 'true'
+        run: |
+          # embed_image.py generates fpga_image.c, so nothing else would notice
+          # if the wrong bytes -- or none -- were linked in. On hardware the
+          # symptom is an FPGA that never configures, which is a slow way to
+          # find out.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          image = Path(os.environ["IMAGE_PATH"]).read_bytes()
+          binary = Path("build/firmware-ci/forgix_hello_world.bin").read_bytes()
+          if image not in binary:
+              raise SystemExit("the linked firmware does not contain the bitstream verbatim")
+          print(f"Embedded bitstream verified: {len(image)} bytes at offset {binary.index(image)}")
+          PY
+        env:
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
 
       - name: Upload firmware diagnostics
         uses: actions/upload-artifact@v7
