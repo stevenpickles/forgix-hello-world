@@ -22,7 +22,7 @@ bsp_boot_reason_t bsp_watchdog_boot_reason(void) {
         return BSP_BOOT_WATCHDOG;
     }
 
-    uint32_t chip_reset = powman_hw->chip_reset;
+    const uint32_t chip_reset = powman_hw->chip_reset;
     if (chip_reset & POWMAN_CHIP_RESET_HAD_BOR_BITS) {
         return BSP_BOOT_BROWNOUT;
     }

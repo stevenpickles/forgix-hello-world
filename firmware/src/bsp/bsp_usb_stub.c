@@ -9,7 +9,7 @@ bool bsp_usb_present(void) {
 }
 
 bsp_usb_health_t bsp_usb_health(void) {
-    bsp_usb_health_t health = {0};
+    const bsp_usb_health_t health = {0};
     return health;
 }
 

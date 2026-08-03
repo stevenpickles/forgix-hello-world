@@ -23,7 +23,7 @@ bool bsp_usb_present(void) {
 }
 
 bsp_usb_health_t bsp_usb_health(void) {
-    bsp_usb_health_t health = {
+    const bsp_usb_health_t health = {
         .connected = stdio_usb_connected(),
         .suspended = tud_suspended(),
         .write_available = tud_cdc_write_available(),

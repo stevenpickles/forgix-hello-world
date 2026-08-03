@@ -34,8 +34,8 @@ static uint8_t reported_eid;
    vector table is exactly what a CS1 problem looks like from here. */
 static bool flash_reads_coherently(const uint32_t flash_bytes) {
     const uint32_t *vectors = (const uint32_t *)XIP_BASE;
-    uint32_t stack_pointer = vectors[0];
-    uint32_t reset_vector = vectors[1];
+    const uint32_t stack_pointer = vectors[0];
+    const uint32_t reset_vector = vectors[1];
 
     return stack_pointer > SRAM_BASE && stack_pointer <= SRAM_END &&
            reset_vector >= XIP_BASE && reset_vector < XIP_BASE + flash_bytes;
@@ -61,7 +61,7 @@ size_t psram_eid_to_size(const uint8_t kgd, const uint8_t eid) {
        SDK's, kept identical so overriding the hook changes nothing but
        observability. */
     size_t psram_size = 1024u * 1024u;
-    uint8_t size_id = eid >> 5;
+    const uint8_t size_id = eid >> 5;
     if (size_id == 4u) {
         psram_size *= 16u;
     } else if (eid == 0x26u || size_id == 2u || size_id == 3u) {
@@ -91,8 +91,8 @@ static bool force_psram_from_datasheet(void) {
         return false;
     }
 
-    uint32_t interrupts = save_and_disable_interrupts();
-    int result = psram_reinitialize();
+    const uint32_t interrupts = save_and_disable_interrupts();
+    const int result = psram_reinitialize();
     restore_interrupts(interrupts);
 
     return result == PICO_OK && psram_get_size() > 0u;
@@ -106,7 +106,7 @@ static bool psram_holds_a_pattern(const uint32_t size_bytes) {
         return false;
     }
 
-    volatile uint32_t *window = (volatile uint32_t *)PSRAM_WINDOW_BASE;
+    volatile uint32_t *const window = (volatile uint32_t *)PSRAM_WINDOW_BASE;
     const uint32_t words = size_bytes / sizeof(uint32_t);
     const uint32_t indices[] = {0, words / 2u, words - 1u};
     const uint32_t patterns[] = {0xa5a5a5a5u, 0x5a5a5a5au, 0xdeadbeefu};

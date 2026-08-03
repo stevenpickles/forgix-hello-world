@@ -23,7 +23,7 @@ void bsp_led_off(void) {
 }
 
 bsp_led_state_t bsp_led_get(void) {
-    bsp_led_state_t state = {
+    const bsp_led_state_t state = {
         .red = bsp_fpga_read_register(REG_LED_R),
         .green = bsp_fpga_read_register(REG_LED_G),
         .blue = bsp_fpga_read_register(REG_LED_B),

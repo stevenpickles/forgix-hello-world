@@ -8,7 +8,7 @@ enum {
 };
 
 bsp_button_state_t bsp_button_get_state(void) {
-    bsp_button_state_t state = {
+    const bsp_button_state_t state = {
         .level = bsp_fpga_read_register(REG_BUTTON),
         .count = bsp_fpga_read_register(REG_BUTTON_COUNT),
     };

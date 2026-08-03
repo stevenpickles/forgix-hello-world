@@ -67,7 +67,7 @@ static bool configure(void) {
     const uint8_t trailing[32] = {0};
     spi_write_blocking(spi0, trailing, sizeof trailing);
 
-    absolute_time_t deadline = make_timeout_time_ms(500);
+    const absolute_time_t deadline = make_timeout_time_ms(500);
     bool done = false;
     while (!time_reached(deadline)) {
         if (gpio_get(PIN_CDONE)) {
@@ -116,7 +116,7 @@ static uint8_t transaction(const uint8_t *const tx, const size_t count, const bo
     for (size_t index = 0; index < count; ++index) {
         send_byte(tx[index], read && index + 1 == count);
     }
-    uint8_t result = read ? receive_byte() : 0;
+    const uint8_t result = read ? receive_byte() : 0;
     gpio_put(PIN_CS, 1);
     gpio_set_dir(PIN_SDIO, GPIO_IN);
     busy_wait_us_32(1);
@@ -137,7 +137,7 @@ bsp_fpga_init_result_t bsp_fpga_init(void) {
 }
 
 bool bsp_fpga_reconfigure(void) {
-    bsp_fpga_init_result_t result = bsp_fpga_init();
+    const bsp_fpga_init_result_t result = bsp_fpga_init();
     return result.ready;
 }
 
