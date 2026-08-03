@@ -4,16 +4,19 @@
 #include <stdio.h>
 #include <string.h>
 
+/* The queue holds only bytes a host could actually send. BSP_CONSOLE_TIMEOUT is
+   produced when the queue runs dry rather than stored in it, so the element type
+   does not have to carry the sentinel. */
 static char output[2048];
-static int input[512];
-static size_t input_count;
-static size_t input_position;
+static uint8_t input[512];
+static uint32_t input_count;
+static uint32_t input_position;
 
 static void append(const char *const text)
 {
-    size_t used = strlen(output);
-    size_t remaining = sizeof output - used;
-    if (remaining > 1)
+    const uint32_t used = (uint32_t)strlen(output);
+    const uint32_t remaining = (uint32_t)sizeof output - used;
+    if (remaining > 1u)
     {
         snprintf(output + used, remaining, "%s", text);
     }
@@ -26,9 +29,9 @@ void MOCK_BSP_ConsoleReset(void)
     input_position = 0;
 }
 
-void MOCK_BSP_ConsoleQueueCharacter(const int character)
+void MOCK_BSP_ConsoleQueueCharacter(const uint8_t character)
 {
-    if (input_count < sizeof input / sizeof input[0])
+    if (input_count < (uint32_t)(sizeof input / sizeof input[0]))
     {
         input[input_count++] = character;
     }
@@ -38,7 +41,7 @@ void MOCK_BSP_ConsoleQueueText(const char *text)
 {
     while (*text)
     {
-        MOCK_BSP_ConsoleQueueCharacter((unsigned char)*text++);
+        MOCK_BSP_ConsoleQueueCharacter((uint8_t)*text++);
     }
 }
 
@@ -51,7 +54,7 @@ void BSP_ConsoleInit(void)
 {
 }
 
-int BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us)
+int16_t BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us)
 {
     (void)timeout_us;
     if (input_position < input_count)
@@ -61,14 +64,14 @@ int BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us)
     return BSP_CONSOLE_TIMEOUT;
 }
 
-int BSP_ConsolePutChar(const int character)
+int16_t BSP_ConsolePutChar(const uint8_t character)
 {
     char text[2] = {(char)character, 0};
     append(text);
     return character;
 }
 
-int BSP_ConsolePrintf(const char *const format, ...)
+int32_t BSP_ConsolePrintf(const char *const format, ...)
 {
     char formatted[512];
     va_list arguments;
@@ -76,10 +79,10 @@ int BSP_ConsolePrintf(const char *const format, ...)
     int result = vsnprintf(formatted, sizeof formatted, format, arguments);
     va_end(arguments);
     append(formatted);
-    return result;
+    return (int32_t)result;
 }
 
-int BSP_ConsolePuts(const char *const text)
+int32_t BSP_ConsolePuts(const char *const text)
 {
     append(text);
     append("\n");

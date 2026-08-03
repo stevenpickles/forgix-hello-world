@@ -99,7 +99,7 @@ static bool configure(void)
 static void send_byte(const uint8_t value, const bool release_after_sample)
 {
     gpio_set_dir(PIN_SDIO, GPIO_OUT);
-    for (int bit = 7; bit >= 0; --bit)
+    for (int32_t bit = 7; bit >= 0; --bit)
     {
         gpio_put(PIN_SDIO, (value >> bit) & 1u);
         gpio_put(PIN_SCK, 1);
@@ -118,7 +118,7 @@ static uint8_t receive_byte(void)
     uint8_t value = 0;
     gpio_set_dir(PIN_SDIO, GPIO_IN);
     busy_wait_us_32(1);
-    for (int bit = 0; bit < 8; ++bit)
+    for (uint32_t bit = 0; bit < 8; ++bit)
     {
         gpio_put(PIN_SCK, 1);
         busy_wait_us_32(1);
@@ -129,11 +129,11 @@ static uint8_t receive_byte(void)
     return value;
 }
 
-static uint8_t transaction(const uint8_t *const tx, const size_t count, const bool read)
+static uint8_t transaction(const uint8_t *const tx, const uint32_t count, const bool read)
 {
     gpio_put(PIN_CS, 0);
     busy_wait_us_32(1);
-    for (size_t index = 0; index < count; ++index)
+    for (uint32_t index = 0; index < count; ++index)
     {
         send_byte(tx[index], read && index + 1 == count);
     }

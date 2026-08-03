@@ -66,7 +66,7 @@ size_t psram_eid_to_size(const uint8_t kgd, const uint8_t eid)
     /* Density lives in the top three bits of the EID, and the mapping is the
        SDK's, kept identical so overriding the hook changes nothing but
        observability. */
-    size_t psram_size = 1024u * 1024u;
+    uint32_t psram_size = 1024u * 1024u;
     const uint8_t size_id = eid >> 5;
     if (size_id == 4u)
     {
@@ -84,7 +84,7 @@ size_t psram_eid_to_size(const uint8_t kgd, const uint8_t eid)
     {
         psram_size *= 2u;
     }
-    return psram_size;
+    return (size_t)psram_size;
 }
 
 /* Configures chip select 1 from the datasheet instead of from what the device
@@ -107,6 +107,8 @@ static bool force_psram_from_datasheet(void)
     }
 
     const uint32_t interrupts = save_and_disable_interrupts();
+    /* int is the SDK's own return type for psram_reinitialize; kept as-is
+       since that is the honest type at this boundary. */
     const int result = psram_reinitialize();
     restore_interrupts(interrupts);
 
@@ -118,16 +120,16 @@ static bool force_psram_from_datasheet(void)
    would not catch address aliasing from a device smaller than it reports. */
 static bool psram_holds_a_pattern(const uint32_t size_bytes)
 {
-    if (size_bytes < sizeof(uint32_t))
+    if (size_bytes < (uint32_t)sizeof(uint32_t))
     {
         return false;
     }
 
     volatile uint32_t *const window = (volatile uint32_t *)PSRAM_WINDOW_BASE;
-    const uint32_t words = size_bytes / sizeof(uint32_t);
+    const uint32_t words = size_bytes / (uint32_t)sizeof(uint32_t);
     const uint32_t indices[] = {0, words / 2u, words - 1u};
     const uint32_t patterns[] = {0xa5a5a5a5u, 0x5a5a5a5au, 0xdeadbeefu};
-    const uint32_t count = sizeof indices / sizeof indices[0];
+    const uint32_t count = (uint32_t)(sizeof indices / sizeof indices[0]);
 
     for (uint32_t index = 0; index < count; ++index)
     {
