@@ -171,7 +171,7 @@ try {
 
     Write-Step "Checking command shell and FPGA identity"
     $help = Invoke-ForgixCommand $serial "help"
-    Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
+    Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| diag \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
 
     $initialStatus = Invoke-ForgixCommand $serial "status"
     Assert-Response $initialStatus '^id=B5 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "FPGA status"

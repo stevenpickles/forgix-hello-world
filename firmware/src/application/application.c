@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "application_console.h"
+#include "application_diagnostics.h"
 #include "bsp.h"
 
 static bool parse_byte(const char *text, uint8_t *value) {
@@ -34,7 +35,18 @@ static bool parse_watch_period(const char *text, uint32_t *seconds) {
 
 static void print_help(void) {
     bsp_console_puts(
-        "hello | color <r> <g> <b> [brightness] | off | status | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help");
+}
+
+/* Both QSPI memories share the same data lines, so a fault on one shows up as
+   the other misbehaving. Reported at boot and repeatable through `diag`, because
+   a line that only appears once is a line nobody is listening for. */
+static void print_memory_report(void) {
+    bsp_memory_report_t memory = bsp_memory_check();
+    bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u forced=%u kgd=%02X eid=%02X\n",
+                       (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
+                       (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok,
+                       memory.psram_forced, memory.psram_kgd, memory.psram_eid);
 }
 
 void application_print_status(void) {
@@ -109,6 +121,11 @@ void application_process_command(char *line) {
         application_print_status();
         return;
     }
+    if (!strcmp(argv[0], "diag") && argc == 1) {
+        print_memory_report();
+        application_diagnostics_print_report();
+        return;
+    }
     if (!bsp_fpga_is_ready()) {
         bsp_console_puts("error: FPGA is not configured and responding; reset the board to retry");
         return;
@@ -150,6 +167,7 @@ void application_process_command(char *line) {
 }
 
 void application_init(const bsp_init_result_t *bsp_result) {
+    print_memory_report();
     bsp_console_printf("Forgix: configuration=%s design_id=%02X runtime=%s cdone=%u status=%u\n",
                        bsp_result->configured ? "ok" : "failed", bsp_result->design_id,
                        bsp_result->ready ? "ready" : "unavailable", bsp_result->cdone,

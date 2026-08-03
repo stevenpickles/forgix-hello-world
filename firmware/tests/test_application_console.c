@@ -5,15 +5,21 @@
 
 #include "application.h"
 #include "application_console.h"
+#include "application_diagnostics.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
+#include "mock_bsp_usb.h"
+#include "mock_bsp_watchdog.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
+#include "mock_auto_bsp_memory.h"
 
 void setUp(void) {
     mock_bsp_console_reset();
     mock_bsp_time_reset();
+    mock_bsp_usb_reset();
+    mock_bsp_watchdog_reset();
 }
 
 void tearDown(void) {
@@ -80,7 +86,7 @@ void test_console_echoes_a_command_and_coalesces_crlf(void) {
 
     TEST_ASSERT_EQUAL_STRING(
         "help\r\n"
-        "hello | color <r> <g> <b> [brightness] | off | status | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n"
         "forgix> ",
         mock_bsp_console_output());
@@ -210,7 +216,7 @@ void test_quiet_mode_keeps_machine_commands_free_of_echo_prompts_and_telemetry(v
     poll_text_at("help\r", 50100);
 
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
         mock_bsp_console_output());
 }
@@ -239,7 +245,7 @@ void test_echo_can_be_disabled_and_reenabled_without_changing_command_responses(
     poll_at(151);
     poll_text_at("help\r", 200);
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\nforgix> ",
         mock_bsp_console_output());
 
@@ -248,6 +254,34 @@ void test_echo_can_be_disabled_and_reenabled_without_changing_command_responses(
     mock_bsp_console_queue_character('x');
     poll_at(301);
     TEST_ASSERT_EQUAL_STRING("ok\nforgix> x", mock_bsp_console_output());
+}
+
+void test_unsolicited_status_is_withheld_until_the_host_asserts_dtr(void) {
+    mock_bsp_usb_set_connected(false);
+    start_at(500);
+    mock_bsp_console_reset();
+
+    poll_at(1500);
+    poll_at(2500);
+    TEST_ASSERT_EQUAL_STRING("", mock_bsp_console_output());
+
+    mock_bsp_usb_set_connected(true);
+    expect_ready_status(13);
+    poll_at(3500);
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "count=13"));
+}
+
+void test_console_marks_the_read_write_and_command_paths_for_the_watchdog(void) {
+    start_at(0);
+    TEST_ASSERT_EQUAL_UINT32(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE,
+                             mock_bsp_watchdog_marker());
+
+    poll_at(10);
+    TEST_ASSERT_TRUE(
+        mock_bsp_watchdog_marker_was_written(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ));
+
+    poll_text_at("help\r", 100);
+    TEST_ASSERT_TRUE(mock_bsp_watchdog_marker_was_written(APPLICATION_DIAGNOSTICS_MARKER_COMMAND));
 }
 
 void test_ctrl_c_and_ctrl_l_remain_silent_in_quiet_mode(void) {

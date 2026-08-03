@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "application_console.h"
+#include "application_diagnostics.h"
 #include "bsp.h"
 
 enum { COMMAND_CAPACITY = 128 };
@@ -36,8 +37,16 @@ static bool deadline_reached(uint32_t now_ms, uint32_t deadline_ms) {
     return (int32_t)(now_ms - deadline_ms) >= 0;
 }
 
+/* Every console write reaches the untimed Pico SDK stdio flush loop, so the
+   marker is set immediately before the call. After a watchdog reset the
+   retained marker names the path the foreground was blocked in. */
+static void mark_write(void) {
+    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE);
+}
+
 static void print_prompt(void) {
     if (!console.quiet) {
+        mark_write();
         bsp_console_printf("forgix> ");
     }
 }
@@ -59,23 +68,27 @@ static void stop_active_status(void) {
 
 static void echo_character(int character) {
     if (!console.quiet && console.echo_enabled) {
+        mark_write();
         bsp_console_putchar(character);
     }
 }
 
 static void erase_character(void) {
     if (!console.quiet && console.echo_enabled) {
+        mark_write();
         bsp_console_printf("\b \b");
     }
 }
 
 static void complete_line(void) {
     if (!console.quiet && console.echo_enabled) {
+        mark_write();
         bsp_console_printf("\r\n");
     }
 
     if (console.used) {
         console.line[console.used] = 0;
+        bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_COMMAND);
         application_process_command(console.line);
         console.used = 0;
     }
@@ -89,6 +102,7 @@ static void complete_line(void) {
 static void cancel_line(void) {
     console.used = 0;
     if (!console.quiet) {
+        mark_write();
         bsp_console_printf("^C\r\n");
     }
     schedule_idle_status();
@@ -97,6 +111,7 @@ static void cancel_line(void) {
 
 static void redraw_line(void) {
     if (!console.quiet) {
+        mark_write();
         bsp_console_printf("\r\nforgix> %.*s", (int)console.used, console.line);
     }
 }
@@ -151,6 +166,7 @@ void application_console_start(void) {
 }
 
 void application_console_poll(void) {
+    bsp_watchdog_marker_set(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ);
     int character = bsp_console_getchar_timeout_us(1000);
     console.current_time_ms = bsp_time_now_ms();
 
@@ -158,11 +174,16 @@ void application_console_poll(void) {
         process_character(character);
         return;
     }
+    /* Unsolicited output is gated on DTR. Writing status into a port no host has
+       opened is the firmware's only unbounded, self-inflicted trip through the
+       untimed stdio flush loop. */
     if (console.quiet || console.used || console.status_mode == STATUS_DISABLED ||
-            !deadline_reached(console.current_time_ms, console.next_status_ms)) {
+            !deadline_reached(console.current_time_ms, console.next_status_ms) ||
+            !bsp_usb_connected()) {
         return;
     }
 
+    mark_write();
     bsp_console_printf("\r\n");
     application_print_status();
     print_prompt();

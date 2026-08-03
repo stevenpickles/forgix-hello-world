@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export EFINITY_HOME="${EFINITY_HOME:-/c/Efinix/Efinity/2026.1}"
+source "$repo_root/scripts/env.sh"
 project="$repo_root/fpga/forgix_hello_world.xml"
 outflow="$repo_root/fpga/outflow"
 hex_image="$outflow/forgix_hello_world.hex"

@@ -7,15 +7,21 @@
 
 #include "application.h"
 #include "application_console.h"
+#include "application_diagnostics.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
+#include "mock_bsp_usb.h"
+#include "mock_bsp_watchdog.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
+#include "mock_auto_bsp_memory.h"
 
 void setUp(void) {
     mock_bsp_console_reset();
     mock_bsp_time_reset();
+    mock_bsp_usb_reset();
+    mock_bsp_watchdog_reset();
 }
 
 void tearDown(void) {
@@ -25,6 +31,22 @@ static void process(const char *command) {
     char mutable_command[128];
     snprintf(mutable_command, sizeof mutable_command, "%s", command);
     application_process_command(mutable_command);
+}
+
+static bsp_memory_report_t memory_report(void);
+
+static void expect_memory_report(void) {
+    bsp_memory_check_ExpectAndReturn(memory_report());
+}
+
+static bsp_memory_report_t memory_report(void) {
+    bsp_memory_report_t report = {
+        .flash_bytes = 2u * 1024u * 1024u,
+        .flash_ok = true,
+        .psram_bytes = 8u * 1024u * 1024u,
+        .psram_ok = true,
+    };
+    return report;
 }
 
 static bsp_led_state_t expected_hello_led(void) {
@@ -54,6 +76,7 @@ void test_application_init_reports_ready_hardware_and_help(void) {
         .status_pin = true,
     };
 
+    expect_memory_report();
     application_init(&result);
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=ok"));
@@ -70,6 +93,7 @@ void test_application_init_preserves_diagnostics_when_hardware_is_unavailable(vo
         .status_pin = false,
     };
 
+    expect_memory_report();
     application_init(&result);
 
     TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "configuration=failed"));
@@ -267,6 +291,21 @@ void test_status_reports_unavailable_hardware_without_accessing_registers(void) 
                              mock_bsp_console_output());
 }
 
+void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access(void) {
+    mock_bsp_watchdog_set_boot_reason(BSP_BOOT_WATCHDOG);
+    mock_bsp_watchdog_set_retained(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE, 0, 0, 0);
+    expect_memory_report();
+
+    process("diag");
+
+    /* both QSPI memories, so a shared-bus fault is visible without a reboot */
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "flash=2048KiB ok=1"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "psram=8192KiB ok=1"));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "diag: boot="));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "uptime="));
+    TEST_ASSERT_NOT_NULL(strstr(mock_bsp_console_output(), "fpga_reconfig="));
+}
+
 void test_reset_reaches_the_fpga(void) {
     bsp_fpga_is_ready_ExpectAndReturn(true);
     bsp_fpga_reset_Expect();
@@ -290,6 +329,7 @@ void test_known_commands_with_extra_arguments_are_rejected(void) {
         "hello extra",
         "off extra",
         "status extra",
+        "diag extra",
         "reset extra",
     };
 
