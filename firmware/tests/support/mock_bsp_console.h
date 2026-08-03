@@ -3,9 +3,9 @@
 
 #include "bsp_console.h"
 
-void mock_bsp_console_reset(void);
-void mock_bsp_console_queue_character(const int character);
-void mock_bsp_console_queue_text(const char *text);
-const char *mock_bsp_console_output(void);
+void MOCK_BSP_ConsoleReset(void);
+void MOCK_BSP_ConsoleQueueCharacter(const int character);
+void MOCK_BSP_ConsoleQueueText(const char *text);
+const char *MOCK_BSP_ConsoleOutput(void);
 
 #endif

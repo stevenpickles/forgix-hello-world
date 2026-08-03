@@ -17,25 +17,25 @@ static void append(const char *const text) {
     }
 }
 
-void mock_bsp_console_reset(void) {
+void MOCK_BSP_ConsoleReset(void) {
     output[0] = 0;
     input_count = 0;
     input_position = 0;
 }
 
-void mock_bsp_console_queue_character(const int character) {
+void MOCK_BSP_ConsoleQueueCharacter(const int character) {
     if (input_count < sizeof input / sizeof input[0]) {
         input[input_count++] = character;
     }
 }
 
-void mock_bsp_console_queue_text(const char *text) {
+void MOCK_BSP_ConsoleQueueText(const char *text) {
     while (*text) {
-        mock_bsp_console_queue_character((unsigned char)*text++);
+        MOCK_BSP_ConsoleQueueCharacter((unsigned char)*text++);
     }
 }
 
-const char *mock_bsp_console_output(void) {
+const char *MOCK_BSP_ConsoleOutput(void) {
     return output;
 }
 

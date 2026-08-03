@@ -8,23 +8,23 @@
 
 enum { MOCK_BSP_WATCHDOG_MARKER_HISTORY = 64 };
 
-void mock_bsp_watchdog_reset(void);
+void MOCK_BSP_WatchdogReset(void);
 
 /* Retained state a reset would have left behind, read by the boot report. */
-void mock_bsp_watchdog_set_boot_reason(const bsp_boot_reason_t reason);
-void mock_bsp_watchdog_set_retained(const uint32_t marker, const uint32_t slot0,
-                                    const uint32_t slot1, const uint32_t slot2);
+void MOCK_BSP_WatchdogSetBootReason(const bsp_boot_reason_t reason);
+void MOCK_BSP_WatchdogSetRetained(const uint32_t marker, const uint32_t slot0,
+                                  const uint32_t slot1, const uint32_t slot2);
 
-bool mock_bsp_watchdog_started(void);
-uint32_t mock_bsp_watchdog_timeout_ms(void);
-uint32_t mock_bsp_watchdog_feed_count(void);
-uint32_t mock_bsp_watchdog_marker(void);
-uint32_t mock_bsp_watchdog_snapshot(const uint32_t slot);
+bool MOCK_BSP_WatchdogStarted(void);
+uint32_t MOCK_BSP_WatchdogTimeoutMs(void);
+uint32_t MOCK_BSP_WatchdogFeedCount(void);
+uint32_t MOCK_BSP_WatchdogMarker(void);
+uint32_t MOCK_BSP_WatchdogSnapshot(const uint32_t slot);
 
 /* Ordered record of every marker write, so tests can assert that a code path was
    marked before it ran rather than only that the final marker is correct. */
-uint32_t mock_bsp_watchdog_marker_writes(void);
-uint32_t mock_bsp_watchdog_marker_at(const uint32_t index);
-bool mock_bsp_watchdog_marker_was_written(const uint32_t marker);
+uint32_t MOCK_BSP_WatchdogMarkerWrites(void);
+uint32_t MOCK_BSP_WatchdogMarkerAt(const uint32_t index);
+bool MOCK_BSP_WatchdogMarkerWasWritten(const uint32_t marker);
 
 #endif

@@ -3,12 +3,12 @@
 
 #include "bsp_time.h"
 
-void mock_bsp_time_reset(void);
-void mock_bsp_time_set_ms(const uint32_t now_ms);
+void MOCK_BSP_TimeReset(void);
+void MOCK_BSP_TimeSetMs(const uint32_t now_ms);
 
 /* Blocking sleeps are recorded rather than performed, so the boot blink code can
    be asserted without slowing the suite. */
-uint32_t mock_bsp_time_sleep_count(void);
-uint32_t mock_bsp_time_sleep_total_ms(void);
+uint32_t MOCK_BSP_TimeSleepCount(void);
+uint32_t MOCK_BSP_TimeSleepTotalMs(void);
 
 #endif

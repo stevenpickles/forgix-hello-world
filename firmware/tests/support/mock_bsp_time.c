@@ -4,21 +4,21 @@ static uint32_t current_time_ms;
 static uint32_t sleep_count;
 static uint32_t sleep_total_ms;
 
-void mock_bsp_time_reset(void) {
+void MOCK_BSP_TimeReset(void) {
     current_time_ms = 0;
     sleep_count = 0;
     sleep_total_ms = 0;
 }
 
-void mock_bsp_time_set_ms(const uint32_t now_ms) {
+void MOCK_BSP_TimeSetMs(const uint32_t now_ms) {
     current_time_ms = now_ms;
 }
 
-uint32_t mock_bsp_time_sleep_count(void) {
+uint32_t MOCK_BSP_TimeSleepCount(void) {
     return sleep_count;
 }
 
-uint32_t mock_bsp_time_sleep_total_ms(void) {
+uint32_t MOCK_BSP_TimeSleepTotalMs(void) {
     return sleep_total_ms;
 }
 
