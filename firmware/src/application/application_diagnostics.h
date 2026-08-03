@@ -47,6 +47,21 @@ void application_diagnostics_poll(void);
 /* Live counters plus the retained report from the previous boot. */
 void application_diagnostics_print_report(void);
 
+/* Hands the LED to something else for as long as it needs it, and takes it back.
+   The heartbeat rewrites the LED every 250 ms, which is faster than anything a
+   person can watch: a light show or an LED test that holds a colour for longer
+   than that gets the heartbeat punched through the middle of it.
+
+   Both calls are needed, not just the first. The FPGA health check reads the LED
+   back and compares it against what the heartbeat last commanded, so a heartbeat
+   that merely stopped writing would leave that comparison judging a command it
+   no longer issues and counting an FPGA failure every second. Releasing stands
+   both of them down together; reclaiming restores the heartbeat and refreshes
+   what the check compares against, in that order. */
+void application_diagnostics_release_led(void);
+
+void application_diagnostics_reclaim_led(void);
+
 /* The boot cause as it was latched by application_diagnostics_start, before the
    watchdog was armed. Anything asking later must come here rather than call
    BSP_WatchdogBootReason again: arming the watchdog writes the scratch word that

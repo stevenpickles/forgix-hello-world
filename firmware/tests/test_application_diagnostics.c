@@ -273,6 +273,64 @@ void test_sample_shows_green_and_snapshots_health_while_traffic_advances(void) {
     TEST_ASSERT_EQUAL_UINT32(APPLICATION_DIAGNOSTICS_MARKER_LOOP, MOCK_BSP_WatchdogMarker());
 }
 
+/* The heartbeat writes every 250 ms, which is faster than anything a person can
+   watch. A light show or an LED test that holds a colour for longer than that
+   gets the heartbeat punched through the middle of it, so an activity takes the
+   LED for its whole run rather than sharing it. */
+void test_released_led_is_left_alone_by_the_heartbeat(void) {
+    start_usb_at(0);
+    BSP_LedOff_Expect();
+    poll_at(250);
+
+    application_diagnostics_release_led();
+
+    /* Two full heartbeat periods and a sample boundary, and not one LED write.
+       Any BSP_LedSet or BSP_LedOff here would fail as an unexpected call. */
+    poll_at(500);
+    poll_at(750);
+    MOCK_BSP_UsbSetHealth(health_of(true, false, 64, 5, 100));
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    poll_at(1000);
+}
+
+/* The readback is only evidence while the heartbeat owns the LED. Comparing it
+   against a command that is no longer being issued would report an FPGA fault
+   once a second for the length of every light show -- which is the trap in
+   simply muting the heartbeat and calling it done. */
+void test_released_led_is_dropped_from_the_fpga_health_check(void) {
+    start_usb_at(0);
+    application_diagnostics_release_led();
+
+    MOCK_BSP_UsbSetHealth(health_of(true, false, 64, 5, 100));
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    poll_at(1000);
+
+    application_diagnostics_print_report();
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "fpga_fail=0"));
+}
+
+/* Reclaiming writes immediately rather than waiting for the next 250 ms edge, so
+   the last owner's colour does not linger and the health check never samples
+   against a command that predates the handover. */
+void test_reclaiming_the_led_repaints_it_at_once(void) {
+    start_usb_at(0);
+    application_diagnostics_release_led();
+
+    BSP_LedSet_Expect(0, 0, 255, BRIGHTNESS);
+    application_diagnostics_reclaim_led();
+
+    /* And the heartbeat carries on from the phase it would have been in, rather
+       than restarting, so handing the LED back does not stretch or shorten the
+       beat that a watching eye is using to judge that the loop is alive. */
+    BSP_LedOff_Expect();
+    poll_at(250);
+    MOCK_BSP_UsbSetHealth(health_of(true, false, 64, 5, 100));
+    expect_sample(0, 255, 0);
+    poll_at(1000);
+}
+
 void test_heartbeat_stays_blue_while_the_host_has_not_asserted_dtr(void) {
     start_usb_at(0);
     BSP_LedOff_Expect();

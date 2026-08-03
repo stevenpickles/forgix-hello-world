@@ -49,6 +49,10 @@ typedef struct {
     uint32_t boot_snapshot[BSP_WATCHDOG_SNAPSHOT_SLOTS];
 
     bool led_on;
+    /* True while something else owns the LED. The phase keeps advancing
+       underneath, so the heartbeat picks up where it would have been rather than
+       restarting whenever an activity ends. */
+    bool led_released;
     uint32_t next_led_ms;
     uint32_t next_sample_ms;
     uint32_t uptime_seconds;
@@ -168,7 +172,13 @@ static bool led_readback_matches(void) {
 static void check_fpga(uint32_t now_ms) {
     BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_FPGA_CHECK);
 
-    if (BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID && led_readback_matches()) {
+    /* The readback is only evidence while the heartbeat is the thing driving the
+       LED. Once it has been handed over, what is in those registers belongs to
+       whoever holds it, and comparing it against a stale command would report an
+       FPGA fault once a second for the length of every light show. CDONE and the
+       design-ID ping still answer for the FPGA. */
+    if (BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID &&
+            (diagnostics.led_released || led_readback_matches())) {
         return;
     }
 
@@ -347,7 +357,7 @@ void application_diagnostics_poll(void) {
         diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
         diagnostics.led_on = !diagnostics.led_on;
     }
-    if (led_due || sample_due) {
+    if ((led_due || sample_due) && !diagnostics.led_released) {
         apply_led(now_ms);
     }
     if (led_due && diagnostics.recovery_toggles) {
@@ -377,6 +387,20 @@ void application_diagnostics_print_report(void) {
         (unsigned long)diagnostics.health.activity_count,
         (unsigned long)diagnostics.health.frame_number,
         (unsigned long)diagnostics.fpga_failures, (unsigned long)diagnostics.fpga_reconfigures);
+}
+
+void application_diagnostics_release_led(void) {
+    diagnostics.led_released = true;
+}
+
+void application_diagnostics_reclaim_led(void) {
+    diagnostics.led_released = false;
+    /* Written immediately rather than at the next 250 ms edge. Waiting would
+       leave whatever the last owner painted on the board for a quarter of a
+       second after it stopped owning it, and -- worse -- would leave the FPGA
+       health check comparing against a command that predates the handover if it
+       samples first. */
+    apply_led(BSP_TimeNowMs());
 }
 
 bsp_boot_reason application_diagnostics_boot_reason(void) {
