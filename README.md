@@ -125,7 +125,7 @@ that could not read flash either, so nothing came back.
 Raspberry Pi's *Hardware design with RP2350*, section 3.2, requires a 10K pull-up
 on that net for exactly this reason. This board has no footprint for one.
 
-**Fix.** `bsp_init()` swaps the pad's power-up pull-down for a pull-up before
+**Fix.** `BSP_Init()` swaps the pad's power-up pull-down for a pull-up before
 anything else runs. Measured against three unmitigated runs that failed at 240,
 520 and 554 seconds, the same image then ran two hours clean, twice: once with
 the secondary memory deselected and once with it live on the shared bus.
