@@ -7,11 +7,15 @@
    layer is confined to scratch[0] (progress marker) and scratch[1..3]
    (BSP_WATCHDOG_SNAPSHOT_SLOTS health snapshots). Those registers survive a
    watchdog reset, which is what makes a hang self-attributing. */
-enum
+
+/* Indices into watchdog_hw->scratch naming the two regions described above:
+   the single progress marker slot and the first of the contiguous snapshot
+   slots that follow it. */
+typedef enum
 {
     MARKER_REGISTER = 0,
     SNAPSHOT_BASE_REGISTER = 1
-};
+} bsp_watchdog_scratch_register_t;
 
 void BSP_WatchdogStart(const uint32_t timeout_ms)
 {

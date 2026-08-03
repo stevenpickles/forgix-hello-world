@@ -2,14 +2,17 @@
 
 #include "bsp_fpga.h"
 
-enum
+/* Addresses in the FPGA register map this module writes and reads back: the
+   three colour channels, the global brightness, and the enable bit that
+   latches them into the physical LED. */
+typedef enum
 {
     REG_LED_R = 0x10,
     REG_LED_G = 0x11,
     REG_LED_B = 0x12,
     REG_LED_GLOBAL = 0x13,
     REG_LED_ENABLE = 0x14,
-};
+} bsp_led_register_t;
 
 void BSP_LedSet(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness)
 {

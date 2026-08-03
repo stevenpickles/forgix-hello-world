@@ -4,10 +4,9 @@
 #include "bsp_types.h"
 #include "bsp_watchdog.h"
 
-enum
-{
-    MOCK_BSP_WATCHDOG_MARKER_HISTORY = 64
-};
+/* How many marker writes the fake records, so a test can assert the order a
+   code path set them in rather than only the final value. */
+#define MOCK_BSP_WATCHDOG_MARKER_HISTORY ((uint32_t)64u)
 
 void MOCK_BSP_WatchdogReset(void);
 

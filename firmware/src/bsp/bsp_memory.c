@@ -16,17 +16,14 @@
 #endif
 
 /* QMI chip select 1 is mapped here, immediately above the 16 MB chip-select-0
-   window. See the PSRAM region in the SDK linker script. */
-enum
-{
-    PSRAM_WINDOW_BASE = 0x11000000u
-};
+   window. See the PSRAM region in the SDK linker script. This is the XIP
+   address the chip-select-1 PSRAM appears at once it has been mapped. */
+#define PSRAM_WINDOW_BASE ((uint32_t)0x11000000u)
 
-/* AP Memory's known-good-die byte, at offset 5 of the Read-ID response. */
-enum
-{
-    EXPECTED_KGD = 0x5du
-};
+/* AP Memory's known-good-die byte, at offset 5 of the Read-ID response: the
+   value the datasheet says the fitted part reports. A mismatch here means an
+   unexpected vendor answered, not that the memory itself is broken. */
+#define EXPECTED_KGD ((uint8_t)0x5du)
 
 /* Filled in by the psram_eid_to_size override below, which the SDK calls from
    runtime_init. Written before main runs, so plain statics are sufficient. */

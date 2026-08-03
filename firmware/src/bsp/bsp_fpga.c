@@ -7,7 +7,10 @@
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 
-enum
+/* The physical pin assignment for the bit-banged link between the RP2350 and
+   the FPGA: which GPIO carries chip select, clock, the shared data line, and
+   the reset/handshake/oscillator-enable signals that bring the FPGA up. */
+typedef enum
 {
     PIN_CS = 1,
     PIN_SCK = 2,
@@ -16,20 +19,22 @@ enum
     PIN_CDONE = 5,
     PIN_STATUS = 6,
     PIN_OSC_EN = 19,
-};
+} bsp_fpga_pin_t;
 
-enum
+/* Opcodes understood by the FPGA's register protocol, sent as the first byte
+   of a transaction to select whether the bytes that follow write a register,
+   read one back, reset the design, or just ping it for its design ID. */
+typedef enum
 {
     CMD_WRITE = 0x02,
     CMD_READ = 0x03,
     CMD_RESET = 0x7f,
     CMD_PING = 0x9f,
-};
+} bsp_fpga_command_t;
 
-enum
-{
-    REG_STATUS = 0x01
-};
+/* The register the FPGA reports its own status through -- cdone/config state
+   as seen from inside the design rather than off the CDONE pin. */
+#define REG_STATUS ((uint8_t)0x01)
 
 static bool fpga_ready;
 
