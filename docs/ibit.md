@@ -63,10 +63,13 @@ ID has already cleared both.
 
 ## What it reports but does not judge
 
-**OTP `FLASH_DEVINFO`.** This part answers `0xC` for chip select 0 — the maximum
-enum, an unprogrammed default — against a real 2 MiB die, and `0` for chip select
-1 even though a 2 MiB device is fitted there. Printed so that anyone who meets
-those numbers in another tool knows not to believe them.
+**OTP `FLASH_DEVINFO`.** Measured on hardware, this part answers `0x9` for chip
+select 0, which is the correct 2 MiB, and `0x0` for chip select 1 even though a
+2 MiB device is fitted and working there. So one of the two is right and the
+other is not, and nothing in the numbers themselves says which. That is the
+reason this step prints them and stops: nothing in the firmware sizes a memory
+from here. Flash comes from what the image was linked for, and the DRAM from the
+SDK's own detection.
 
 **The PSRAM identity.** The fitted device holds a pattern across its whole range
 but reports `KGD 0x0B, EID 0x43` rather than AP Memory's `0x5D`, so it is not the

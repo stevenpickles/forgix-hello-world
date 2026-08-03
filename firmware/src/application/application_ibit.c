@@ -214,14 +214,17 @@ static application_ibit_outcome_t step_memory_sizing(char *detail, size_t capaci
 }
 
 
-/* Reported, never believed. This part answers 0xC for chip select 0 -- the
-   maximum enum, an unprogrammed default -- against a real 2 MByte die, and 0 for
-   chip select 1 despite a 2 MByte device being fitted there. Anyone who reads
-   these numbers elsewhere should see them here with that caveat attached. */
+/* Reported, not judged. Measured on hardware this part answers 0x9 for chip
+   select 0, which is the correct 2 MByte, and 0x0 for chip select 1 even though
+   a 2 MByte device is fitted and working there. So one of the two is right and
+   the other is not, and there is no way to tell them apart from the numbers
+   alone -- which is exactly why this prints them and stops. Nothing in the
+   firmware sizes a memory from here; flash comes from what the image was linked
+   for and the DRAM from the SDK's own detection. */
 static application_ibit_outcome_t step_otp_devinfo(char *detail, size_t capacity) {
     const bsp_mcu_info_t info = BSP_McuInfo();
 
-    snprintf(detail, capacity, "cs0=0x%X cs1=0x%X (unprogrammed defaults, not sizes)",
+    snprintf(detail, capacity, "cs0=0x%X cs1=0x%X (reported, not used to size anything)",
              info.otp_cs0_size_code, info.otp_cs1_size_code);
     return APPLICATION_IBIT_INFO;
 }

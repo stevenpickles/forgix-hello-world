@@ -77,10 +77,11 @@ typedef struct bsp_mcu_info_t_tag
     uint8_t unique_id[ BSP_MCU_UNIQUE_ID_BYTES ];
     uint32_t sram_bytes;
     uint32_t flash_bytes; /* what the firmware was linked for, not what OTP claims */
-    /* Chip-select size codes as OTP FLASH_DEVINFO reports them. Reported raw and
-       never acted on: this part answers 0xC for chip select 0, the maximum enum,
-       which is a permissive unprogrammed default rather than the true 2 MByte,
-       and 0 for chip select 1 even though a 2 MByte device is fitted there. */
+    /* Chip-select size codes as the SDK reports them out of FLASH_DEVINFO.
+       Carried raw and acted on nowhere: measured on this board chip select 0
+       answers 0x9, the correct 2 MByte, while chip select 1 answers 0x0 despite
+       a working 2 MByte device being fitted there. One is right and one is not,
+       and nothing in the numbers says which. */
     uint8_t otp_cs0_size_code;
     uint8_t otp_cs1_size_code;
     uint8_t core_count;

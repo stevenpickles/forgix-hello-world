@@ -57,7 +57,7 @@ static bsp_mcu_info_t healthy_mcu(void) {
         .unique_id = {0xe6, 0x60, 0x38, 0xb7, 0x13, 0x5f, 0x21, 0x2c},
         .sram_bytes = 520u * 1024u,
         .flash_bytes = 2u * 1024u * 1024u,
-        .otp_cs0_size_code = 0xcu,
+        .otp_cs0_size_code = 0x9u,  /* what the board actually reports: 2 MByte */
         .otp_cs1_size_code = 0u,
         .core_count = 2,
         .architecture = BSP_MCU_ARCHITECTURE_ARM,
@@ -262,8 +262,8 @@ void test_otp_device_info_is_reported_without_a_verdict(void) {
     const char *output = run_step(STEP_OTP_DEVINFO);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "INFO"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "cs0=0xC cs1=0x0"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "not sizes"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "cs0=0x9 cs1=0x0"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "not used to size anything"));
 }
 
 void test_boot_flash_reports_the_reset_vector_verdict(void) {
@@ -858,7 +858,7 @@ void test_the_board_report_states_the_facts_without_judging_them(void) {
     TEST_ASSERT_NOT_NULL(strstr(output, "manufacturer=493 part=0004"));
     TEST_ASSERT_NOT_NULL(strstr(output, "board    E66038B7135F212C"));
     TEST_ASSERT_NOT_NULL(strstr(output, "package  id=11223344 device=01020304AABBCCDD valid=1"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "otp_cs0=0xC"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "otp_cs0=0x9"));
     TEST_ASSERT_NOT_NULL(strstr(output, "measured sys=150000000"));
     TEST_ASSERT_NOT_NULL(strstr(output, "24500 milli-degrees C"));
     TEST_ASSERT_NULL(strstr(output, "PASS"));
