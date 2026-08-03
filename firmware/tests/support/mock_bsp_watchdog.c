@@ -17,14 +17,14 @@
 ***************************************************************************************/
 
 
-static bsp_boot_reason_t boot_reason;
-static uint32_t marker;
-static uint32_t snapshots[ BSP_WATCHDOG_SNAPSHOT_SLOTS ];
-static bool started;
-static uint32_t timeout_ms;
-static uint32_t feed_count;
-static uint32_t marker_history[ MOCK_BSP_WATCHDOG_MARKER_HISTORY ];
-static uint32_t marker_writes;
+static bsp_boot_reason_t _bootReason;
+static uint32_t _marker;
+static uint32_t _snapshots[ BSP_WATCHDOG_SNAPSHOT_SLOTS ];
+static bool _started;
+static uint32_t _timeoutMs;
+static uint32_t _feedCount;
+static uint32_t _markerHistory[ MOCK_BSP_WATCHDOG_MARKER_HISTORY ];
+static uint32_t _markerWrites;
 
 
 
@@ -38,56 +38,56 @@ static uint32_t marker_writes;
 
 void MOCK_BSP_WatchdogReset( void )
 {
-    boot_reason = BSP_BOOT_POWER_ON;
-    marker = 0;
+    _bootReason = BSP_BOOT_POWER_ON;
+    _marker = 0;
     for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
     {
-        snapshots[ slot ] = 0;
+        _snapshots[ slot ] = 0;
     }
-    started = false;
-    timeout_ms = 0;
-    feed_count = 0;
-    marker_writes = 0;
+    _started = false;
+    _timeoutMs = 0;
+    _feedCount = 0;
+    _markerWrites = 0;
 }
 
 
 void MOCK_BSP_WatchdogSetBootReason( const bsp_boot_reason_t reason )
 {
-    boot_reason = reason;
+    _bootReason = reason;
 }
 
 
-void MOCK_BSP_WatchdogSetRetained( const uint32_t retained_marker, const uint32_t slot0,
+void MOCK_BSP_WatchdogSetRetained( const uint32_t retainedMarker, const uint32_t slot0,
                                    const uint32_t slot1, const uint32_t slot2 )
 {
-    marker = retained_marker;
-    snapshots[ 0 ] = slot0;
-    snapshots[ 1 ] = slot1;
-    snapshots[ 2 ] = slot2;
+    _marker = retainedMarker;
+    _snapshots[ 0 ] = slot0;
+    _snapshots[ 1 ] = slot1;
+    _snapshots[ 2 ] = slot2;
 }
 
 
 bool MOCK_BSP_WatchdogStarted( void )
 {
-    return started;
+    return _started;
 }
 
 
 uint32_t MOCK_BSP_WatchdogTimeoutMs( void )
 {
-    return timeout_ms;
+    return _timeoutMs;
 }
 
 
 uint32_t MOCK_BSP_WatchdogFeedCount( void )
 {
-    return feed_count;
+    return _feedCount;
 }
 
 
 uint32_t MOCK_BSP_WatchdogMarker( void )
 {
-    return marker;
+    return _marker;
 }
 
 
@@ -95,7 +95,7 @@ uint32_t MOCK_BSP_WatchdogSnapshot( const uint32_t slot )
 {
     if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
     {
-        return snapshots[ slot ];
+        return _snapshots[ slot ];
     }
     return 0;
 }
@@ -103,15 +103,15 @@ uint32_t MOCK_BSP_WatchdogSnapshot( const uint32_t slot )
 
 uint32_t MOCK_BSP_WatchdogMarkerWrites( void )
 {
-    return marker_writes;
+    return _markerWrites;
 }
 
 
 uint32_t MOCK_BSP_WatchdogMarkerAt( const uint32_t index )
 {
-    if ( index < marker_writes && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY )
+    if ( index < _markerWrites && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY )
     {
-        return marker_history[ index ];
+        return _markerHistory[ index ];
     }
     return 0;
 }
@@ -119,10 +119,10 @@ uint32_t MOCK_BSP_WatchdogMarkerAt( const uint32_t index )
 
 bool MOCK_BSP_WatchdogMarkerWasWritten( const uint32_t wanted )
 {
-    for ( uint32_t index = 0; index < marker_writes && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY;
+    for ( uint32_t index = 0; index < _markerWrites && index < MOCK_BSP_WATCHDOG_MARKER_HISTORY;
           ++index )
     {
-        if ( marker_history[ index ] == wanted )
+        if ( _markerHistory[ index ] == wanted )
         {
             return true;
         }
@@ -131,39 +131,39 @@ bool MOCK_BSP_WatchdogMarkerWasWritten( const uint32_t wanted )
 }
 
 
-void BSP_WatchdogStart( const uint32_t requested_timeout_ms )
+void BSP_WatchdogStart( const uint32_t requestedTimeoutMs )
 {
-    started = true;
-    timeout_ms = requested_timeout_ms;
+    _started = true;
+    _timeoutMs = requestedTimeoutMs;
 }
 
 
 void BSP_WatchdogFeed( void )
 {
-    ++feed_count;
+    ++_feedCount;
 }
 
 
 bsp_boot_reason_t BSP_WatchdogBootReason( void )
 {
-    return boot_reason;
+    return _bootReason;
 }
 
 
 void BSP_WatchdogMarkerSet( const uint32_t value )
 {
-    marker = value;
-    if ( marker_writes < MOCK_BSP_WATCHDOG_MARKER_HISTORY )
+    _marker = value;
+    if ( _markerWrites < MOCK_BSP_WATCHDOG_MARKER_HISTORY )
     {
-        marker_history[ marker_writes ] = value;
+        _markerHistory[ _markerWrites ] = value;
     }
-    ++marker_writes;
+    ++_markerWrites;
 }
 
 
 uint32_t BSP_WatchdogMarkerGet( void )
 {
-    return marker;
+    return _marker;
 }
 
 
@@ -171,7 +171,7 @@ void BSP_WatchdogSnapshotSet( const uint32_t slot, const uint32_t value )
 {
     if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
     {
-        snapshots[ slot ] = value;
+        _snapshots[ slot ] = value;
     }
 }
 
@@ -180,7 +180,7 @@ uint32_t BSP_WatchdogSnapshotGet( const uint32_t slot )
 {
     if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
     {
-        return snapshots[ slot ];
+        return _snapshots[ slot ];
     }
     return 0;
 }

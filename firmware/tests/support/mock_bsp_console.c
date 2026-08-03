@@ -24,10 +24,10 @@
 /* The queue holds only bytes a host could actually send. BSP_CONSOLE_TIMEOUT is
    produced when the queue runs dry rather than stored in it, so the element type
    does not have to carry the sentinel. */
-static char output[ 2048 ];
-static uint8_t input[ 512 ];
-static uint32_t input_count;
-static uint32_t input_position;
+static char _output[ 2048 ];
+static uint8_t _input[ 512 ];
+static uint32_t _inputCount;
+static uint32_t _inputPosition;
 
 
 
@@ -39,7 +39,7 @@ static uint32_t input_position;
 ***************************************************************************************/
 
 
-static void append( const char *const text );
+static void _Append( const char *const ptr_text );
 
 
 
@@ -53,33 +53,33 @@ static void append( const char *const text );
 
 void MOCK_BSP_ConsoleReset( void )
 {
-    output[ 0 ] = 0;
-    input_count = 0;
-    input_position = 0;
+    _output[ 0 ] = 0;
+    _inputCount = 0;
+    _inputPosition = 0;
 }
 
 
 void MOCK_BSP_ConsoleQueueCharacter( const uint8_t character )
 {
-    if ( input_count < (uint32_t) ( sizeof input / sizeof input[ 0 ] ) )
+    if ( _inputCount < (uint32_t) ( sizeof _input / sizeof _input[ 0 ] ) )
     {
-        input[ input_count++ ] = character;
+        _input[ _inputCount++ ] = character;
     }
 }
 
 
-void MOCK_BSP_ConsoleQueueText( const char *text )
+void MOCK_BSP_ConsoleQueueText( const char *ptr_text )
 {
-    while ( *text )
+    while ( *ptr_text )
     {
-        MOCK_BSP_ConsoleQueueCharacter( (uint8_t) *text++ );
+        MOCK_BSP_ConsoleQueueCharacter( (uint8_t) *ptr_text++ );
     }
 }
 
 
 const char *MOCK_BSP_ConsoleOutput( void )
 {
-    return output;
+    return _output;
 }
 
 
@@ -88,12 +88,12 @@ void BSP_ConsoleInit( void )
 }
 
 
-int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeout_us )
+int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeoutUs )
 {
-    (void) timeout_us;
-    if ( input_position < input_count )
+    (void) timeoutUs;
+    if ( _inputPosition < _inputCount )
     {
-        return input[ input_position++ ];
+        return _input[ _inputPosition++ ];
     }
     return BSP_CONSOLE_TIMEOUT;
 }
@@ -101,28 +101,28 @@ int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeout_us )
 
 int16_t BSP_ConsolePutChar( const uint8_t character )
 {
-    char text[ 2 ] = { (char) character, 0 };
-    append( text );
+    char ptr_text[ 2 ] = { (char) character, 0 };
+    _Append( ptr_text );
     return character;
 }
 
 
-int32_t BSP_ConsolePrintf( const char *const format, ... )
+int32_t BSP_ConsolePrintf( const char *const ptr_format, ... )
 {
     char formatted[ 512 ];
     va_list arguments;
-    va_start( arguments, format );
-    int result = vsnprintf( formatted, sizeof formatted, format, arguments );
+    va_start( arguments, ptr_format );
+    int result = vsnprintf( formatted, sizeof formatted, ptr_format, arguments );
     va_end( arguments );
-    append( formatted );
+    _Append( formatted );
     return (int32_t) result;
 }
 
 
-int32_t BSP_ConsolePuts( const char *const text )
+int32_t BSP_ConsolePuts( const char *const ptr_text )
 {
-    append( text );
-    append( "\n" );
+    _Append( ptr_text );
+    _Append( "\n" );
     return 0;
 }
 
@@ -136,12 +136,12 @@ int32_t BSP_ConsolePuts( const char *const text )
 ***************************************************************************************/
 
 
-static void append( const char *const text )
+static void _Append( const char *const ptr_text )
 {
-    const uint32_t used = (uint32_t) strlen( output );
-    const uint32_t remaining = (uint32_t) sizeof output - used;
+    const uint32_t used = (uint32_t) strlen( _output );
+    const uint32_t remaining = (uint32_t) sizeof _output - used;
     if ( remaining > 1u )
     {
-        snprintf( output + used, remaining, "%s", text );
+        snprintf( _output + used, remaining, "%s", ptr_text );
     }
 }

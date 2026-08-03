@@ -44,9 +44,9 @@ typedef enum
 ***************************************************************************************/
 
 
-void BSP_WatchdogStart( const uint32_t timeout_ms )
+void BSP_WatchdogStart( const uint32_t timeoutMs )
 {
-    watchdog_enable( timeout_ms, true );
+    watchdog_enable( timeoutMs, true );
 }
 
 void BSP_WatchdogFeed( void )

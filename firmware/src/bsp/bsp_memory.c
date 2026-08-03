@@ -52,8 +52,8 @@
 
 /* Filled in by the psram_eid_to_size override below, which the SDK calls from
    runtime_init. Written before main runs, so plain statics are sufficient. */
-static uint8_t reported_kgd;
-static uint8_t reported_eid;
+static uint8_t _reportedKgd;
+static uint8_t _reportedEid;
 
 
 
@@ -65,12 +65,12 @@ static uint8_t reported_eid;
 ***************************************************************************************/
 
 
-static bool flash_reads_coherently( const uint32_t flash_bytes );
+static bool _FlashReadsCoherently( const uint32_t flashBytes );
 
 #if FORGIX_QSPI_PSRAM
-static bool force_psram_from_datasheet( void );
+static bool _ForcePsramFromDatasheet( void );
 
-static bool psram_holds_a_pattern( const uint32_t size_bytes );
+static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
 #endif
 
 
@@ -93,8 +93,8 @@ static bool psram_holds_a_pattern( const uint32_t size_bytes );
    device, which is precisely what every attempt to re-read them later did. */
 size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
 {
-    reported_kgd = kgd;
-    reported_eid = eid;
+    _reportedKgd = kgd;
+    _reportedEid = eid;
 
     if ( kgd != EXPECTED_KGD )
     {
@@ -104,25 +104,25 @@ size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
     /* Density lives in the top three bits of the EID, and the mapping is the
        SDK's, kept identical so overriding the hook changes nothing but
        observability. */
-    uint32_t psram_size = 1024u * 1024u;
-    const uint8_t size_id = eid >> 5;
-    if ( size_id == 4u )
+    uint32_t psramSize = 1024u * 1024u;
+    const uint8_t sizeId = eid >> 5;
+    if ( sizeId == 4u )
     {
-        psram_size *= 16u;
+        psramSize *= 16u;
     }
-    else if ( eid == 0x26u || size_id == 2u || size_id == 3u )
+    else if ( eid == 0x26u || sizeId == 2u || sizeId == 3u )
     {
-        psram_size *= 8u;
+        psramSize *= 8u;
     }
-    else if ( size_id == 1u )
+    else if ( sizeId == 1u )
     {
-        psram_size *= 4u;
+        psramSize *= 4u;
     }
     else
     {
-        psram_size *= 2u;
+        psramSize *= 2u;
     }
-    return (size_t) psram_size;
+    return (size_t) psramSize;
 }
 #endif
 
@@ -140,18 +140,18 @@ bsp_memory_report_t BSP_MemoryCheck( void )
 {
     bsp_memory_report_t report = { 0 };
 
-    report.psram_kgd = reported_kgd;
-    report.psram_eid = reported_eid;
+    report.psram_kgd = _reportedKgd;
+    report.psram_eid = _reportedEid;
     report.flash_bytes = PICO_FLASH_SIZE_BYTES;
-    report.flash_ok = flash_reads_coherently( report.flash_bytes );
+    report.flash_ok = _FlashReadsCoherently( report.flash_bytes );
 
 #if FORGIX_QSPI_PSRAM
     if ( psram_is_available() )
     {
         report.psram_bytes = (uint32_t) psram_get_size();
-        report.psram_ok = psram_holds_a_pattern( report.psram_bytes );
+        report.psram_ok = _PsramHoldsAPattern( report.psram_bytes );
     }
-    else if ( force_psram_from_datasheet() )
+    else if ( _ForcePsramFromDatasheet() )
     {
         /* Auto-detection only compares the identity byte. This device answers
            Read-ID selectively and correctly, it just does not report AP Memory's
@@ -159,7 +159,7 @@ bsp_memory_report_t BSP_MemoryCheck( void )
            the right name. */
         report.psram_forced = true;
         report.psram_bytes = (uint32_t) psram_get_size();
-        report.psram_ok = psram_holds_a_pattern( report.psram_bytes );
+        report.psram_ok = _PsramHoldsAPattern( report.psram_bytes );
     }
 #endif
 
@@ -181,14 +181,14 @@ bsp_memory_report_t BSP_MemoryCheck( void )
    pointer in SRAM and a reset vector inside the flash window. Bus contention on
    the shared QSPI lines corrupts reads rather than stopping them, so a garbled
    vector table is exactly what a CS1 problem looks like from here. */
-static bool flash_reads_coherently( const uint32_t flash_bytes )
+static bool _FlashReadsCoherently( const uint32_t flashBytes )
 {
-    const uint32_t *vectors = (const uint32_t *) XIP_BASE;
-    const uint32_t stack_pointer = vectors[ 0 ];
-    const uint32_t reset_vector = vectors[ 1 ];
+    const uint32_t *ptr_vectors = (const uint32_t *) XIP_BASE;
+    const uint32_t stackPointer = ptr_vectors[ 0 ];
+    const uint32_t resetVector = ptr_vectors[ 1 ];
 
-    return stack_pointer > SRAM_BASE && stack_pointer <= SRAM_END && reset_vector >= XIP_BASE &&
-           reset_vector < XIP_BASE + flash_bytes;
+    return stackPointer > SRAM_BASE && stackPointer <= SRAM_END && resetVector >= XIP_BASE &&
+           resetVector < XIP_BASE + flashBytes;
 }
 
 #if FORGIX_QSPI_PSRAM
@@ -201,7 +201,7 @@ static bool flash_reads_coherently( const uint32_t flash_bytes )
 
    psram_reinitialize is documented as unsafe against concurrent XIP, so it runs
    with interrupts off -- handlers live in flash. */
-static bool force_psram_from_datasheet( void )
+static bool _ForcePsramFromDatasheet( void )
 {
     flash_devinfo_set_cs_gpio( 1, FORGIX_QSPI_CS1_GPIO );
     flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_2M );
@@ -223,26 +223,26 @@ static bool force_psram_from_datasheet( void )
 /* Writes every pattern before reading any of them back. Checking each write
    immediately would pass against a bus that merely echoes the last value, and
    would not catch address aliasing from a device smaller than it reports. */
-static bool psram_holds_a_pattern( const uint32_t size_bytes )
+static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
 {
-    if ( size_bytes < (uint32_t) sizeof( uint32_t ) )
+    if ( sizeBytes < (uint32_t) sizeof( uint32_t ) )
     {
         return false;
     }
 
-    volatile uint32_t *const window = (volatile uint32_t *) PSRAM_WINDOW_BASE;
-    const uint32_t words = size_bytes / (uint32_t) sizeof( uint32_t );
+    volatile uint32_t *const ptr_window = (volatile uint32_t *) PSRAM_WINDOW_BASE;
+    const uint32_t words = sizeBytes / (uint32_t) sizeof( uint32_t );
     const uint32_t indices[] = { 0, words / 2u, words - 1u };
     const uint32_t patterns[] = { 0xa5a5a5a5u, 0x5a5a5a5au, 0xdeadbeefu };
     const uint32_t count = (uint32_t) ( sizeof indices / sizeof indices[ 0 ] );
 
     for ( uint32_t index = 0; index < count; ++index )
     {
-        window[ indices[ index ] ] = patterns[ index ];
+        ptr_window[ indices[ index ] ] = patterns[ index ];
     }
     for ( uint32_t index = 0; index < count; ++index )
     {
-        if ( window[ indices[ index ] ] != patterns[ index ] )
+        if ( ptr_window[ indices[ index ] ] != patterns[ index ] )
         {
             return false;
         }

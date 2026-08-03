@@ -23,7 +23,7 @@
 
 /* Completed CDC transfers since boot. Bumped from interrupt context by the
    callbacks below, so the reader gets a snapshot rather than a stable count. */
-static volatile uint32_t cdc_activity_count;
+static volatile uint32_t _cdcActivityCount;
 
 
 
@@ -41,13 +41,13 @@ static volatile uint32_t cdc_activity_count;
 void tud_cdc_rx_cb( const uint8_t interface )
 {
     (void) interface;
-    ++cdc_activity_count;
+    ++_cdcActivityCount;
 }
 
 void tud_cdc_tx_complete_cb( const uint8_t interface )
 {
     (void) interface;
-    ++cdc_activity_count;
+    ++_cdcActivityCount;
 }
 
 
@@ -71,7 +71,7 @@ bsp_usb_health_t BSP_UsbHealth( void )
         .connected = stdio_usb_connected(),
         .suspended = tud_suspended(),
         .write_available = tud_cdc_write_available(),
-        .activity_count = cdc_activity_count,
+        .activity_count = _cdcActivityCount,
         .frame_number = usb_hw->sof_rd & USB_SOF_RD_BITS,
     };
     return health;

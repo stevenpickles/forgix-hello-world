@@ -17,9 +17,9 @@
 ***************************************************************************************/
 
 
-static uint32_t current_time_ms;
-static uint32_t sleep_count;
-static uint32_t sleep_total_ms;
+static uint32_t _currentTimeMs;
+static uint32_t _sleepCount;
+static uint32_t _sleepTotalMs;
 
 
 
@@ -33,38 +33,38 @@ static uint32_t sleep_total_ms;
 
 void MOCK_BSP_TimeReset( void )
 {
-    current_time_ms = 0;
-    sleep_count = 0;
-    sleep_total_ms = 0;
+    _currentTimeMs = 0;
+    _sleepCount = 0;
+    _sleepTotalMs = 0;
 }
 
 
-void MOCK_BSP_TimeSetMs( const uint32_t now_ms )
+void MOCK_BSP_TimeSetMs( const uint32_t nowMs )
 {
-    current_time_ms = now_ms;
+    _currentTimeMs = nowMs;
 }
 
 
 uint32_t MOCK_BSP_TimeSleepCount( void )
 {
-    return sleep_count;
+    return _sleepCount;
 }
 
 
 uint32_t MOCK_BSP_TimeSleepTotalMs( void )
 {
-    return sleep_total_ms;
+    return _sleepTotalMs;
 }
 
 
 uint32_t BSP_TimeNowMs( void )
 {
-    return current_time_ms;
+    return _currentTimeMs;
 }
 
 
-void BSP_TimeSleepMs( const uint32_t duration_ms )
+void BSP_TimeSleepMs( const uint32_t durationMs )
 {
-    ++sleep_count;
-    sleep_total_ms += duration_ms;
+    ++_sleepCount;
+    _sleepTotalMs += durationMs;
 }

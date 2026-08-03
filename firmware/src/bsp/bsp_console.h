@@ -44,13 +44,13 @@ extern "C" {
 
 void BSP_ConsoleInit( void );
 
-int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeout_us );
+int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeoutUs );
 
 int16_t BSP_ConsolePutChar( const uint8_t character );
 
-int32_t BSP_ConsolePrintf( const char *const format, ... );
+int32_t BSP_ConsolePrintf( const char *const ptr_format, ... );
 
-int32_t BSP_ConsolePuts( const char *const text );
+int32_t BSP_ConsolePuts( const char *const ptr_text );
 
 #ifdef __cplusplus
 }

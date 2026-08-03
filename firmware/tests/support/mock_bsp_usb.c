@@ -17,10 +17,10 @@
 ***************************************************************************************/
 
 
-static bool present;
-static bool connected;
-static bsp_usb_health_t health;
-static uint32_t service_count;
+static bool _present;
+static bool _connected;
+static bsp_usb_health_t _health;
+static uint32_t _serviceCount;
 
 
 
@@ -34,56 +34,56 @@ static uint32_t service_count;
 
 void MOCK_BSP_UsbReset( void )
 {
-    present = true;
-    connected = true;
-    health = (bsp_usb_health_t) { 0 };
-    service_count = 0;
+    _present = true;
+    _connected = true;
+    _health = (bsp_usb_health_t) { 0 };
+    _serviceCount = 0;
 }
 
 
 void MOCK_BSP_UsbSetPresent( const bool value )
 {
-    present = value;
+    _present = value;
 }
 
 
 void MOCK_BSP_UsbSetConnected( const bool value )
 {
-    connected = value;
+    _connected = value;
 }
 
 
 void MOCK_BSP_UsbSetHealth( const bsp_usb_health_t value )
 {
-    health = value;
+    _health = value;
 }
 
 
 uint32_t MOCK_BSP_UsbServiceCount( void )
 {
-    return service_count;
+    return _serviceCount;
 }
 
 
 bool BSP_UsbPresent( void )
 {
-    return present;
+    return _present;
 }
 
 
 bsp_usb_health_t BSP_UsbHealth( void )
 {
-    return health;
+    return _health;
 }
 
 
 bool BSP_UsbConnected( void )
 {
-    return connected;
+    return _connected;
 }
 
 
 void BSP_UsbService( void )
 {
-    ++service_count;
+    ++_serviceCount;
 }

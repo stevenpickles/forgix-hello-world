@@ -30,7 +30,7 @@ extern "C" {
 
 void MOCK_BSP_TimeReset( void );
 
-void MOCK_BSP_TimeSetMs( const uint32_t now_ms );
+void MOCK_BSP_TimeSetMs( const uint32_t nowMs );
 
 /* Blocking sleeps are recorded rather than performed, so the boot blink code can
    be asserted without slowing the suite. */

@@ -59,7 +59,7 @@
 ***************************************************************************************/
 
 
-static void configure_qspi_cs1( void );
+static void _ConfigureQspiCs1( void );
 
 
 
@@ -73,7 +73,7 @@ static void configure_qspi_cs1( void );
 
 bsp_init_result_t BSP_Init( void )
 {
-    configure_qspi_cs1();
+    _ConfigureQspiCs1();
     BSP_ConsoleInit();
     return BSP_FpgaInit();
 }
@@ -88,7 +88,7 @@ bsp_init_result_t BSP_Init( void )
 ***************************************************************************************/
 
 
-static void configure_qspi_cs1( void )
+static void _ConfigureQspiCs1( void )
 {
     /* RP2350-E14: the bootrom clears pad isolation for GPIO 0 rather than the
        configured chip select. Clear it explicitly so this does not depend on

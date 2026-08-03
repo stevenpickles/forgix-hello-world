@@ -29,7 +29,7 @@ extern "C" {
 
 uint32_t BSP_TimeNowMs( void );
 
-void BSP_TimeSleepMs( const uint32_t duration_ms );
+void BSP_TimeSleepMs( const uint32_t durationMs );
 
 #ifdef __cplusplus
 }

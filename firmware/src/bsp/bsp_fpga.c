@@ -76,7 +76,7 @@ typedef enum
 /* Whether the last configuration attempt ended with the FPGA answering a ping
    with the expected design ID. Cached so callers can ask without clocking the
    bus, which matters in the foreground loop. */
-static bool fpga_ready;
+static bool _fpgaReady;
 
 
 
@@ -88,15 +88,15 @@ static bool fpga_ready;
 ***************************************************************************************/
 
 
-static void runtime_bus_idle( void );
+static void _RuntimeBusIdle( void );
 
-static bool configure( void );
+static bool _Configure( void );
 
-static void send_byte( const uint8_t value, const bool release_after_sample );
+static void _SendByte( const uint8_t value, const bool releaseAfterSample );
 
-static uint8_t receive_byte( void );
+static uint8_t _ReceiveByte( void );
 
-static uint8_t transaction( const uint8_t *const tx, const uint32_t count, const bool read );
+static uint8_t _Transaction( const uint8_t *const tx, const uint32_t count, const bool read );
 
 
 
@@ -111,7 +111,7 @@ static uint8_t transaction( const uint8_t *const tx, const uint32_t count, const
 bsp_fpga_init_result_t BSP_FpgaInit( void )
 {
     bsp_fpga_init_result_t result = { 0 };
-    result.configured = configure();
+    result.configured = _Configure();
 
     sleep_ms( 1500 );
     if ( result.configured )
@@ -125,7 +125,7 @@ bsp_fpga_init_result_t BSP_FpgaInit( void )
     result.ready = result.configured && result.design_id == BSP_FPGA_DESIGN_ID;
     result.cdone = gpio_get( PIN_CDONE );
     result.status_pin = gpio_get( PIN_STATUS );
-    fpga_ready = result.ready;
+    _fpgaReady = result.ready;
     return result;
 }
 
@@ -146,7 +146,7 @@ bool BSP_FpgaAutoReconfigureEnabled( void )
 
 bool BSP_FpgaIsReady( void )
 {
-    return fpga_ready;
+    return _fpgaReady;
 }
 
 bool BSP_FpgaCdone( void )
@@ -157,7 +157,7 @@ bool BSP_FpgaCdone( void )
 uint8_t BSP_FpgaPing( void )
 {
     const uint8_t tx[] = { CMD_PING };
-    return transaction( tx, 1, true );
+    return _Transaction( tx, 1, true );
 }
 
 uint8_t BSP_FpgaReadStatus( void )
@@ -173,19 +173,19 @@ bool BSP_FpgaStatusPin( void )
 void BSP_FpgaReset( void )
 {
     const uint8_t tx[] = { CMD_RESET };
-    transaction( tx, 1, false );
+    _Transaction( tx, 1, false );
 }
 
 uint8_t BSP_FpgaReadRegister( const uint8_t address )
 {
     const uint8_t tx[] = { CMD_READ, address };
-    return transaction( tx, 2, true );
+    return _Transaction( tx, 2, true );
 }
 
 void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
 {
     const uint8_t tx[] = { CMD_WRITE, address, value };
-    transaction( tx, 3, false );
+    _Transaction( tx, 3, false );
 }
 
 
@@ -198,7 +198,7 @@ void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
 ***************************************************************************************/
 
 
-static void runtime_bus_idle( void )
+static void _RuntimeBusIdle( void )
 {
     spi_deinit( spi0 );
     gpio_init( PIN_CS );
@@ -211,7 +211,7 @@ static void runtime_bus_idle( void )
     gpio_set_dir( PIN_SDIO, GPIO_IN );
 }
 
-static bool configure( void )
+static bool _Configure( void )
 {
     gpio_init( PIN_OSC_EN );
     gpio_set_dir( PIN_OSC_EN, GPIO_OUT );
@@ -252,11 +252,11 @@ static bool configure( void )
     }
 
     gpio_put( PIN_CS, 1 );
-    runtime_bus_idle();
+    _RuntimeBusIdle();
     return done;
 }
 
-static void send_byte( const uint8_t value, const bool release_after_sample )
+static void _SendByte( const uint8_t value, const bool releaseAfterSample )
 {
     gpio_set_dir( PIN_SDIO, GPIO_OUT );
     for ( int32_t bit = 7; bit >= 0; --bit )
@@ -264,7 +264,7 @@ static void send_byte( const uint8_t value, const bool release_after_sample )
         gpio_put( PIN_SDIO, ( value >> bit ) & 1u );
         gpio_put( PIN_SCK, 1 );
         busy_wait_us_32( 1 );
-        if ( release_after_sample && bit == 0 )
+        if ( releaseAfterSample && bit == 0 )
         {
             gpio_set_dir( PIN_SDIO, GPIO_IN );
         }
@@ -273,7 +273,7 @@ static void send_byte( const uint8_t value, const bool release_after_sample )
     }
 }
 
-static uint8_t receive_byte( void )
+static uint8_t _ReceiveByte( void )
 {
     uint8_t value = 0;
     gpio_set_dir( PIN_SDIO, GPIO_IN );
@@ -289,18 +289,18 @@ static uint8_t receive_byte( void )
     return value;
 }
 
-static uint8_t transaction( const uint8_t *const tx, const uint32_t count, const bool read )
+static uint8_t _Transaction( const uint8_t *const tx, const uint32_t count, const bool read )
 {
     gpio_put( PIN_CS, 0 );
     busy_wait_us_32( 1 );
     for ( uint32_t index = 0; index < count; ++index )
     {
-        send_byte( tx[ index ], read && index + 1 == count );
+        _SendByte( tx[ index ], read && index + 1 == count );
     }
     uint8_t result = 0;
     if ( read )
     {
-        result = receive_byte();
+        result = _ReceiveByte();
     }
     gpio_put( PIN_CS, 1 );
     gpio_set_dir( PIN_SDIO, GPIO_IN );
