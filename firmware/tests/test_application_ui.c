@@ -10,17 +10,52 @@
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
 #include "mock_auto_application_console.h"
+#include "mock_auto_application_ibit.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
 #include "mock_auto_bsp_mcu.h"
 #include "mock_auto_bsp_memory.h"
 
+/* A stand-in for whatever the menu starts, so the UI tests exercise the activity
+   contract -- start, repeated poll, abort through stop -- without dragging the
+   built-in test's own behavior in with it. */
+static uint32_t activity_starts;
+static uint32_t activity_polls;
+static uint32_t activity_stops;
+static uint32_t activity_polls_before_finishing;
+
+static void fake_start(void) {
+    ++activity_starts;
+}
+
+static bool fake_poll(void) {
+    ++activity_polls;
+    return activity_polls < activity_polls_before_finishing;
+}
+
+static void fake_stop(void) {
+    ++activity_stops;
+}
+
+static const application_activity_t FAKE_ACTIVITY = {
+    .name = "fake",
+    .start = fake_start,
+    .poll = fake_poll,
+    .stop = fake_stop,
+};
+
 void setUp(void) {
     MOCK_BSP_ConsoleReset();
     MOCK_BSP_TimeReset();
     MOCK_BSP_UsbReset();
     MOCK_BSP_WatchdogReset();
+    activity_starts = 0;
+    activity_polls = 0;
+    activity_stops = 0;
+    activity_polls_before_finishing = 3;
+    application_ibit_step_count_IgnoreAndReturn(14);
+    application_ibit_step_name_IgnoreAndReturn("a step");
 }
 
 void tearDown(void) {
@@ -186,7 +221,88 @@ void test_menu_stays_silent_while_it_waits(void) {
     TEST_ASSERT_EQUAL_STRING("", MOCK_BSP_ConsoleOutput());
 }
 
-void test_ui_marks_the_read_path_for_the_watchdog(void) {
+void test_built_in_test_runs_as_an_activity_and_returns_to_the_menu(void) {
+    open_menu_at(0);
+
+    application_ibit_sequence_ExpectAndReturn(&FAKE_ACTIVITY);
+    key_at('1', 100);
+    TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
+
+    poll_at(200);
+    poll_at(300);
+    TEST_ASSERT_EQUAL_UINT32(2, activity_polls);
+
+    /* The third poll finishes it, and the menu comes back on its own. */
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    poll_at(400);
+    TEST_ASSERT_EQUAL_UINT32(0, activity_stops);
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== Forgix menu ==="));
+}
+
+/* Any key aborts, because a user watching a test they no longer want should not
+   have to remember which key means stop. */
+void test_any_key_aborts_a_running_activity_and_lets_it_clean_up(void) {
+    open_menu_at(0);
+    application_ibit_soak_ExpectAndReturn(&FAKE_ACTIVITY);
+    key_at('2', 100);
+    MOCK_BSP_ConsoleReset();
+
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    key_at('q', 200);
+
+    TEST_ASSERT_EQUAL_UINT32(1, activity_stops);
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "aborted"));
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== Forgix menu ==="));
+}
+
+void test_step_submenu_lists_every_step_and_runs_the_one_chosen(void) {
+    open_menu_at(0);
+
+    key_at('3', 100);
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== One test at a time ==="));
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "  1  a step"));
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "  x  back to the menu"));
+
+    application_ibit_single_ExpectAndReturn(2, &FAKE_ACTIVITY);
+    key_at('3', 200);
+    TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
+}
+
+/* Fourteen steps do not fit in the digits, so the tail of the list is lettered. */
+void test_step_submenu_letters_the_steps_that_run_out_of_digits(void) {
+    open_menu_at(0);
+    key_at('3', 100);
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "  e  a step"));
+
+    application_ibit_single_ExpectAndReturn(9, &FAKE_ACTIVITY);
+    key_at('a', 200);
+    TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
+}
+
+void test_step_submenu_redraws_an_unknown_key_and_leaves_on_x(void) {
+    open_menu_at(0);
+    key_at('3', 100);
+    MOCK_BSP_ConsoleReset();
+
+    key_at('#', 200);
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== One test at a time ==="));
+
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    key_at('x', 300);
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== Forgix menu ==="));
+}
+
+void test_board_report_prints_and_comes_straight_back_to_the_menu(void) {
+    open_menu_at(0);
+
+    application_ibit_print_board_report_Expect();
+    BSP_FpgaIsReady_ExpectAndReturn(true);
+    key_at('4', 100);
+
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "=== Forgix menu ==="));
+}
+
+void test_ui_marks_the_menu_and_read_paths_for_the_watchdog(void) {
     start_at(0);
 
     poll_at(0);
@@ -195,4 +311,5 @@ void test_ui_marks_the_read_path_for_the_watchdog(void) {
         MOCK_BSP_WatchdogMarkerWasWritten(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ));
     TEST_ASSERT_TRUE(
         MOCK_BSP_WatchdogMarkerWasWritten(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE));
+    TEST_ASSERT_TRUE(MOCK_BSP_WatchdogMarkerWasWritten(APPLICATION_DIAGNOSTICS_MARKER_MENU));
 }

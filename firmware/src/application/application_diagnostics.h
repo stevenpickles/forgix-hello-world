@@ -12,6 +12,11 @@ enum {
     APPLICATION_DIAGNOSTICS_MARKER_COMMAND = 4,
     APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT = 5,
     APPLICATION_DIAGNOSTICS_MARKER_FPGA_CHECK = 6,
+    /* The menu and the built-in test are the newest code in the foreground loop
+       and so the likeliest to stall it. Without their own markers a watchdog
+       reset from either would be attributed to whatever ran last instead. */
+    APPLICATION_DIAGNOSTICS_MARKER_MENU = 7,
+    APPLICATION_DIAGNOSTICS_MARKER_IBIT = 8,
 };
 
 enum {
