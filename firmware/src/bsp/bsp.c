@@ -1,7 +1,24 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp.h"
 
 #include "hardware/gpio.h"
 #include "hardware/structs/pads_bank0.h"
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Define Directives
+**
+***************************************************************************************/
+
 
 /* GPIO 0 is XIP_CS1n, the chip select for the secondary QSPI memory. That is the
    configuration Raspberry Pi documents in "Hardware design with RP2350" section
@@ -32,6 +49,45 @@
 #define FORGIX_QSPI_CS1_GPIO 0
 #endif
 
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static void configure_qspi_cs1( void );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+bsp_init_result_t BSP_Init( void )
+{
+    configure_qspi_cs1();
+    BSP_ConsoleInit();
+    return BSP_FpgaInit();
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
 static void configure_qspi_cs1( void )
 {
     /* RP2350-E14: the bootrom clears pad isolation for GPIO 0 rather than the
@@ -56,11 +112,4 @@ static void configure_qspi_cs1( void )
     /* With FORGIX_QSPI_PSRAM the pin is left alone beyond the pull: runtime_init
        has already given it GPIO_FUNC_XIP_CS1 and the QMI drives it, idle high.
        Taking it back to SIO here would cut the DRAM off the bus. */
-}
-
-bsp_init_result_t BSP_Init( void )
-{
-    configure_qspi_cs1();
-    BSP_ConsoleInit();
-    return BSP_FpgaInit();
 }

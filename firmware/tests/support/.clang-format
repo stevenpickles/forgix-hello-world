@@ -15,13 +15,37 @@
 Language: Cpp
 BasedOnStyle: LLVM
 
-BreakBeforeBraces: Allman
+# Allman everywhere except the extern "C" wrapper. See firmware/src/bsp for why
+# this is spelled out rather than using the Allman preset.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+IndentExternBlock: NoIndent
 
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
 ContinuationIndentWidth: 4
 ColumnLimit: 100
+
+# Rubric A7's banner rhythm needs four; the default of 1 flattens it.
+MaxEmptyLinesToKeep: 4
 
 # Allman exists so a block advertises its extent. Collapsing one back onto a
 # single line defeats that, so every short-form allowance is off.

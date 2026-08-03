@@ -1,7 +1,24 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp_watchdog.h"
 
 #include "hardware/structs/powman.h"
 #include "hardware/watchdog.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 /* The SDK owns scratch[4..7] for its own reboot bookkeeping, so the diagnostics
    layer is confined to scratch[0] (progress marker) and scratch[1..3]
@@ -16,6 +33,16 @@ typedef enum
     MARKER_REGISTER = 0,
     SNAPSHOT_BASE_REGISTER = 1
 } bsp_watchdog_scratch_register_t;
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
 
 void BSP_WatchdogStart( const uint32_t timeout_ms )
 {

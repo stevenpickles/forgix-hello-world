@@ -1,11 +1,42 @@
-#include "bsp_fpga.h"
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
 
-#include <stddef.h>
+
+#include "bsp_fpga.h"
 
 #include "fpga_image.h"
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
+
+#include <stddef.h>
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Define Directives
+**
+***************************************************************************************/
+
+
+/* The register the FPGA reports its own status through -- cdone/config state
+   as seen from inside the design rather than off the CDONE pin. */
+#define REG_STATUS ( (uint8_t) 0x01 )
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 /* The physical pin assignment for the bit-banged link between the RP2350 and
    the FPGA: which GPIO carries chip select, clock, the shared data line, and
@@ -32,11 +63,140 @@ typedef enum
     CMD_PING = 0x9f,
 } bsp_fpga_command_t;
 
-/* The register the FPGA reports its own status through -- cdone/config state
-   as seen from inside the design rather than off the CDONE pin. */
-#define REG_STATUS ( (uint8_t) 0x01 )
 
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
+/* Whether the last configuration attempt ended with the FPGA answering a ping
+   with the expected design ID. Cached so callers can ask without clocking the
+   bus, which matters in the foreground loop. */
 static bool fpga_ready;
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static void runtime_bus_idle( void );
+
+static bool configure( void );
+
+static void send_byte( const uint8_t value, const bool release_after_sample );
+
+static uint8_t receive_byte( void );
+
+static uint8_t transaction( const uint8_t *const tx, const uint32_t count, const bool read );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+bsp_fpga_init_result_t BSP_FpgaInit( void )
+{
+    bsp_fpga_init_result_t result = { 0 };
+    result.configured = configure();
+
+    sleep_ms( 1500 );
+    if ( result.configured )
+    {
+        result.design_id = BSP_FpgaPing();
+    }
+    else
+    {
+        result.design_id = 0;
+    }
+    result.ready = result.configured && result.design_id == BSP_FPGA_DESIGN_ID;
+    result.cdone = gpio_get( PIN_CDONE );
+    result.status_pin = gpio_get( PIN_STATUS );
+    fpga_ready = result.ready;
+    return result;
+}
+
+bool BSP_FpgaReconfigure( void )
+{
+    const bsp_fpga_init_result_t result = BSP_FpgaInit();
+    return result.ready;
+}
+
+bool BSP_FpgaAutoReconfigureEnabled( void )
+{
+#if FORGIX_FPGA_AUTO_RECONFIGURE
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool BSP_FpgaIsReady( void )
+{
+    return fpga_ready;
+}
+
+bool BSP_FpgaCdone( void )
+{
+    return gpio_get( PIN_CDONE );
+}
+
+uint8_t BSP_FpgaPing( void )
+{
+    const uint8_t tx[] = { CMD_PING };
+    return transaction( tx, 1, true );
+}
+
+uint8_t BSP_FpgaReadStatus( void )
+{
+    return BSP_FpgaReadRegister( REG_STATUS );
+}
+
+bool BSP_FpgaStatusPin( void )
+{
+    return gpio_get( PIN_STATUS );
+}
+
+void BSP_FpgaReset( void )
+{
+    const uint8_t tx[] = { CMD_RESET };
+    transaction( tx, 1, false );
+}
+
+uint8_t BSP_FpgaReadRegister( const uint8_t address )
+{
+    const uint8_t tx[] = { CMD_READ, address };
+    return transaction( tx, 2, true );
+}
+
+void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
+{
+    const uint8_t tx[] = { CMD_WRITE, address, value };
+    transaction( tx, 3, false );
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
 
 static void runtime_bus_idle( void )
 {
@@ -146,84 +306,4 @@ static uint8_t transaction( const uint8_t *const tx, const uint32_t count, const
     gpio_set_dir( PIN_SDIO, GPIO_IN );
     busy_wait_us_32( 1 );
     return result;
-}
-
-bsp_fpga_init_result_t BSP_FpgaInit( void )
-{
-    bsp_fpga_init_result_t result = { 0 };
-    result.configured = configure();
-
-    sleep_ms( 1500 );
-    if ( result.configured )
-    {
-        result.design_id = BSP_FpgaPing();
-    }
-    else
-    {
-        result.design_id = 0;
-    }
-    result.ready = result.configured && result.design_id == BSP_FPGA_DESIGN_ID;
-    result.cdone = gpio_get( PIN_CDONE );
-    result.status_pin = gpio_get( PIN_STATUS );
-    fpga_ready = result.ready;
-    return result;
-}
-
-bool BSP_FpgaReconfigure( void )
-{
-    const bsp_fpga_init_result_t result = BSP_FpgaInit();
-    return result.ready;
-}
-
-bool BSP_FpgaAutoReconfigureEnabled( void )
-{
-#if FORGIX_FPGA_AUTO_RECONFIGURE
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool BSP_FpgaIsReady( void )
-{
-    return fpga_ready;
-}
-
-bool BSP_FpgaCdone( void )
-{
-    return gpio_get( PIN_CDONE );
-}
-
-uint8_t BSP_FpgaPing( void )
-{
-    const uint8_t tx[] = { CMD_PING };
-    return transaction( tx, 1, true );
-}
-
-uint8_t BSP_FpgaReadStatus( void )
-{
-    return BSP_FpgaReadRegister( REG_STATUS );
-}
-
-bool BSP_FpgaStatusPin( void )
-{
-    return gpio_get( PIN_STATUS );
-}
-
-void BSP_FpgaReset( void )
-{
-    const uint8_t tx[] = { CMD_RESET };
-    transaction( tx, 1, false );
-}
-
-uint8_t BSP_FpgaReadRegister( const uint8_t address )
-{
-    const uint8_t tx[] = { CMD_READ, address };
-    return transaction( tx, 2, true );
-}
-
-void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
-{
-    const uint8_t tx[] = { CMD_WRITE, address, value };
-    transaction( tx, 3, false );
 }

@@ -1,6 +1,20 @@
 #ifndef FORGIX_BSP_TYPES_H
 #define FORGIX_BSP_TYPES_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 /* The single point where the BSP pulls in the standard type definitions.
    Every bsp_*.h includes this rather than reaching for <stdint.h> or
    <stdbool.h> individually, so no header can declare an interface in terms of
@@ -20,5 +34,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

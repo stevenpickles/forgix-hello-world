@@ -1,4 +1,21 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp_usb.h"
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
 
 /* Linked into the USB-free diagnostic image. It reports a permanently absent
    host so the shared application code takes its non-USB paths: no unsolicited

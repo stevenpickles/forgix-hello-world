@@ -28,13 +28,41 @@
 Language: Cpp
 BasedOnStyle: LLVM
 
-BreakBeforeBraces: Allman
+# Allman everywhere except the extern "C" wrapper, which the reference keeps as
+# `extern "C" {` on one line. Spelled out rather than `BreakBeforeBraces: Allman`
+# because that preset forces AfterExternBlock on with no way to override it.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# The extern "C" block wraps the whole header, so indenting inside it would
+# indent the entire file.
+IndentExternBlock: NoIndent
 
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
 ContinuationIndentWidth: 4
 ColumnLimit: 100
+
+# Rubric A7 spaces section banners with four blank lines before and two after.
+# The default of 1 silently flattens that rhythm.
+MaxEmptyLinesToKeep: 4
 
 # Allman exists so a block advertises its extent. Collapsing one back onto a
 # single line defeats that, so every short-form allowance is off.

@@ -1,7 +1,31 @@
 #ifndef FORGIX_BSP_MEMORY_H
 #define FORGIX_BSP_MEMORY_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp_types.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 /* Both QSPI memories share SCLK and SD0..SD3, so a fault on one shows up as the
    other misbehaving. Reporting them together makes that visible at boot. */
@@ -25,6 +49,20 @@ typedef struct
     uint8_t psram_eid;
 } bsp_memory_report_t;
 
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
 bsp_memory_report_t BSP_MemoryCheck( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

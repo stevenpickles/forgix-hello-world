@@ -1,12 +1,42 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "bsp_usb.h"
 
 #include "hardware/structs/usb.h"
 #include "pico/stdio_usb.h"
 #include "tusb.h"
 
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
+/* Completed CDC transfers since boot. Bumped from interrupt context by the
+   callbacks below, so the reader gets a snapshot rather than a stable count. */
+static volatile uint32_t cdc_activity_count;
+
+
+
+
+/***************************************************************************************
+**
+** Interrupt Handler Overrides
+**
+***************************************************************************************/
+
+
 /* pico_stdio_usb does not implement these CDC callbacks, so the BSP can claim
    them to count completed transfers without disturbing SDK stdio behavior. */
-static volatile uint32_t cdc_activity_count;
 
 void tud_cdc_rx_cb( const uint8_t interface )
 {
@@ -19,6 +49,16 @@ void tud_cdc_tx_complete_cb( const uint8_t interface )
     (void) interface;
     ++cdc_activity_count;
 }
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
 
 bool BSP_UsbPresent( void )
 {
