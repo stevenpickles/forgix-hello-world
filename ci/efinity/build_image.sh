@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and push the private Efinity CI image from a locally downloaded tarball.
 #
-#   ./ci/efinity/build_image.sh ~/Downloads/efinity-2026.1.132.tar.bz2
+#   ./ci/efinity/build_image.sh ~/Downloads/efinity-2026.1.132-linux-x64.tar.bz2
 #
 # The Efinix license (license.txt 2.3(a)) forbids distributing or giving others
 # access to the software, so the pushed package MUST stay private. This script
@@ -43,6 +43,17 @@ case "$image" in
     ;;
 esac
 
+# Docker Desktop is a native Windows binary, so under Git Bash it has to be
+# handed Windows paths -- a POSIX one fails as "GetFileAttributesEx \c:". The
+# same conversion must NOT reach the container side of a --volume argument,
+# which is why MSYS path rewriting is disabled rather than relied upon.
+if command -v cygpath >/dev/null 2>&1; then
+  export MSYS_NO_PATHCONV=1
+  host_path() { cygpath -w "$1"; }
+else
+  host_path() { printf '%s' "$1"; }
+fi
+
 # The build context is the directory holding the tarball, so the multi-gigabyte
 # archive is never copied into a temporary context first.
 context="$(cd "$(dirname "$tarball")" && pwd)"
@@ -52,15 +63,15 @@ printf 'Building %s:%s\n  tarball: %s\n  context: %s\n\n' \
   "$image" "$tag" "$archive" "$context"
 
 docker build \
-  --file "$repo_root/ci/efinity/Dockerfile" \
+  --file "$(host_path "$repo_root/ci/efinity/Dockerfile")" \
   --build-arg "EFINITY_VERSION=$version" \
   --build-arg "EFINITY_TARBALL=$archive" \
   --tag "$image:$tag" \
-  "$context"
+  "$(host_path "$context")"
 
 printf '\nSmoke-testing the image against the repository project...\n'
 docker run --rm \
-  --volume "$repo_root:/work" \
+  --volume "$(host_path "$repo_root"):/work" \
   "$image:$tag" \
   bash -c 'set +u; . "$EFINITY_HOME/bin/setup.sh"; set -u; efx_run.py --help > /dev/null && echo "efx_run.py responds"'
 
