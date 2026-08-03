@@ -19,6 +19,14 @@
    window. See the PSRAM region in the SDK linker script. */
 enum { PSRAM_WINDOW_BASE = 0x11000000u };
 
+/* AP Memory's known-good-die byte, at offset 5 of the Read-ID response. */
+enum { EXPECTED_KGD = 0x5du };
+
+/* Filled in by the psram_eid_to_size override below, which the SDK calls from
+   runtime_init. Written before main runs, so plain statics are sufficient. */
+static uint8_t reported_kgd;
+static uint8_t reported_eid;
+
 /* The boot flash is proven readable by the fact that this code is executing from
    it, so the useful check is that it still reads back coherently: a stack
    pointer in SRAM and a reset vector inside the flash window. Bus contention on
@@ -34,6 +42,38 @@ static bool flash_reads_coherently(uint32_t flash_bytes) {
 }
 
 #if FORGIX_QSPI_PSRAM
+/* The SDK declares psram_eid_to_size weak so applications can support parts it
+   does not know. Overriding it here is not about the mapping -- that is
+   reproduced exactly -- but about the arguments: this is the one place the raw
+   identity bytes exist, read from the device by the SDK's own detection during
+   runtime_init, and otherwise discarded once the size has been derived.
+   Capturing them here costs no additional bus transaction and cannot disturb the
+   device, which is precisely what every attempt to re-read them later did. */
+size_t psram_eid_to_size(uint8_t kgd, uint8_t eid) {
+    reported_kgd = kgd;
+    reported_eid = eid;
+
+    if (kgd != EXPECTED_KGD) {
+        return 0;
+    }
+
+    /* Density lives in the top three bits of the EID, and the mapping is the
+       SDK's, kept identical so overriding the hook changes nothing but
+       observability. */
+    size_t psram_size = 1024u * 1024u;
+    uint8_t size_id = eid >> 5;
+    if (size_id == 4u) {
+        psram_size *= 16u;
+    } else if (eid == 0x26u || size_id == 2u || size_id == 3u) {
+        psram_size *= 8u;
+    } else if (size_id == 1u) {
+        psram_size *= 4u;
+    } else {
+        psram_size *= 2u;
+    }
+    return psram_size;
+}
+
 /* Configures chip select 1 from the datasheet instead of from what the device
    claims to be, then brings it up.
 
@@ -87,6 +127,8 @@ static bool psram_holds_a_pattern(uint32_t size_bytes) {
 bsp_memory_report_t bsp_memory_check(void) {
     bsp_memory_report_t report = {0};
 
+    report.psram_kgd = reported_kgd;
+    report.psram_eid = reported_eid;
     report.flash_bytes = PICO_FLASH_SIZE_BYTES;
     report.flash_ok = flash_reads_coherently(report.flash_bytes);
 

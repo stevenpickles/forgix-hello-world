@@ -16,6 +16,13 @@ typedef struct {
        identity byte, so a device that reports an unexpected vendor can still be
        perfectly good memory -- identity and function are separate questions. */
     bool psram_forced;
+    /* Vendor known-good-die and device-ID bytes as the chip reported them over
+       QSPI. Captured during the SDK's own detection, which is the only moment
+       they are readable: afterwards the device is switched to QPI so XIP can run
+       four bits wide, and a serial Read-ID against it returns nonsense. Both
+       zero means detection never ran. */
+    uint8_t psram_kgd;
+    uint8_t psram_eid;
 } bsp_memory_report_t;
 
 bsp_memory_report_t bsp_memory_check(void);

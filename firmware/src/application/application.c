@@ -43,10 +43,10 @@ static void print_help(void) {
    a line that only appears once is a line nobody is listening for. */
 static void print_memory_report(void) {
     bsp_memory_report_t memory = bsp_memory_check();
-    bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u forced=%u\n",
+    bsp_console_printf("Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u forced=%u kgd=%02X eid=%02X\n",
                        (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
                        (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok,
-                       memory.psram_forced);
+                       memory.psram_forced, memory.psram_kgd, memory.psram_eid);
 }
 
 void application_print_status(void) {
