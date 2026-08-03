@@ -68,6 +68,7 @@ typedef struct {
     uint8_t button_level_before;
     uint32_t soak_iterations;
     uint32_t soak_failures;
+    uint32_t soak_timeouts;
 } ibit_state_t;
 
 static ibit_state_t ibit;
@@ -547,6 +548,7 @@ static bool sequence_poll(void) {
 static void soak_start(void) {
     ibit.soak_iterations = 0;
     ibit.soak_failures = 0;
+    ibit.soak_timeouts = 0;
     mark_write();
     BSP_ConsolePrintf("\nIBIT soak; press any key to stop\n\n");
     begin_run(0, application_ibit_step_count() - 1u);
@@ -559,11 +561,18 @@ static bool soak_poll(void) {
 
     print_summary();
     ++ibit.soak_iterations;
-    ibit.soak_failures += ((ibit.fail + ibit.timeout) > 0u) ? 1u : 0u;
+
+    /* Failures and timeouts are tallied apart, and only failures are the
+       headline. A soak is unattended by definition, so the button times out on
+       every iteration; folding that into the failure count would make the one
+       number a burn-in exists to produce equal the run count forever. */
+    ibit.soak_failures += (ibit.fail > 0u) ? 1u : 0u;
+    ibit.soak_timeouts += (ibit.timeout > 0u) ? 1u : 0u;
 
     mark_write();
-    BSP_ConsolePrintf("soak: %lu run(s), %lu with a failure\n\n",
-                       (unsigned long)ibit.soak_iterations, (unsigned long)ibit.soak_failures);
+    BSP_ConsolePrintf("soak: %lu run(s), %lu with a failure, %lu with a timeout\n\n",
+                       (unsigned long)ibit.soak_iterations, (unsigned long)ibit.soak_failures,
+                       (unsigned long)ibit.soak_timeouts);
 
     begin_run(0, application_ibit_step_count() - 1u);
     return true;

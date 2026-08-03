@@ -716,7 +716,7 @@ void test_the_soak_tallies_across_iterations_and_starts_the_next_run(void) {
         MOCK_BSP_TimeSetMs(now_ms > 60000u ? 60000u : now_ms);
     }
 
-    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "soak: 1 run(s), 1 with a failure"));
+    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "soak: 1 run(s), 1 with a failure, 0 with a timeout"));
     activity->stop();
 }
 
@@ -804,7 +804,40 @@ void test_a_clean_soak_iteration_does_not_count_as_a_failure(void) {
 
     const char *output = MOCK_BSP_ConsoleOutput();
     TEST_ASSERT_NOT_NULL(strstr(output, "IBIT: 13 PASS  0 FAIL  0 TIMEOUT  0 SKIP  1 INFO"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "soak: 1 run(s), 0 with a failure"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "soak: 1 run(s), 0 with a failure, 0 with a timeout"));
+    activity->stop();
+}
+
+static bsp_button_state_t button_never_pressed_callback(int num_calls) {
+    (void)num_calls;
+    bsp_button_state_t idle = {.level = 1, .count = 4};
+    return idle;
+}
+
+/* The case a real burn-in is: nobody is at the bench, so the button times out
+   every iteration. That must not read as a failing run, or the one number a soak
+   exists to produce equals the run count forever and says nothing. */
+void test_an_unattended_soak_iteration_counts_a_timeout_and_not_a_failure(void) {
+    ignore_a_healthy_board();
+    BSP_ButtonGetState_StubWithCallback(button_never_pressed_callback);
+
+    uint32_t frame = 100;
+    MOCK_BSP_UsbSetHealth(usb_health(frame, true, false, 256));
+    MOCK_BSP_TimeSetMs(1000);
+    const application_activity_t *activity = application_ibit_soak();
+    activity->start();
+
+    uint32_t now_ms = 1000;
+    while (strstr(MOCK_BSP_ConsoleOutput(), "soak: 1 run(s)") == NULL) {
+        TEST_ASSERT_TRUE(activity->poll());
+        now_ms += 100u;
+        MOCK_BSP_TimeSetMs(now_ms);
+        MOCK_BSP_UsbSetHealth(usb_health(++frame, true, false, 256));
+    }
+
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL(strstr(output, "12 PASS  0 FAIL  1 TIMEOUT"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "soak: 1 run(s), 0 with a failure, 1 with a timeout"));
     activity->stop();
 }
 
