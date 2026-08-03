@@ -10,6 +10,7 @@
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
+#include "mock_auto_application_ui.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
@@ -30,9 +31,16 @@ static void start_at(uint32_t now_ms) {
     application_console_start();
 }
 
+/* Stands in for the read the UI layer now owns, so every test below still reads
+   as "one pass of the foreground loop" without the console doing its own read. */
 static void poll_at(uint32_t now_ms) {
     MOCK_BSP_TimeSetMs(now_ms);
-    application_console_poll();
+    int16_t character = BSP_ConsoleGetCharTimeoutUs(1000);
+    if (character != BSP_CONSOLE_TIMEOUT) {
+        application_console_feed(character);
+    } else {
+        application_console_idle();
+    }
 }
 
 static void poll_text_at(const char *text, uint32_t now_ms) {
@@ -51,15 +59,18 @@ static void expect_ready_status(uint8_t count) {
     BSP_FpgaStatusPin_ExpectAndReturn(true);
 }
 
-void test_console_starts_with_a_prompt_and_reports_boot_status_each_second(void) {
+/* The shell is entered from the menu, by which point the user has already proved
+   the link works, so it opens straight into the idle cadence rather than the
+   once-a-second reporting the banner now does instead. */
+void test_console_starts_with_a_prompt_and_reports_idle_status_after_the_timeout(void) {
     start_at(500);
     TEST_ASSERT_EQUAL_STRING("forgix> ", MOCK_BSP_ConsoleOutput());
 
-    poll_at(1499);
+    poll_at(10499);
     expect_ready_status(7);
-    poll_at(1500);
+    poll_at(10500);
     expect_ready_status(8);
-    poll_at(2500);
+    poll_at(20500);
 
     TEST_ASSERT_EQUAL_STRING(
         "forgix> \r\nid=B5 status=01 button=03 count=7 fpga_status=1\n"
@@ -72,7 +83,7 @@ void test_received_character_wins_over_a_due_status_and_protects_partial_input(v
     MOCK_BSP_ConsoleReset();
 
     MOCK_BSP_ConsoleQueueCharacter('h');
-    poll_at(APPLICATION_BOOT_STATUS_PERIOD_MS);
+    poll_at(APPLICATION_IDLE_TIMEOUT_MS);
     poll_at(APPLICATION_IDLE_TIMEOUT_MS * 2u);
 
     TEST_ASSERT_EQUAL_STRING("h", MOCK_BSP_ConsoleOutput());
@@ -86,7 +97,7 @@ void test_console_echoes_a_command_and_coalesces_crlf(void) {
 
     TEST_ASSERT_EQUAL_STRING(
         "help\r\n"
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n"
         "forgix> ",
         MOCK_BSP_ConsoleOutput());
@@ -216,7 +227,7 @@ void test_quiet_mode_keeps_machine_commands_free_of_echo_prompts_and_telemetry(v
     poll_text_at("help\r", 50100);
 
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
         MOCK_BSP_ConsoleOutput());
 }
@@ -245,7 +256,7 @@ void test_echo_can_be_disabled_and_reenabled_without_changing_command_responses(
     poll_at(151);
     poll_text_at("help\r", 200);
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\nforgix> ",
         MOCK_BSP_ConsoleOutput());
 
@@ -261,24 +272,22 @@ void test_unsolicited_status_is_withheld_until_the_host_asserts_dtr(void) {
     start_at(500);
     MOCK_BSP_ConsoleReset();
 
-    poll_at(1500);
-    poll_at(2500);
+    poll_at(10500);
+    poll_at(11500);
     TEST_ASSERT_EQUAL_STRING("", MOCK_BSP_ConsoleOutput());
 
     MOCK_BSP_UsbSetConnected(true);
     expect_ready_status(13);
-    poll_at(3500);
+    poll_at(12500);
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "count=13"));
 }
 
-void test_console_marks_the_read_write_and_command_paths_for_the_watchdog(void) {
+/* The read marker belongs to the UI layer now, since that is what performs the
+   read; this covers the two paths the console still owns. */
+void test_console_marks_the_write_and_command_paths_for_the_watchdog(void) {
     start_at(0);
     TEST_ASSERT_EQUAL_UINT32(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE,
                              MOCK_BSP_WatchdogMarker());
-
-    poll_at(10);
-    TEST_ASSERT_TRUE(
-        MOCK_BSP_WatchdogMarkerWasWritten(APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ));
 
     poll_text_at("help\r", 100);
     TEST_ASSERT_TRUE(MOCK_BSP_WatchdogMarkerWasWritten(APPLICATION_DIAGNOSTICS_MARKER_COMMAND));

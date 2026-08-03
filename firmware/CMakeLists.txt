@@ -113,7 +113,8 @@ add_library(forgix_application STATIC
   src/application/application.c
   src/application/application_console.c
   src/application/application_diagnostics.c
-  src/application/application_runner.c)
+  src/application/application_runner.c
+  src/application/application_ui.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
 target_link_libraries(forgix_application PUBLIC forgix_bsp)
