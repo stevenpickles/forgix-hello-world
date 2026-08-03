@@ -107,8 +107,17 @@ Two workflows call it:
 
 - **`ci.yml`** on every push and same-repository pull request, so a routing or
   timing regression is caught with the change that caused it rather than at
-  release time.
+  release time. Its firmware job then links against *that run's* bitstream and
+  checks the image survives verbatim into the linked binary, so the pair CI
+  verifies is the pair that ships. A fork pull request, which cannot synthesize,
+  falls back to the compile fixture and still gets its firmware built.
 - **`release.yml`** on a `v*` tag, feeding the firmware and publish jobs.
+
+A change touching only `docs/**`, `**.md`, or `LICENSE` skips CI entirely — a
+typo fix is not worth a place-and-route. A commit touching both docs and code
+still runs in full, and `workflow_dispatch` is never filtered. See the comment
+above the trigger in `ci.yml` before extending that list: it explains what
+breaks if branch protection is ever added.
 
 `scripts/build_fpga.sh` picks its wrapper by platform: `run_efinity.cmd` under
 Git Bash on Windows, `run_efinity.sh` in the Linux container. Both run one
