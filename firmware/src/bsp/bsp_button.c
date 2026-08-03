@@ -38,6 +38,14 @@ typedef enum bsp_button_register_tag
 ***************************************************************************************/
 
 
+/// <summary>
+///     Reads the button level and the FPGA's edge count in one pass. The count
+///     is maintained in the FPGA rather than by polling, so presses shorter than
+///     the foreground loop period are still seen.
+/// </summary>
+/// <returns>
+///     Live level, and presses counted since the FPGA was configured.
+/// </returns>
 bsp_button_state_t BSP_ButtonGetState( void )
 {
     const bsp_button_state_t state = {

@@ -71,6 +71,15 @@ static void _ConfigureQspiCs1( void );
 ***************************************************************************************/
 
 
+/// <summary>
+///     Brings the board up in the one order that works: the chip select fix
+///     first, because it decides whether flash reads stay coherent at all, then
+///     the console so later failures can be reported, then the FPGA.
+/// </summary>
+/// <returns>
+///     What the FPGA bring-up found, which the application uses to decide
+///     whether the board is fit to run.
+/// </returns>
 bsp_init_result_t BSP_Init( void )
 {
     _ConfigureQspiCs1();
@@ -88,6 +97,11 @@ bsp_init_result_t BSP_Init( void )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Takes GPIO 0 off its power-up pull-down and holds it deasserted, standing
+///     in for the 10K pull-up the board does not have. Runs before anything
+///     touches flash, since the fault it mitigates corrupts XIP fetches.
+/// </summary>
 static void _ConfigureQspiCs1( void )
 {
     /* RP2350-E14: the bootrom clears pad isolation for GPIO 0 rather than the

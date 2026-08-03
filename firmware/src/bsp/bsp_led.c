@@ -41,6 +41,11 @@ typedef enum bsp_led_register_tag
 ***************************************************************************************/
 
 
+/// <summary>
+///     Writes the three channels and the brightness, then sets the enable bit
+///     last so the LED changes to the new colour in one step rather than
+///     sweeping through the intermediate ones.
+/// </summary>
 void BSP_LedSet( const uint8_t red, const uint8_t green, const uint8_t blue,
                  const uint8_t brightness )
 {
@@ -51,11 +56,24 @@ void BSP_LedSet( const uint8_t red, const uint8_t green, const uint8_t blue,
     BSP_FpgaWriteRegister( REG_LED_ENABLE, 1 );
 }
 
+/// <summary>
+///     Clears the enable bit only. The colour registers keep their values, so a
+///     later BSP_LedSet with the same arguments restores exactly what was
+///     showing, and BSP_LedGet can still report what was last asked for.
+/// </summary>
 void BSP_LedOff( void )
 {
     BSP_FpgaWriteRegister( REG_LED_ENABLE, 0 );
 }
 
+/// <summary>
+///     Reads the LED registers back over the bus rather than returning a cached
+///     copy. That is the point: the diagnostics layer compares this against what
+///     it wrote, so a stuck or contended bus shows up as a mismatch.
+/// </summary>
+/// <returns>
+///     What the FPGA currently holds in its LED registers.
+/// </returns>
 bsp_led_state_t BSP_LedGet( void )
 {
     const bsp_led_state_t state = {

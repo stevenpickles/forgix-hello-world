@@ -51,6 +51,10 @@ static void _Append( const char *const ptr_text );
 ***************************************************************************************/
 
 
+/// <summary>
+///     Empties both the captured output and the queued input, so one test's
+///     unconsumed keystrokes cannot be read by the next.
+/// </summary>
 void MOCK_BSP_ConsoleReset( void )
 {
     _output[ 0 ] = 0;
@@ -59,6 +63,11 @@ void MOCK_BSP_ConsoleReset( void )
 }
 
 
+/// <summary>
+///     Stages one byte for the code under test to receive. Silently drops on a
+///     full queue rather than failing, so a test that over-queues fails on the
+///     assertion it cares about instead of here.
+/// </summary>
 void MOCK_BSP_ConsoleQueueCharacter( const uint8_t character )
 {
     if ( _inputCount < (uint32_t) ( sizeof _input / sizeof _input[ 0 ] ) )
@@ -68,6 +77,10 @@ void MOCK_BSP_ConsoleQueueCharacter( const uint8_t character )
 }
 
 
+/// <summary>
+///     Stages a whole string a byte at a time. The terminator is not queued, so
+///     the code under test sees exactly the characters a person would type.
+/// </summary>
 void MOCK_BSP_ConsoleQueueText( const char *ptr_text )
 {
     while ( *ptr_text )
@@ -77,17 +90,35 @@ void MOCK_BSP_ConsoleQueueText( const char *ptr_text )
 }
 
 
+/// <summary>
+///     Everything written since the last reset, concatenated. Points at the fake's
+///     own buffer, so it is only valid until the next reset.
+/// </summary>
+/// <returns>
+///     The accumulated console output.
+/// </returns>
 const char *MOCK_BSP_ConsoleOutput( void )
 {
     return _output;
 }
 
 
+/// <summary>
+///     Nothing to initialise. Present because the code under test calls it, and
+///     its absence would be a link error rather than a test failure.
+/// </summary>
 void BSP_ConsoleInit( void )
 {
 }
 
 
+/// <summary>
+///     Serves the next queued byte, ignoring the timeout entirely -- the queue is
+///     either primed or it is not, so no test ever waits.
+/// </summary>
+/// <returns>
+///     The next queued byte, or BSP_CONSOLE_TIMEOUT once the queue is empty.
+/// </returns>
 int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeoutUs )
 {
     (void) timeoutUs;
@@ -99,6 +130,12 @@ int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeoutUs )
 }
 
 
+/// <summary>
+///     Appends one byte to the captured output.
+/// </summary>
+/// <returns>
+///     The byte, echoed as the real console does.
+/// </returns>
 int16_t BSP_ConsolePutChar( const uint8_t character )
 {
     char ptr_text[ 2 ] = { (char) character, 0 };
@@ -107,6 +144,13 @@ int16_t BSP_ConsolePutChar( const uint8_t character )
 }
 
 
+/// <summary>
+///     Formats into a fixed buffer before capturing, so a format expanding past
+///     512 bytes is truncated here where the real console would not truncate.
+/// </summary>
+/// <returns>
+///     Characters the formatting produced, which may exceed what was captured.
+/// </returns>
 int32_t BSP_ConsolePrintf( const char *const ptr_format, ... )
 {
     char formatted[ 512 ];
@@ -119,6 +163,13 @@ int32_t BSP_ConsolePrintf( const char *const ptr_format, ... )
 }
 
 
+/// <summary>
+///     Captures the line and the newline separately, matching how the real
+///     implementation appends it.
+/// </summary>
+/// <returns>
+///     Zero, always: the fake has no failure mode.
+/// </returns>
 int32_t BSP_ConsolePuts( const char *const ptr_text )
 {
     _Append( ptr_text );
@@ -136,6 +187,10 @@ int32_t BSP_ConsolePuts( const char *const ptr_text )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Concatenates into the capture buffer, stopping at its end rather than
+///     wrapping. A test that overruns sees truncated output, not corruption.
+/// </summary>
 static void _Append( const char *const ptr_text )
 {
     const uint32_t used = (uint32_t) strlen( _output );

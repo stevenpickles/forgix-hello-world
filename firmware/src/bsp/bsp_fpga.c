@@ -108,6 +108,15 @@ static uint8_t _Transaction( const uint8_t *const tx, const uint32_t count, cons
 ***************************************************************************************/
 
 
+/// <summary>
+///     Configures the FPGA from the embedded bitstream, then waits 1500 ms before
+///     pinging it. The delay is not politeness: CDONE rises before the design's
+///     own logic is ready to answer, and pinging too early reads back nonsense.
+/// </summary>
+/// <returns>
+///     Everything bring-up learned, including the raw pins, so a caller can tell
+///     an unconfigured FPGA from a configured one answering wrongly.
+/// </returns>
 bsp_fpga_init_result_t BSP_FpgaInit( void )
 {
     bsp_fpga_init_result_t result = { 0 };
@@ -129,12 +138,28 @@ bsp_fpga_init_result_t BSP_FpgaInit( void )
     return result;
 }
 
+/// <summary>
+///     Reloads the bitstream after a runtime fault and revalidates the design ID.
+///     A full re-run of bring-up rather than a reset, because a lost
+///     configuration cannot be recovered by resetting the design.
+/// </summary>
+/// <returns>
+///     True when the FPGA is answering as the expected design again.
+/// </returns>
 bool BSP_FpgaReconfigure( void )
 {
     const bsp_fpga_init_result_t result = BSP_FpgaInit();
     return result.ready;
 }
 
+/// <summary>
+///     Whether this image was built to attempt recovery after a runtime FPGA
+///     fault. Reported as a value rather than left as a compile switch so both
+///     policies stay reachable from the application layer, and testable.
+/// </summary>
+/// <returns>
+///     True when FORGIX_FPGA_AUTO_RECONFIGURE was set at build time.
+/// </returns>
 bool BSP_FpgaAutoReconfigureEnabled( void )
 {
 #if FORGIX_FPGA_AUTO_RECONFIGURE
@@ -144,44 +169,103 @@ bool BSP_FpgaAutoReconfigureEnabled( void )
 #endif
 }
 
+/// <summary>
+///     The cached result of the last bring-up, not a live probe. Cheap enough for
+///     the foreground loop, which is the point -- asking the FPGA directly every
+///     iteration would clock the bit-banged bus for no new information.
+/// </summary>
+/// <returns>
+///     True if the last configuration attempt ended with the expected design ID.
+/// </returns>
 bool BSP_FpgaIsReady( void )
 {
     return _fpgaReady;
 }
 
+/// <summary>
+///     Reads the configuration-done pin live. Low at runtime means the FPGA lost
+///     its configuration, which the diagnostics layer treats as a recoverable
+///     hardware fault rather than a bus error.
+/// </summary>
+/// <returns>
+///     True while the FPGA reports itself configured.
+/// </returns>
 bool BSP_FpgaCdone( void )
 {
     return gpio_get( PIN_CDONE );
 }
 
+/// <summary>
+///     Asks the design to identify itself. The cheapest evidence that the link is
+///     working end to end, since a wrong answer implicates the design and a
+///     garbled one implicates the bus.
+/// </summary>
+/// <returns>
+///     The design's identity byte, to be compared against BSP_FPGA_DESIGN_ID.
+/// </returns>
 uint8_t BSP_FpgaPing( void )
 {
     const uint8_t tx[] = { CMD_PING };
     return _Transaction( tx, 1, true );
 }
 
+/// <summary>
+///     Reads the status register, which is the design's own view of its
+///     configuration state -- distinct from BSP_FpgaCdone, which reads the
+///     physical pin. They can disagree, and that disagreement is diagnostic.
+/// </summary>
+/// <returns>
+///     The status register contents.
+/// </returns>
 uint8_t BSP_FpgaReadStatus( void )
 {
     return BSP_FpgaReadRegister( REG_STATUS );
 }
 
+/// <summary>
+///     Reads the status pin directly, bypassing the register protocol. Usable when
+///     the bus itself is suspect, since it needs no transaction.
+/// </summary>
+/// <returns>
+///     The pin level.
+/// </returns>
 bool BSP_FpgaStatusPin( void )
 {
     return gpio_get( PIN_STATUS );
 }
 
+/// <summary>
+///     R
+/// </summary>
+/// <returns>
+///     e
+/// </returns>
 void BSP_FpgaReset( void )
 {
     const uint8_t tx[] = { CMD_RESET };
     _Transaction( tx, 1, false );
 }
 
+/// <summary>
+///     Reads one register. Every read clocks the bit-banged bus, so this is not
+///     free in the foreground loop.
+/// </summary>
+/// <returns>
+///     The register contents, or whatever the bus returned if the FPGA is not
+///     answering -- there is no in-band way to tell those apart.
+/// </returns>
 uint8_t BSP_FpgaReadRegister( const uint8_t address )
 {
     const uint8_t tx[] = { CMD_READ, address };
     return _Transaction( tx, 2, true );
 }
 
+/// <summary>
+///     W
+/// </summary>
+/// <returns>
+///     r
+/// </returns>
 void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
 {
     const uint8_t tx[] = { CMD_WRITE, address, value };
@@ -198,6 +282,12 @@ void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Hands the bus back to bit-banged GPIO after configuration, parking chip
+///     select high and the clock low. The SPI peripheral is torn down because the
+///     register protocol needs the data line to turn around mid-transaction,
+///     which the peripheral cannot do.
+/// </summary>
 static void _RuntimeBusIdle( void )
 {
     spi_deinit( spi0 );
@@ -211,6 +301,14 @@ static void _RuntimeBusIdle( void )
     gpio_set_dir( PIN_SDIO, GPIO_IN );
 }
 
+/// <summary>
+///     Clocks the bitstream in over hardware SPI, then waits up to 500 ms for
+///     CDONE. The 32 trailing zero bytes are required by the FPGA to finish
+///     internal startup after the last bitstream byte.
+/// </summary>
+/// <returns>
+///     True if CDONE rose before the deadline.
+/// </returns>
 static bool _Configure( void )
 {
     gpio_init( PIN_OSC_EN );
@@ -256,6 +354,11 @@ static bool _Configure( void )
     return done;
 }
 
+/// <summary>
+///     Clocks out one byte, most significant bit first. releaseAfterSample turns
+///     the data line around on the final bit so the FPGA can drive its reply
+///     without a contended cycle between the two.
+/// </summary>
 static void _SendByte( const uint8_t value, const bool releaseAfterSample )
 {
     gpio_set_dir( PIN_SDIO, GPIO_OUT );
@@ -273,6 +376,12 @@ static void _SendByte( const uint8_t value, const bool releaseAfterSample )
     }
 }
 
+/// <summary>
+///     Clocks in one byte with the data line already turned around by the caller.
+/// </summary>
+/// <returns>
+///     The byte sampled off the wire.
+/// </returns>
 static uint8_t _ReceiveByte( void )
 {
     uint8_t value = 0;
@@ -289,6 +398,14 @@ static uint8_t _ReceiveByte( void )
     return value;
 }
 
+/// <summary>
+///     Frames one register-protocol exchange between chip select edges. On a read
+///     the turnaround is requested on the last outgoing byte, so the line is
+///     already an input by the time the FPGA drives it.
+/// </summary>
+/// <returns>
+///     The byte read, or zero on a write.
+/// </returns>
 static uint8_t _Transaction( const uint8_t *const tx, const uint32_t count, const bool read )
 {
     gpio_put( PIN_CS, 0 );

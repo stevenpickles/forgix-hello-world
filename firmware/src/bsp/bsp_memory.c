@@ -66,10 +66,8 @@ static uint8_t _reportedEid;
 
 
 static bool _FlashReadsCoherently( const uint32_t flashBytes );
-
 #if FORGIX_QSPI_PSRAM
 static bool _ForcePsramFromDatasheet( void );
-
 static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
 #endif
 
@@ -91,6 +89,14 @@ static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
    runtime_init, and otherwise discarded once the size has been derived.
    Capturing them here costs no additional bus transaction and cannot disturb the
    device, which is precisely what every attempt to re-read them later did. */
+/// <summary>
+///     Overrides the SDK's weak hook to capture the raw identity bytes in passing.
+///     The mapping is reproduced exactly; the point is the arguments, which exist
+///     nowhere else and are discarded once the SDK has derived a size.
+/// </summary>
+/// <returns>
+///     The device size in bytes, or zero if the vendor byte was unrecognised.
+/// </returns>
 size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
 {
     _reportedKgd = kgd;
@@ -136,6 +142,14 @@ size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Reports both QSPI memories together, because they share SCLK and SD0..SD3 --
+///     a fault on one shows up as the other misbehaving, and separate reports
+///     would hide that.
+/// </summary>
+/// <returns>
+///     Sizes, pass/fail, and the raw identity bytes captured during detection.
+/// </returns>
 bsp_memory_report_t BSP_MemoryCheck( void )
 {
     bsp_memory_report_t report = { 0 };
@@ -181,6 +195,15 @@ bsp_memory_report_t BSP_MemoryCheck( void )
    pointer in SRAM and a reset vector inside the flash window. Bus contention on
    the shared QSPI lines corrupts reads rather than stopping them, so a garbled
    vector table is exactly what a CS1 problem looks like from here. */
+/// <summary>
+///     Checks the vector table rather than whether flash reads at all, which is
+///     already proven by this code executing. Bus contention corrupts reads
+///     instead of stopping them, so a garbled vector table is what a chip-select
+///     fault looks like from here.
+/// </summary>
+/// <returns>
+///     True if the stack pointer and reset vector are both plausible.
+/// </returns>
 static bool _FlashReadsCoherently( const uint32_t flashBytes )
 {
     const uint32_t *ptr_vectors = (const uint32_t *) XIP_BASE;
@@ -201,6 +224,15 @@ static bool _FlashReadsCoherently( const uint32_t flashBytes )
 
    psram_reinitialize is documented as unsafe against concurrent XIP, so it runs
    with interrupts off -- handlers live in flash. */
+/// <summary>
+///     Brings chip select 1 up from the datasheet rather than from what the device
+///     claims to be, for a part that works but reports an unexpected vendor.
+///     Runs with interrupts off because psram_reinitialize is unsafe against
+///     concurrent XIP and handlers live in flash.
+/// </summary>
+/// <returns>
+///     True if the device came up and reports a non-zero size.
+/// </returns>
 static bool _ForcePsramFromDatasheet( void )
 {
     flash_devinfo_set_cs_gpio( 1, FORGIX_QSPI_CS1_GPIO );
@@ -223,6 +255,14 @@ static bool _ForcePsramFromDatasheet( void )
 /* Writes every pattern before reading any of them back. Checking each write
    immediately would pass against a bus that merely echoes the last value, and
    would not catch address aliasing from a device smaller than it reports. */
+/// <summary>
+///     Writes every pattern before reading any back. Checking each write
+///     immediately would pass against a bus that merely echoes the last value,
+///     and would miss address aliasing from a device smaller than it claims.
+/// </summary>
+/// <returns>
+///     True if all three patterns survived at their addresses.
+/// </returns>
 static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
 {
     if ( sizeBytes < (uint32_t) sizeof( uint32_t ) )

@@ -44,16 +44,34 @@ typedef enum bsp_watchdog_scratch_register_tag
 ***************************************************************************************/
 
 
+/// <summary>
+///     Arms the hardware watchdog. Irreversible: once started it must be fed
+///     within every window or the chip resets, so nothing that blocks for
+///     longer than the timeout may run after this.
+/// </summary>
 void BSP_WatchdogStart( const uint32_t timeoutMs )
 {
     watchdog_enable( timeoutMs, true );
 }
 
+/// <summary>
+///     Restarts the timeout window. Called from one place in the foreground
+///     loop on purpose -- feeding from several would let a hung path stay alive
+///     because some other path kept feeding for it.
+/// </summary>
 void BSP_WatchdogFeed( void )
 {
     watchdog_update();
 }
 
+/// <summary>
+///     Classifies why the last boot happened, checking the watchdog flag before
+///     the power-on and brownout bits: a watchdog reset can leave those bits set
+///     too, so testing them first would misattribute a hang to a power event.
+/// </summary>
+/// <returns>
+///     The cause, or BSP_BOOT_OTHER when none of the known bits explain it.
+/// </returns>
 bsp_boot_reason BSP_WatchdogBootReason( void )
 {
     if ( watchdog_enable_caused_reboot() )
@@ -73,16 +91,34 @@ bsp_boot_reason BSP_WatchdogBootReason( void )
     return BSP_BOOT_OTHER;
 }
 
+/// <summary>
+///     Records where the foreground loop has reached, in a scratch register that
+///     survives a watchdog reset. This is what makes a hang self-attributing:
+///     after the reboot the marker still names the code that was running.
+/// </summary>
 void BSP_WatchdogMarkerSet( const uint32_t marker )
 {
     watchdog_hw->scratch[ MARKER_REGISTER ] = marker;
 }
 
+/// <summary>
+///     Reads back the marker left by the previous boot. Meaningful only before
+///     the current boot overwrites it, so the boot report reads it first.
+/// </summary>
+/// <returns>
+///     The last marker written, from before the reset if one occurred.
+/// </returns>
 uint32_t BSP_WatchdogMarkerGet( void )
 {
     return watchdog_hw->scratch[ MARKER_REGISTER ];
 }
 
+/// <summary>
+///     Stores a health value in one of the retained slots. Out-of-range slots
+///     are dropped rather than trapped, because the SDK owns the scratch
+///     registers past this range and writing into them would corrupt its own
+///     reboot bookkeeping.
+/// </summary>
 void BSP_WatchdogSnapshotSet( const uint32_t slot, const uint32_t value )
 {
     if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
@@ -91,6 +127,14 @@ void BSP_WatchdogSnapshotSet( const uint32_t slot, const uint32_t value )
     }
 }
 
+/// <summary>
+///     Reads a retained slot from before the last reset. Zero is returned both
+///     for an out-of-range slot and for a slot that was genuinely zero, so it
+///     cannot be used to tell "absent" from "was zero".
+/// </summary>
+/// <returns>
+///     The retained value, or zero.
+/// </returns>
 uint32_t BSP_WatchdogSnapshotGet( const uint32_t slot )
 {
     if ( slot < BSP_WATCHDOG_SNAPSHOT_SLOTS )
