@@ -47,20 +47,6 @@ static void print_memory_report(void) {
                        (unsigned long)(memory.flash_bytes / 1024u), memory.flash_ok,
                        (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok,
                        memory.psram_forced);
-    bsp_console_printf("Forgix: cs0_id=%02X %02X %02X %02X %02X %02X %02X %02X\n",
-                       memory.qspi_cs0_id[0], memory.qspi_cs0_id[1], memory.qspi_cs0_id[2],
-                       memory.qspi_cs0_id[3], memory.qspi_cs0_id[4], memory.qspi_cs0_id[5],
-                       memory.qspi_cs0_id[6], memory.qspi_cs0_id[7]);
-    bsp_console_printf("Forgix: cs1_null=%02X %02X %02X %02X %02X %02X %02X %02X\n",
-                       memory.qspi_cs1_null[0], memory.qspi_cs1_null[1], memory.qspi_cs1_null[2],
-                       memory.qspi_cs1_null[3], memory.qspi_cs1_null[4], memory.qspi_cs1_null[5],
-                       memory.qspi_cs1_null[6], memory.qspi_cs1_null[7]);
-    bsp_console_printf("Forgix: cs1_probe clk=/%u recovered=%u\n",
-                       memory.qspi_probe_clkdiv, memory.qspi_cs1_recovered);
-    bsp_console_printf("Forgix: cs1_id=%02X %02X %02X %02X %02X %02X %02X %02X\n",
-                       memory.qspi_cs1_id[0], memory.qspi_cs1_id[1], memory.qspi_cs1_id[2],
-                       memory.qspi_cs1_id[3], memory.qspi_cs1_id[4], memory.qspi_cs1_id[5],
-                       memory.qspi_cs1_id[6], memory.qspi_cs1_id[7]);
 }
 
 void application_print_status(void) {
