@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Applies the BSP formatting rules with clang-format. The rules themselves live in
+# firmware/src/bsp/.clang-format and firmware/tests/support/.clang-format; the parts a formatter
+# cannot express are in docs/bsp-style-rubric.md and scored by scripts/check_bsp_style.py.
+#
+# Pass --check to verify without writing, which is what CI should call.
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# The Windows LLVM installer does not put clang-format on PATH, so look there too.
+clang_format="${CLANG_FORMAT:-}"
+if [[ -z "$clang_format" ]]; then
+  for candidate in \
+    "$(command -v clang-format 2>/dev/null || true)" \
+    "/c/Program Files/LLVM/bin/clang-format.exe" \
+    "/c/Program Files (x86)/LLVM/bin/clang-format.exe"; do
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+      clang_format="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$clang_format" ]]; then
+  printf 'clang-format not found. Install LLVM or set CLANG_FORMAT to its path.\n' >&2
+  exit 1
+fi
+
+mapfile -t sources < <(
+  find "$repo_root/firmware/src/bsp" "$repo_root/firmware/tests/support" \
+    -maxdepth 1 -type f \( -name '*.c' -o -name '*.h' \) | sort
+)
+
+if (( ${#sources[@]} == 0 )); then
+  printf 'No BSP sources found.\n' >&2
+  exit 1
+fi
+
+printf 'Using %s\n' "$("$clang_format" --version)"
+
+if [[ "${1:-}" == "--check" ]]; then
+  # -Werror turns "would reformat" into a non-zero exit, so this is a gate rather than a report.
+  "$clang_format" --dry-run -Werror "${sources[@]}"
+  printf 'BSP formatting is clean: %d files\n' "${#sources[@]}"
+  exit 0
+fi
+
+"$clang_format" -i "${sources[@]}"
+printf 'Formatted %d files\n' "${#sources[@]}"

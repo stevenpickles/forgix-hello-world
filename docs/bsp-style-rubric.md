@@ -10,9 +10,11 @@ no `.clang-format`, no `.editorconfig`, no style guide, and no C linter enabled 
 `.trunk/trunk.yaml`. The convention survives there by copy-paste, which is why its newest files
 carry the most drift. This document is the written form.
 
-**Status: not yet applied.** The BSP does not currently conform. `scripts/check_bsp_style.py`
-scores files against the automated rules and exits 0 by default; it is deliberately not wired into
-CI until a reformat lands. See [Adoption](#adoption).
+**Status: partly applied.** Everything clang-format can do has been done — run
+`scripts/format_bsp.sh` to reproduce it, or `--check` to verify. The naming and documentation
+rules, which no formatter can apply, are still outstanding.
+`scripts/check_bsp_style.py` scores files against the automated rules and exits 0 by default; it
+is deliberately not wired into CI until those land. See [Adoption](#adoption).
 
 Every rule has a stable ID. The checker cites these, so renumbering them breaks its output.
 
@@ -253,8 +255,20 @@ A space on both sides of the `*`: `const uint8_t * const ptr_data`, `uarts_t * c
 
 ### C6 — Allman braces
 
-Opening brace on its own line for functions, control flow, `struct`/`enum` definitions and
-multi-line initializers. `else` and `else if` start their own line after the closing brace.
+Opening brace on its own line for functions, control flow, and `struct`/`enum` definitions.
+`else` and `else if` start their own line after the closing brace.
+
+**Not** multi-line initializers: those keep their brace on the `=` line. clang-format has no
+option for breaking there — braced lists answer to `Cpp11BracedListStyle`, which governs spacing
+rather than placement, and `BraceWrapping` has no `AfterInitializer`. The rule was dropped rather
+than maintained by hand, on the grounds that a rule a machine cannot reproduce is not a rule.
+
+### C10 — Inline braced values are spaced: `{ 0 }`
+
+A side effect rather than a preference. `SpacesInParentheses` also spaces braced initializer
+lists, and no value of `Cpp11BracedListStyle` overrides it, so the inner-paren spacing of C1 and
+tight `{0}` cannot both be had from clang-format. The comms-v4 reference writes them tight; forgix
+deviates to keep the format machine-reproducible.
 
 ### C7 — Four spaces, no tabs
 
@@ -387,7 +401,8 @@ A green checker run does **not** mean a file conforms. Roughly a third of the ru
 | C3 subscript spacing | yes | |
 | C4 cast spacing | no | `(uint8_t) x` is lexically indistinguishable from `(a + b) * c` |
 | C5 pointer declarators | no | |
-| C6 Allman braces | yes | |
+| C6 Allman braces | yes | clang-format applies it |
+| C10 spaced braced values | yes | clang-format applies it |
 | C7 four spaces, no tabs | yes | |
 | C8 column 89 comments | yes | |
 | C9 whitespace hygiene | yes | |
@@ -407,9 +422,12 @@ tags, and **enum typedefs lose their `_t`**, so `bsp_boot_reason_t` becomes `bsp
 reaches application code, the fakes and the tests, and it partly reverses the "functions only"
 scope of the earlier rename.
 
-Sequence when that happens:
+Sequence:
 
-1. Reformat, in commits grouped by concern, verifying against the existing gates each time.
-2. Flip `scripts/check_bsp_style.py` to `--strict` in `.github/workflows/ci.yml`.
+1. ~~Apply everything a formatter can apply~~ — done, via `scripts/format_bsp.sh`.
+2. The naming and documentation rules, by hand and in commits grouped by concern, verifying
+   against the existing gates each time.
+3. Add `scripts/format_bsp.sh --check` to `.github/workflows/ci.yml`, and flip
+   `scripts/check_bsp_style.py` to `--strict`.
 
-Until step 2, the checker is advisory and reports a score.
+Until step 3, the checker is advisory and reports a score.

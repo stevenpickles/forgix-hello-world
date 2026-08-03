@@ -5,10 +5,12 @@
 # layout. Scoped to this directory because the test files one level up are
 # still K&R.
 #
-# See firmware/src/bsp/.clang-format for the full rationale, and
-# docs/bsp-style-rubric.md for the rules clang-format cannot express -- the
-# opening brace of a multi-line initializer, and everything about naming, which
-# is clang-tidy territory rather than a formatter's.
+# See firmware/src/bsp/.clang-format for the full rationale, including the two
+# rules that gave way to the formatter, and docs/bsp-style-rubric.md for what
+# clang-format cannot express at all -- everything about naming, which is
+# clang-tidy territory rather than a formatter's.
+#
+# Apply with scripts/format_bsp.sh; `--check` verifies without writing.
 
 Language: Cpp
 BasedOnStyle: LLVM
@@ -42,5 +44,5 @@ SpaceAfterCStyleCast: true
 # and the blank lines between the groups carry meaning.
 SortIncludes: Never
 
-# Keeps `{0}` and `{(char)character, 0}` tight, as the sources already have them.
+# Kept for intent, though SpacesInParentheses wins over it for braced lists.
 Cpp11BracedListStyle: true

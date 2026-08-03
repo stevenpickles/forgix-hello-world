@@ -7,27 +7,23 @@
 # so a repo-root version of this file would quietly reformat code nobody asked
 # to change. firmware/tests/support/ carries an identical copy for the fakes.
 #
-# Nothing runs clang-format today -- it is not installed and CI does not call
-# it. This file records the house style so an editor integration formats the
-# way the code is already written, and so a future CI check has something to
-# check against.
+# Run it with scripts/format_bsp.sh, which locates clang-format even when the
+# Windows LLVM installer leaves it off PATH. `--check` verifies without writing.
+# Verified against clang-format 22.1.7; the BSP is a fixed point under it.
 #
-# Note the BSP does not conform yet: the rubric was adopted after this code was
-# written, so running a formatter over it now produces a large diff by design.
+# Two rules gave way to the formatter, because a rule a machine cannot reproduce
+# is not a rule -- it is a habit that survives until someone runs a tool.
 #
-# One known divergence. The BSP puts the opening brace of a multi-line
-# initializer on its own line:
+# 1. A multi-line initializer keeps its brace on the `=` line. Braced lists are
+#    governed by Cpp11BracedListStyle, which controls spacing rather than brace
+#    placement, and there is no AfterInitializer under BraceWrapping. Affects
+#    the initializers in bsp_button.c, bsp_led.c and bsp_usb.c.
 #
-#     const bsp_led_state_t state =
-#     {
-#         .red = red,
-#     };
-#
-# clang-format cannot express that. Braced initializer lists are governed by
-# Cpp11BracedListStyle, which controls spacing only, not brace placement, and
-# there is no AfterInitializer under BraceWrapping. Running clang-format will
-# pull those braces back onto the `=` line. Three initializers are affected:
-# bsp_button.c, bsp_led.c and bsp_usb.c.
+# 2. Inline braced values are written `{ 0 }` rather than `{0}`. That is a side
+#    effect of the inner-paren spacing below, not an independent choice:
+#    SpacesInParentheses also spaces braced initializer lists, and no value of
+#    Cpp11BracedListStyle overrides it. The comms-v4 reference writes them tight,
+#    so this is a deliberate deviation, taken to keep the format reproducible.
 
 Language: Cpp
 BasedOnStyle: LLVM
@@ -55,7 +51,9 @@ PointerAlignment: Right
 # Rubric C1/C3/C4: `BSP_Foo( const uint8_t id )`, `list[ id ]`, `(uint32_t) value`.
 # SpacesInParentheses is the pre-17 spelling; clang-format 17+ calls it
 # SpacesInParens and wants `Custom` plus a SpacesInParensOptions block. Written
-# the older way because that is what the widest range of versions accepts.
+# the older way because that is what the widest range of versions accepts -- 22
+# still honours it, resolving to Custom with Other and InConditionalStatements
+# on and InEmptyParentheses off, which is exactly rubric C1 and C2.
 SpacesInParentheses: true
 SpacesInSquareBrackets: true
 SpaceAfterCStyleCast: true
@@ -64,5 +62,7 @@ SpaceAfterCStyleCast: true
 # and the blank lines between the groups carry meaning.
 SortIncludes: Never
 
-# Keeps `{0}` and `{CMD_PING}` tight, as the sources already have them.
+# Kept for intent, though SpacesInParentheses above wins over it for braced
+# lists -- see note 2 in the header. clang-format 21 turned this from a bool
+# into an enum; `true` still parses and resolves to AlignFirstComment.
 Cpp11BracedListStyle: true
