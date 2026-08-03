@@ -6,7 +6,10 @@
 
 #include "bsp_watchdog.h"
 
-enum { MOCK_BSP_WATCHDOG_MARKER_HISTORY = 64 };
+enum
+{
+    MOCK_BSP_WATCHDOG_MARKER_HISTORY = 64
+};
 
 void MOCK_BSP_WatchdogReset(void);
 
