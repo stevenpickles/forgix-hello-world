@@ -30,13 +30,17 @@ is the only obstacle.
 
 ## One-time setup
 
-1. Download the Linux tarball (`efinity-2026.1.<build>.tar.bz2`) from
-   <https://www.efinixinc.com/support/efinity.php> with your Efinix account.
+1. Download the **Linux** tarball (`efinity-2026.1.<build>-linux-x64.tar.bz2`)
+   from <https://www.efinixinc.com/support/efinity.php> with your Efinix
+   account. The Windows installer will not do: the image is a Linux one.
+   Keep the download outside the repository, or if it does end up in
+   `ci/efinity/`, note that `.gitignore` is the only thing standing between it
+   and a public commit.
 2. Build and push the private image:
 
    ```sh
    echo "$GHCR_PAT" | docker login ghcr.io -u stevenpickles --password-stdin
-   ./ci/efinity/build_image.sh ~/Downloads/efinity-2026.1.132.tar.bz2
+   ./ci/efinity/build_image.sh ~/Downloads/efinity-2026.1.132-linux-x64.tar.bz2
    ```
 
    The Dockerfile unpacks in a first stage and copies only the unpacked tree
@@ -148,13 +152,27 @@ artifacts without publishing anything.
   itself, so setting it in the image has no effect — the source overwrites it.
   `run_efinity.sh` pins it to a writable path *after* the source instead, so the
   compile does not depend on whatever `$HOME` the runner gives the container.
-- Everything except Efinity itself has been exercised on Linux: the unpack stage
-  against a synthetic tarball, the package list, `run_efinity.sh` under a
-  deliberately unwritable `$HOME`, and both report gates against real reports.
-  `efinity_hex_to_bin.py` in the container reproduces the Windows-built
-  `forgix_hello_world.bin` byte for byte, so the CI bitstream is comparable to a
-  local one. The stages needing the real tarball — the `ldd` gate and the compile
-  — run first on your machine when you build the image.
+- The image has been built and a full T8F49 compile run in it: map, interface,
+  pnr, and pgm all pass, with the same slacks as a local build (setup 8.701 ns,
+  hold 0.643 ns). The resulting bitstream is byte-identical to the
+  Windows-built one from offset 176 onward; the first 176 bytes are a header
+  holding the build timestamp and project path, so the configuration itself is
+  reproducible across platforms but the file's SHA-256 is not. Compare payloads,
+  not hashes, if you ever need to confirm two builds agree.
+- **A failed Interface Designer import does not fail the build.** `efx_run.py`
+  catches it, writes "Skipping Interface Designer step" to a log file, and
+  continues. map, pnr, and pgm then all report PASS and the flow exits 0 — but
+  without the Interface Designer there is no LPF, and `efx_pgm` says "Missing
+  Interface Designer LPF constraint file, no programming file will be generated"
+  and produces nothing. The only visible symptom is a green run with no
+  bitstream. `build_fpga.sh` catches it because it insists on a nonempty `.hex`,
+  and the image build catches it because the gate imports
+  `efx_run_pt_unified` explicitly. Keep both: an `ldd` sweep of the binaries
+  cannot see it, because the missing library is reached through Python.
+- The Qt runtime libraries are not optional even though nothing is displayed.
+  The Interface Designer reaches `PyQt6.QtGui` via `qtpy`, so `libGL` and the
+  rest are load-bearing; `QT_QPA_PLATFORM=offscreen` is what keeps Qt from
+  looking for a display that a runner does not have.
 - The image is roughly 2.7 GB. `pgm/`, `ipm/`, and `debugger/` are unused by the
   compile flow and could be pruned (~880 MB) if pull time becomes the bottleneck,
   but only a full CI compile proves a prune safe.
