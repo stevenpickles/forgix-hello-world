@@ -72,14 +72,21 @@ bsp_adc_temperature_t BSP_AdcTemperature( void )
 {
     adc_select_input( ADC_TEMPERATURE_INPUT );
 
+    /* Widened deliberately. A mid-scale count times a three-million microvolt
+       reference is about 2.9e9, which overflows a signed 32-bit intermediate and
+       comes back as a plausible-looking temperature in the hundreds of degrees
+       rather than as an obvious error. The same is true of the slope division,
+       so both stay 64-bit and only the result narrows. */
     const int32_t raw = (int32_t) adc_read();
-    const int32_t microvolts = ( raw * ADC_REFERENCE_MICROVOLTS ) / ADC_FULL_SCALE;
+    const int32_t microvolts =
+        (int32_t) ( ( (int64_t) raw * ADC_REFERENCE_MICROVOLTS ) / ADC_FULL_SCALE );
     const int32_t aboveOffset = microvolts - ADC_SENSOR_OFFSET_MICROVOLTS;
     const bsp_adc_temperature_t sample = {
         .raw = (uint16_t) raw,
-        .milli_celsius = ADC_SENSOR_OFFSET_MILLI_CELSIUS -
-                         ( ( aboveOffset * MILLI_PER_UNIT ) /
-                           ADC_SENSOR_SLOPE_MICROVOLTS_PER_DEGREE ),
+        .milli_celsius =
+            ADC_SENSOR_OFFSET_MILLI_CELSIUS -
+            (int32_t) ( ( (int64_t) aboveOffset * MILLI_PER_UNIT ) /
+                        ADC_SENSOR_SLOPE_MICROVOLTS_PER_DEGREE ),
     };
     return sample;
 }
