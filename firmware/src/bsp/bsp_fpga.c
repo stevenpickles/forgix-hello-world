@@ -132,7 +132,11 @@ static uint8_t transaction(const uint8_t *const tx, const size_t count, const bo
     {
         send_byte(tx[index], read && index + 1 == count);
     }
-    const uint8_t result = read ? receive_byte() : 0;
+    uint8_t result = 0;
+    if (read)
+    {
+        result = receive_byte();
+    }
     gpio_put(PIN_CS, 1);
     gpio_set_dir(PIN_SDIO, GPIO_IN);
     busy_wait_us_32(1);
@@ -145,7 +149,14 @@ bsp_fpga_init_result_t BSP_FpgaInit(void)
     result.configured = configure();
 
     sleep_ms(1500);
-    result.design_id = result.configured ? BSP_FpgaPing() : 0;
+    if (result.configured)
+    {
+        result.design_id = BSP_FpgaPing();
+    }
+    else
+    {
+        result.design_id = 0;
+    }
     result.ready = result.configured && result.design_id == BSP_FPGA_DESIGN_ID;
     result.cdone = gpio_get(PIN_CDONE);
     result.status_pin = gpio_get(PIN_STATUS);

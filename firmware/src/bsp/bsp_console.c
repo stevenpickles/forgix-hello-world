@@ -13,7 +13,11 @@ void BSP_ConsoleInit(void)
 int BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us)
 {
     const int character = getchar_timeout_us(timeout_us);
-    return character == PICO_ERROR_TIMEOUT ? BSP_CONSOLE_TIMEOUT : character;
+    if (character == PICO_ERROR_TIMEOUT)
+    {
+        return BSP_CONSOLE_TIMEOUT;
+    }
+    return character;
 }
 
 int BSP_ConsolePutChar(const int character)
