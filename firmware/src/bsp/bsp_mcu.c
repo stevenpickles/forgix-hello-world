@@ -26,10 +26,13 @@
 ***************************************************************************************/
 
 
-/* SYSINFO CHIP_ID packs manufacturer, part and revision into one word. The
-   revision occupies the top nibble, which is why it is shifted rather than
-   masked out of the low half. */
-#define CHIP_ID_MANUFACTURER_MASK ( (uint32_t) 0x00000fffu )
+/* SYSINFO CHIP_ID is a JEDEC JEP-106 identifier, not three packed fields at the
+   obvious offsets. Bit 0 is the JEP-106 stop bit, so the manufacturer occupies
+   bits 11:1 and has to be shifted down by one; reading it as bits 11:0 yields
+   the manufacturer doubled with the stop bit in the low place -- 0x927 for the
+   0x493 this part actually reports, which looks plausible enough to ship. */
+#define CHIP_ID_MANUFACTURER_SHIFT ( (uint32_t) 1u )
+#define CHIP_ID_MANUFACTURER_MASK ( (uint32_t) 0x000007ffu )
 #define CHIP_ID_PART_SHIFT ( (uint32_t) 12u )
 #define CHIP_ID_PART_MASK ( (uint32_t) 0x0000ffffu )
 #define CHIP_ID_REVISION_SHIFT ( (uint32_t) 28u )
@@ -176,7 +179,8 @@ static void _ReadChipId( void )
 {
     const uint32_t chipId = sysinfo_hw->chip_id;
 
-    _mcuInfo.manufacturer = (uint16_t) ( chipId & CHIP_ID_MANUFACTURER_MASK );
+    _mcuInfo.manufacturer =
+        (uint16_t) ( ( chipId >> CHIP_ID_MANUFACTURER_SHIFT ) & CHIP_ID_MANUFACTURER_MASK );
     _mcuInfo.part = (uint16_t) ( ( chipId >> CHIP_ID_PART_SHIFT ) & CHIP_ID_PART_MASK );
     _mcuInfo.revision =
         (uint8_t) ( ( chipId >> CHIP_ID_REVISION_SHIFT ) & CHIP_ID_REVISION_MASK );
