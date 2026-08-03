@@ -1,7 +1,7 @@
 #ifndef FORGIX_BSP_CONSOLE_H
 #define FORGIX_BSP_CONSOLE_H
 
-#include <stdint.h>
+#include "bsp_types.h"
 
 enum
 {

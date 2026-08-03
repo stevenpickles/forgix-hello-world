@@ -1,8 +1,7 @@
 #ifndef FORGIX_BSP_FPGA_H
 #define FORGIX_BSP_FPGA_H
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "bsp_types.h"
 
 enum
 {

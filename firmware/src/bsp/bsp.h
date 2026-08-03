@@ -7,6 +7,7 @@
 #include "bsp_led.h"
 #include "bsp_memory.h"
 #include "bsp_time.h"
+#include "bsp_types.h"
 #include "bsp_usb.h"
 #include "bsp_watchdog.h"
 

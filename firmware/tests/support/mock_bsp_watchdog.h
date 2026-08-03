@@ -1,9 +1,7 @@
 #ifndef FORGIX_MOCK_BSP_WATCHDOG_H
 #define FORGIX_MOCK_BSP_WATCHDOG_H
 
-#include <stdbool.h>
-#include <stdint.h>
-
+#include "bsp_types.h"
 #include "bsp_watchdog.h"
 
 enum

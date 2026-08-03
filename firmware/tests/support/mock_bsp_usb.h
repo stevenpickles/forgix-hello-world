@@ -1,9 +1,7 @@
 #ifndef FORGIX_MOCK_BSP_USB_H
 #define FORGIX_MOCK_BSP_USB_H
 
-#include <stdbool.h>
-#include <stdint.h>
-
+#include "bsp_types.h"
 #include "bsp_usb.h"
 
 /* Defaults to a present, connected, idle-but-healthy host so console tests that

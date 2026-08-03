@@ -1,7 +1,7 @@
 #ifndef FORGIX_BSP_TIME_H
 #define FORGIX_BSP_TIME_H
 
-#include <stdint.h>
+#include "bsp_types.h"
 
 uint32_t BSP_TimeNowMs(void);
 

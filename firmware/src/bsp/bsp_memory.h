@@ -1,8 +1,7 @@
 #ifndef FORGIX_BSP_MEMORY_H
 #define FORGIX_BSP_MEMORY_H
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "bsp_types.h"
 
 /* Both QSPI memories share SCLK and SD0..SD3, so a fault on one shows up as the
    other misbehaving. Reporting them together makes that visible at boot. */

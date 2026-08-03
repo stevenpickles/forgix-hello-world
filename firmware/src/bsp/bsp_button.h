@@ -1,7 +1,7 @@
 #ifndef FORGIX_BSP_BUTTON_H
 #define FORGIX_BSP_BUTTON_H
 
-#include <stdint.h>
+#include "bsp_types.h"
 
 typedef struct
 {
