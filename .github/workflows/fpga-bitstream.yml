@@ -1,0 +1,92 @@
+name: FPGA bitstream
+
+# Place-and-route of the T8F49 design in the private Efinity container. The image
+# is registration-gated software that may not be redistributed, so the package is
+# private and this workflow only runs for events that carry credentials: pushes
+# and pull requests from this repository, never from a fork.
+#
+# Build and publish the image with ./ci/efinity/build_image.sh; see docs/fpga-ci.md.
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the uploaded bitstream artifact
+        required: true
+        type: string
+      retention-days:
+        description: Artifact retention in days
+        required: false
+        type: number
+        default: 14
+    outputs:
+      image-sha256:
+        description: SHA-256 of the passive-SPI image
+        value: ${{ jobs.bitstream.outputs.image-sha256 }}
+
+# No packages:read -- the image is pulled with the GHCR_TOKEN PAT, so GITHUB_TOKEN
+# never needs registry access and the package is never granted to this repository.
+permissions:
+  contents: read
+
+jobs:
+  bitstream:
+    name: Efinity T8F49 synthesis
+    runs-on: ubuntu-24.04
+    container:
+      # Override with the EFINITY_IMAGE repository variable to test a new release
+      # of the tools without editing the workflow.
+      image: ${{ vars.EFINITY_IMAGE || 'ghcr.io/stevenpickles/efinity:2026.1' }}
+      credentials:
+        username: ${{ github.repository_owner }}
+        # Deliberately a PAT and not GITHUB_TOKEN. Pulling with GITHUB_TOKEN
+        # would require granting this public repository access to the private
+        # package -- and a fork pull request runs ITS OWN copy of this file with
+        # a read-only GITHUB_TOKEN that includes packages:read, so it could strip
+        # the caller's fork guard and pull the tools. Secrets are never issued to
+        # fork pull requests, so a PAT cannot be reached that way.
+        password: ${{ secrets.GHCR_TOKEN }}
+    outputs:
+      image-sha256: ${{ steps.image.outputs.sha256 }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate Efinity metadata
+        run: python scripts/check_repository.py
+
+      - name: Synthesize, place, route, and verify reports
+        run: bash scripts/build_fpga.sh
+
+      - name: Describe the image
+        id: image
+        run: |
+          image=fpga/outflow/forgix_hello_world.bin
+          sha256=$(sha256sum "$image" | cut -d' ' -f1)
+          bytes=$(wc -c < "$image")
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          {
+            printf '<h2>FPGA bitstream</h2>\n'
+            printf '<p>Trion T8F49, timing model I2, Efinity %s.</p>\n' \
+              "${EFINITY_HOME##*/}"
+            printf '<ul><li>Passive-SPI image: %s bytes</li>' "$bytes"
+            printf '<li>SHA-256: <code>%s</code></li>' "$sha256"
+            printf '<li>Pinout and setup/hold slack: verified</li></ul>\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bitstream and reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: |
+            fpga/outflow/forgix_hello_world.bin
+            fpga/outflow/forgix_hello_world.hex
+            fpga/outflow/forgix_hello_world.pinout.rpt
+            fpga/outflow/forgix_hello_world.timing.rpt
+            fpga/outflow/forgix_hello_world.pt_timing.rpt
+            fpga/outflow/forgix_hello_world.map.rpt
+            fpga/outflow/forgix_hello_world.res.csv
+            fpga/outflow/*.log
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention-days }}
