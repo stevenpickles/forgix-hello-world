@@ -107,52 +107,50 @@ An active `watch` stops as soon as a key is received so its output cannot
 interrupt the next command. `scripts/test_hardware.sh` selects `quiet` mode
 before parsing responses, keeping the physical smoke test deterministic.
 
-### Firmware stability investigation
+### Firmware lockup: cause and fix
 
-The board has two open long-duration stability failures, and they are not yet
-known to share a cause:
+The board had two long-duration failures that turned out to be one fault. The
+USB shell stopped responding after nine to ten minutes, and the image with USB
+compiled out froze after forty-five to ninety minutes on every power source. A
+power cycle was the only recovery in both cases.
 
-1. **USB shell, ~9-10 minutes.** Three sessions on the tested Windows 11 host
-   stopped responding, including a quiet session in which the last character
-   reached the host interface but was not echoed by the firmware. A diagnostic
-   image that blinked the RGB LED at 2 Hz and emitted a serial heartbeat once
-   per second had both stop together, while Windows still listed the COM port.
-2. **USB compiled out, ~45-75 minutes.** The USB-free image also freezes, on a
-   wall charger, a PC port, and a battery pack alike; a power cycle recovers it.
-   This corrects an earlier ">45 minute pass" that was simply too short a run,
-   and it means the USB-free image is not a clean control. The RGB LED is driven
-   by the FPGA, so a frozen LED alone does not say whether the MCU hung or the
-   FPGA lost its configuration.
+**Cause.** GPIO 0 is `XIP_CS1n`, the chip select for the secondary QSPI memory
+that shares `SCLK` and `SD0..SD3` with the boot flash. RP2350 pads default to a
+pull-down at power-up and the chip select is active low, so that device was
+selected from reset and drove the shared data lines during flash reads.
+Corrupted instruction fetches hung the core wherever it happened to be, which is
+why no progress marker was ever recorded; the watchdog then reset into a bootrom
+that could not read flash either, so nothing came back.
 
-Both firmware images are therefore instrumented: a watchdog fed only by the
-foreground loop, progress markers and health snapshots kept in watchdog scratch
-registers that survive a reset, boot-reason reporting including brownout, and a
-once-a-second FPGA health check that reconfigures and signals recovery. The
-heartbeat LED also encodes live USB health by color. `./scripts/build_firmware.sh`
-produces both `forgix_hello_world.uf2` and `forgix_led_only_diagnostic.uf2`;
-`./scripts/flash.sh <image-name>` loads either one, and the `diag` shell command
-prints the retained boot report with live counters.
+Raspberry Pi's *Hardware design with RP2350*, section 3.2, requires a 10K pull-up
+on that net for exactly this reason. This board has no footprint for one.
 
-**Board note.** GPIO 0 is `XIP_CS1n`, the chip select for the secondary QSPI memory that
-shares the flash bus. Raspberry Pi's *Hardware design with RP2350* section 3.2 requires a
-10K pull-up on that net, because RP2350 pads default to a pull-down at power-up and the
-chip select is active low. This board does not fit one, so the secondary device is selected
-from reset and contends with the boot flash, hanging the core mid-XIP. `bsp_init()` takes
-the pin off its pull-down and holds it deasserted, which cleared a two-hour soak, but it
-cannot cover the bootrom's own flash reads before the first instruction. **Fitting the
-pull-up is the actual fix.**
+**Fix.** `bsp_init()` swaps the pad's power-up pull-down for a pull-up before
+anything else runs. Measured against three unmitigated runs that failed at 240,
+520 and 554 seconds, the same image then ran two hours clean, twice: once with
+the secondary memory deselected and once with it live on the shared bus.
+
+**This is a mitigation, not a cure.** Nothing runs before the bootrom's own flash
+reads, so the window between power-up and the first instruction is still exposed
+and occasional boot-time failures remain possible. Fitting a 10K pull-up from
+GPIO 0 to 3V3 is the actual fix and is a board respin item.
+
+The secondary memory is 2 MByte of QSPI PSRAM at `0x11000000`, enabled by
+default through `FORGIX_QSPI_PSRAM`. It is sized by the SDK and verified at boot
+by a pattern written across the start, middle and end of its range; `diag`
+reports both memories. One open question remains: the device identifies itself
+as `KGD 0x0B, EID 0x43` rather than AP Memory's `0x5D`, so the fitted part does
+not match the `APS1604M-3SQR-SN` on the schematic even though it works correctly.
+Reading the package marking would settle it.
+
+See the [lockup investigation plan](docs/lockup-investigation-plan.md) for the
+full record, including the wrong turns and why they were wrong, and the
+[firmware lockup debugging plan](docs/usb-cdc-debugging.md) for the soak results
+and the diagnostics still built into both images.
 
 Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open for
 the whole run and never reopens it after a failure, since a single controlled
 reopen is itself one of the experiments.
-
-See the [lockup investigation plan](docs/lockup-investigation-plan.md) for the
-run sequence and the decision trees that turn an observation into a verdict, and
-the [firmware lockup debugging plan](docs/usb-cdc-debugging.md) for the marker
-and scratch layouts, LED codes, Windows observations to capture before a power
-cycle, and the results log. The baseline shell remains the intended
-functionality, but its long-duration stability should not be considered
-validated until those plans are complete.
 
 Application behavior can also be exercised without a board. The Ceedling toolchain
 is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools

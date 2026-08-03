@@ -1,5 +1,26 @@
 # Firmware lockup debugging plan (USB CDC and USB-free)
 
+## Status: resolved
+
+**Both failure modes had a single cause, found on 2026-08-02.** GPIO 0 is
+`XIP_CS1n` for the secondary QSPI memory sharing the flash bus. RP2350 pads
+default to a pull-down and the chip select is active low, so the device was
+selected from reset and contended with the boot flash, corrupting XIP fetches
+and hanging the core. Raspberry Pi's *Hardware design with RP2350* section 3.2
+requires a 10K pull-up on that net; this board has no footprint for one.
+
+`bsp_init()` now swaps the pull-down for a pull-up. Against baselines of 240,
+520 and 554 seconds, the fixed image ran the full two hours twice -- once with
+the secondary memory deselected, once with it live. It remains a mitigation:
+the window before the first instruction executes cannot be covered from
+firmware, so the pull-up is a board respin item.
+
+The FPGA was never involved. Its health check did not fire once across any run.
+
+The staged ladder below is kept as a record of how the investigation was
+structured, and Stage 3 documents the diagnostics still built into both images.
+Stages 1, 2, 4 and 5 describe work that the root cause made unnecessary.
+
 ## Purpose and terminology
 
 This plan covers **two distinct failure modes** on the Forgix board:
