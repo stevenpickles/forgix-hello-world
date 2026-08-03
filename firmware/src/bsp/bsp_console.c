@@ -5,36 +5,36 @@
 
 #include "pico/stdlib.h"
 
-void BSP_ConsoleInit(void)
+void BSP_ConsoleInit( void )
 {
     stdio_init_all();
 }
 
-int16_t BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us)
+int16_t BSP_ConsoleGetCharTimeoutUs( const uint32_t timeout_us )
 {
-    const int character = getchar_timeout_us(timeout_us);
-    if (character == PICO_ERROR_TIMEOUT)
+    const int character = getchar_timeout_us( timeout_us );
+    if ( character == PICO_ERROR_TIMEOUT )
     {
         return BSP_CONSOLE_TIMEOUT;
     }
-    return (int16_t)character;
+    return (int16_t) character;
 }
 
-int16_t BSP_ConsolePutChar(const uint8_t character)
+int16_t BSP_ConsolePutChar( const uint8_t character )
 {
-    return (int16_t)putchar(character);
+    return (int16_t) putchar( character );
 }
 
-int32_t BSP_ConsolePrintf(const char *const format, ...)
+int32_t BSP_ConsolePrintf( const char *const format, ... )
 {
     va_list arguments;
-    va_start(arguments, format);
-    const int result = vprintf(format, arguments);
-    va_end(arguments);
-    return (int32_t)result;
+    va_start( arguments, format );
+    const int result = vprintf( format, arguments );
+    va_end( arguments );
+    return (int32_t) result;
 }
 
-int32_t BSP_ConsolePuts(const char *const text)
+int32_t BSP_ConsolePuts( const char *const text )
 {
-    return (int32_t)puts(text);
+    return (int32_t) puts( text );
 }

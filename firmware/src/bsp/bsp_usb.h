@@ -15,14 +15,14 @@ typedef struct
 /* True in images that link the real USB device stack, false in the stubbed
    USB-free image. The diagnostics layer uses it to choose between a serial boot
    report and an LED blink code. */
-bool BSP_UsbPresent(void);
+bool BSP_UsbPresent( void );
 
-bsp_usb_health_t BSP_UsbHealth(void);
-bool BSP_UsbConnected(void);
+bsp_usb_health_t BSP_UsbHealth( void );
+bool BSP_UsbConnected( void );
 
 /* Services the device stack from the foreground loop when the firmware is built
    with FORGIX_FOREGROUND_USB_SERVICE; a no-op otherwise, because the SDK's
    background IRQ task already owns tud_task(). */
-void BSP_UsbService(void);
+void BSP_UsbService( void );
 
 #endif

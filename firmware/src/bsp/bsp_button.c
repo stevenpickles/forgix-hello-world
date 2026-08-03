@@ -11,12 +11,11 @@ typedef enum
     REG_BUTTON_COUNT = 0x21,
 } bsp_button_register_t;
 
-bsp_button_state_t BSP_ButtonGetState(void)
+bsp_button_state_t BSP_ButtonGetState( void )
 {
-    const bsp_button_state_t state =
-    {
-        .level = BSP_FpgaReadRegister(REG_BUTTON),
-        .count = BSP_FpgaReadRegister(REG_BUTTON_COUNT),
+    const bsp_button_state_t state = {
+        .level = BSP_FpgaReadRegister( REG_BUTTON ),
+        .count = BSP_FpgaReadRegister( REG_BUTTON_COUNT ),
     };
     return state;
 }
