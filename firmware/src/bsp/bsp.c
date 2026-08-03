@@ -84,6 +84,14 @@ bsp_init_result_t BSP_Init( void )
 {
     _ConfigureQspiCs1();
     BSP_ConsoleInit();
+
+    /* Both of these sample once and cache. The MCU identity costs a flash
+       command on the bus the chip select fix above protects, so it belongs
+       after that and nowhere near a user-triggered code path; the temperature
+       sensor needs its bias to settle, which boot time supplies for free. */
+    BSP_McuInit();
+    BSP_AdcInit();
+
     return BSP_FpgaInit();
 }
 
