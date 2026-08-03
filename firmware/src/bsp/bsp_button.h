@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 
-typedef struct {
+typedef struct
+{
     uint8_t level;
     uint8_t count;
 } bsp_button_state_t;

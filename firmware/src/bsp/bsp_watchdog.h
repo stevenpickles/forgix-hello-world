@@ -3,9 +3,13 @@
 
 #include <stdint.h>
 
-enum { BSP_WATCHDOG_SNAPSHOT_SLOTS = 3 };
+enum
+{
+    BSP_WATCHDOG_SNAPSHOT_SLOTS = 3
+};
 
-typedef enum {
+typedef enum
+{
     BSP_BOOT_POWER_ON,
     BSP_BOOT_BROWNOUT,
     BSP_BOOT_WATCHDOG,

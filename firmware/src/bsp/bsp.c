@@ -32,7 +32,8 @@
 #define FORGIX_QSPI_CS1_GPIO 0
 #endif
 
-static void configure_qspi_cs1(void) {
+static void configure_qspi_cs1(void)
+{
     /* RP2350-E14: the bootrom clears pad isolation for GPIO 0 rather than the
        configured chip select. Clear it explicitly so this does not depend on
        that erratum happening to name the right pin. */
@@ -57,7 +58,8 @@ static void configure_qspi_cs1(void) {
        Taking it back to SIO here would cut the DRAM off the bus. */
 }
 
-bsp_init_result_t BSP_Init(void) {
+bsp_init_result_t BSP_Init(void)
+{
     configure_qspi_cs1();
     BSP_ConsoleInit();
     return BSP_FpgaInit();

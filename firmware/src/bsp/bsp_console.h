@@ -3,7 +3,10 @@
 
 #include <stdint.h>
 
-enum { BSP_CONSOLE_TIMEOUT = -1 };
+enum
+{
+    BSP_CONSOLE_TIMEOUT = -1
+};
 
 void BSP_ConsoleInit(void);
 int BSP_ConsoleGetCharTimeoutUs(const uint32_t timeout_us);

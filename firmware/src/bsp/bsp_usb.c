@@ -8,22 +8,27 @@
    them to count completed transfers without disturbing SDK stdio behavior. */
 static volatile uint32_t cdc_activity_count;
 
-void tud_cdc_rx_cb(const uint8_t interface) {
+void tud_cdc_rx_cb(const uint8_t interface)
+{
     (void)interface;
     ++cdc_activity_count;
 }
 
-void tud_cdc_tx_complete_cb(const uint8_t interface) {
+void tud_cdc_tx_complete_cb(const uint8_t interface)
+{
     (void)interface;
     ++cdc_activity_count;
 }
 
-bool BSP_UsbPresent(void) {
+bool BSP_UsbPresent(void)
+{
     return true;
 }
 
-bsp_usb_health_t BSP_UsbHealth(void) {
-    const bsp_usb_health_t health = {
+bsp_usb_health_t BSP_UsbHealth(void)
+{
+    const bsp_usb_health_t health =
+    {
         .connected = stdio_usb_connected(),
         .suspended = tud_suspended(),
         .write_available = tud_cdc_write_available(),
@@ -33,11 +38,13 @@ bsp_usb_health_t BSP_UsbHealth(void) {
     return health;
 }
 
-bool BSP_UsbConnected(void) {
+bool BSP_UsbConnected(void)
+{
     return stdio_usb_connected();
 }
 
-void BSP_UsbService(void) {
+void BSP_UsbService(void)
+{
 #if FORGIX_FOREGROUND_USB_SERVICE
     tud_task();
 #endif

@@ -4,9 +4,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-enum { BSP_FPGA_DESIGN_ID = 0xb5 };
+enum
+{
+    BSP_FPGA_DESIGN_ID = 0xb5
+};
 
-typedef struct {
+typedef struct
+{
     bool configured;
     uint8_t design_id;
     bool ready;

@@ -2,7 +2,8 @@
 
 #include "bsp_fpga.h"
 
-enum {
+enum
+{
     REG_LED_R = 0x10,
     REG_LED_G = 0x11,
     REG_LED_B = 0x12,
@@ -10,7 +11,8 @@ enum {
     REG_LED_ENABLE = 0x14,
 };
 
-void BSP_LedSet(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness) {
+void BSP_LedSet(const uint8_t red, const uint8_t green, const uint8_t blue, const uint8_t brightness)
+{
     BSP_FpgaWriteRegister(REG_LED_R, red);
     BSP_FpgaWriteRegister(REG_LED_G, green);
     BSP_FpgaWriteRegister(REG_LED_B, blue);
@@ -18,12 +20,15 @@ void BSP_LedSet(const uint8_t red, const uint8_t green, const uint8_t blue, cons
     BSP_FpgaWriteRegister(REG_LED_ENABLE, 1);
 }
 
-void BSP_LedOff(void) {
+void BSP_LedOff(void)
+{
     BSP_FpgaWriteRegister(REG_LED_ENABLE, 0);
 }
 
-bsp_led_state_t BSP_LedGet(void) {
-    const bsp_led_state_t state = {
+bsp_led_state_t BSP_LedGet(void)
+{
+    const bsp_led_state_t state =
+    {
         .red = BSP_FpgaReadRegister(REG_LED_R),
         .green = BSP_FpgaReadRegister(REG_LED_G),
         .blue = BSP_FpgaReadRegister(REG_LED_B),

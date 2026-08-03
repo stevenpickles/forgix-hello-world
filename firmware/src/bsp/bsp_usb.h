@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct {
+typedef struct
+{
     bool connected;           /* host asserted DTR on the CDC interface */
     bool suspended;           /* device stack reports USB bus suspend */
     uint32_t write_available; /* free bytes in the CDC transmit FIFO */
