@@ -1,0 +1,18 @@
+# Line endings are decided here rather than by each clone's core.autocrlf, so a
+# Windows checkout and a Linux CI runner cannot disagree about what a file
+# contains. bash rejects a script with CRLF line endings outright -- the error
+# is "set: pipefail: invalid option name", which names neither the file nor the
+# real cause -- so the scripts CI executes are pinned to LF explicitly.
+* text=auto
+
+*.sh  text eol=lf
+*.py  text eol=lf
+*.yml text eol=lf
+
+# Batch and PowerShell only ever run on Windows, where CRLF is the safe form:
+# cmd.exe mis-parses labels and parenthesised blocks in an LF-only .cmd file.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.bin binary
+*.pdf binary

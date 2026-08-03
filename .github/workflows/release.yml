@@ -1,0 +1,193 @@
+name: Release
+
+# Cuts a release from a tag: a real placed-and-routed T8F49 bitstream, the RP2354
+# firmware with that exact image embedded, and the reports that gate both.
+#
+# Push a tag (git tag -a v1.2.3 -m ... && git push origin v1.2.3), or run it
+# manually to rehearse the build -- a manual run with no tag input builds and
+# uploads the artifacts but publishes no release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (leave empty for a dry run)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bitstream:
+    name: FPGA bitstream
+    permissions:
+      contents: read
+    uses: ./.github/workflows/fpga-bitstream.yml
+    with:
+      artifact-name: forgix-fpga-bitstream
+      retention-days: 90
+    secrets: inherit
+
+  firmware:
+    name: RP2354 firmware with embedded bitstream
+    needs: bitstream
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Check out Pico SDK 2.3.0
+        uses: actions/checkout@v6
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: 2.3.0
+          path: .ci/pico-sdk
+          submodules: recursive
+
+      - name: Install Arm build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib
+
+      - name: Download the bitstream
+        uses: actions/download-artifact@v7
+        with:
+          name: forgix-fpga-bitstream
+          path: dist/fpga
+
+      - name: Configure RP2354 firmware against the real image
+        run: |
+          image="$GITHUB_WORKSPACE/dist/fpga/forgix_hello_world.bin"
+          test -s "$image"
+          # No PICO_NO_PICOTOOL here, unlike ci.yml: the SDK fetches and builds
+          # picotool so pico_add_extra_outputs emits a flashable UF2.
+          cmake -S firmware -B build/firmware-release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/.ci/pico-sdk" \
+            -DPICOTOOL_FETCH_FROM_GIT_PATH="$GITHUB_WORKSPACE/.ci/picotool" \
+            -DFPGA_IMAGE="$image"
+
+      - name: Compile and link
+        run: cmake --build build/firmware-release --parallel
+
+      - name: Enforce the RP2354 flash budget
+        run: |
+          arm-none-eabi-size build/firmware-release/forgix_hello_world.elf
+          firmware_size=$(wc -c < build/firmware-release/forgix_hello_world.bin)
+          if (( firmware_size == 0 || firmware_size > 2097152 )); then
+            echo "Firmware binary is outside the 1..2097152 byte budget: $firmware_size" >&2
+            exit 1
+          fi
+          echo "Firmware binary: $firmware_size / 2097152 bytes"
+
+      - name: Verify the embedded image matches the bitstream
+        run: |
+          test -s build/firmware-release/forgix_hello_world.uf2
+          test -s build/firmware-release/forgix_led_only_diagnostic.uf2
+          # embed_image.py writes the image byte-for-byte into fpga_image.c, so
+          # every image byte must appear in the linked binary.
+          python - <<'PY'
+          from pathlib import Path
+          image = Path("dist/fpga/forgix_hello_world.bin").read_bytes()
+          binary = Path("build/firmware-release/forgix_hello_world.bin").read_bytes()
+          if image not in binary:
+              raise SystemExit("the linked firmware does not contain the bitstream verbatim")
+          print(f"Embedded bitstream verified: {len(image)} bytes at offset {binary.index(image)}")
+          PY
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: forgix-rp2354-firmware
+          path: |
+            build/firmware-release/forgix_hello_world.uf2
+            build/firmware-release/forgix_hello_world.elf
+            build/firmware-release/forgix_hello_world.elf.map
+            build/firmware-release/forgix_hello_world.bin
+            build/firmware-release/forgix_led_only_diagnostic.uf2
+            build/firmware-release/forgix_led_only_diagnostic.elf
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Publish release
+    needs: [bitstream, firmware]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download the bitstream
+        uses: actions/download-artifact@v7
+        with:
+          name: forgix-fpga-bitstream
+          path: staging/fpga
+
+      - name: Download the firmware
+        uses: actions/download-artifact@v7
+        with:
+          name: forgix-rp2354-firmware
+          path: staging/firmware
+
+      - name: Assemble release payload
+        id: payload
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          mkdir -p dist
+          cp staging/firmware/forgix_hello_world.uf2 "dist/forgix-hello-world-$tag.uf2"
+          cp staging/firmware/forgix_led_only_diagnostic.uf2 \
+            "dist/forgix-led-only-diagnostic-$tag.uf2"
+          cp staging/firmware/forgix_hello_world.elf "dist/forgix-hello-world-$tag.elf"
+          cp staging/firmware/forgix_hello_world.elf.map "dist/forgix-hello-world-$tag.elf.map"
+          cp staging/fpga/forgix_hello_world.bin "dist/forgix-t8f49-$tag.bin"
+          cp staging/fpga/forgix_hello_world.hex "dist/forgix-t8f49-$tag.hex"
+          cp staging/fpga/forgix_hello_world.pinout.rpt "dist/forgix-t8f49-$tag.pinout.rpt"
+          cp staging/fpga/forgix_hello_world.timing.rpt "dist/forgix-t8f49-$tag.timing.rpt"
+          (cd dist && sha256sum ./* > SHA256SUMS)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          cat dist/SHA256SUMS
+
+      - name: Write release notes
+        run: |
+          tag='${{ steps.payload.outputs.tag }}'
+          {
+            printf '## Forgix hello world %s\n\n' "$tag"
+            printf 'Built end to end by GitHub Actions from `%s`.\n\n' "$GITHUB_SHA"
+            printf '| Component | Detail |\n| --- | --- |\n'
+            printf '| FPGA | Trion T8F49, timing model I2, Efinity 2026.1 |\n'
+            printf '| Bitstream SHA-256 | `%s` |\n' '${{ needs.bitstream.outputs.image-sha256 }}'
+            printf '| MCU | RP2354A, Pico SDK 2.3.0 |\n\n'
+            printf 'Gates enforced by this build: board pinout, setup and hold slack, '
+            printf 'the 2 MB flash budget, and a byte-for-byte check that the published '
+            printf 'bitstream is the one linked into the firmware.\n\n'
+            printf 'Flash `forgix-hello-world-%s.uf2` over USB in BOOTSEL mode. '  "$tag"
+            printf 'Verify downloads against `SHA256SUMS`.\n'
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag='${{ steps.payload.outputs.tag }}'
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --title "Forgix hello world $tag" \
+              --notes-file release-notes.md \
+              --verify-tag
+          fi

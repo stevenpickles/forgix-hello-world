@@ -15,9 +15,11 @@ if [[ ! -f "$project" ]]; then
   exit 2
 fi
 
-efinity_win="$(cygpath -w "$EFINITY_HOME")"
-repo_win="$(cygpath -w "$repo_root")"
-wrapper_short="$(cygpath -u "$(cygpath -aw -s "$repo_root/scripts/run_efinity.cmd")")"
+if [[ ! -d "$EFINITY_HOME" ]]; then
+  printf 'Efinity installation not found: %s\nSet EFINITY_HOME to a 2026.1 install.\n' \
+    "$EFINITY_HOME" >&2
+  exit 2
+fi
 
 mkdir -p "$outflow"
 rm -f \
@@ -27,7 +29,17 @@ rm -f \
   "$binary_image" \
   "$pinout_report" \
   "$timing_report"
-"$wrapper_short" "$efinity_win" "$repo_win"
+
+# Git Bash on Windows drives the .cmd wrapper through native paths; the Linux CI
+# container runs the same compile through the .sh wrapper.
+if command -v cygpath >/dev/null 2>&1; then
+  efinity_win="$(cygpath -w "$EFINITY_HOME")"
+  repo_win="$(cygpath -w "$repo_root")"
+  wrapper_short="$(cygpath -u "$(cygpath -aw -s "$repo_root/scripts/run_efinity.cmd")")"
+  "$wrapper_short" "$efinity_win" "$repo_win"
+else
+  bash "$repo_root/scripts/run_efinity.sh" "$EFINITY_HOME" "$repo_root"
+fi
 
 [[ -s "$hex_image" ]] || {
   printf 'Efinity did not produce a nonempty passive-SPI image: %s\n' "$hex_image" >&2

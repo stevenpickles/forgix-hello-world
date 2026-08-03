@@ -1,8 +1,30 @@
 name: CI
 
 on:
+  # A documentation-only change cannot alter what any check produces: nothing in
+  # scripts/ or .github/ reads these files, they are only named in comments and
+  # help text. Without this, fixing a typo in a README costs a full
+  # place-and-route and a 4.2 GB image pull.
+  #
+  # Two things to know before touching this list. It skips the entire run rather
+  # than only synthesis, because `paths-ignore` exists at workflow level and not
+  # per job. That is harmless today, but if main ever gains branch protection
+  # with required checks, a skipped run never reports them and a docs-only pull
+  # request becomes unmergeable with no visible reason -- at that point filter
+  # the expensive jobs instead of the workflow. And a push touching both docs and
+  # code still runs in full: a run is skipped only when every changed file
+  # matches. workflow_dispatch is deliberately unfiltered, so a manual run is
+  # always available.
   push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
@@ -100,8 +122,37 @@ jobs:
       - name: Verify deterministic embedding
         run: python scripts/test_embed_image.py
 
+  bitstream:
+    name: FPGA bitstream
+    # Fork pull requests hold no secrets, so they cannot authenticate to the
+    # private Efinity image. Skipping keeps their runs green and readable; the
+    # thing that actually protects the tools is the missing GHCR_TOKEN, since a
+    # fork PR runs its own copy of the workflow files and could delete this line.
+    # Every other job still gives a fork's change a complete verification.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+    uses: ./.github/workflows/fpga-bitstream.yml
+    with:
+      artifact-name: forgix-fpga-bitstream-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+      retention-days: 14
+    secrets: inherit
+
   firmware:
     name: RP2354 firmware compile
+    # Waits for synthesis so the firmware carries the bitstream this same run
+    # produced, instead of the compile fixture -- otherwise the pair that CI
+    # verifies is never the pair that ships.
+    #
+    # The dependency is deliberately soft. A fork pull request skips the
+    # bitstream job, and a plain `needs:` would then skip this job too, quietly
+    # removing firmware coverage from exactly the changes that get the least
+    # trust. `!cancelled()` runs it regardless of what happened upstream, and
+    # the fixture is used when no bitstream was produced. A failed synthesis
+    # still fails the run; it just does not also hide whether the firmware
+    # compiles.
+    needs: bitstream
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -122,11 +173,35 @@ jobs:
             cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
             libstdc++-arm-none-eabi-newlib
 
+      - name: Download the bitstream this run produced
+        if: needs.bitstream.result == 'success'
+        uses: actions/download-artifact@v7
+        with:
+          name: forgix-fpga-bitstream-${{ env.ARTIFACT_SUFFIX }}
+          path: dist/fpga
+
+      - name: Choose the image to embed
+        id: image
+        run: |
+          real="$GITHUB_WORKSPACE/dist/fpga/forgix_hello_world.bin"
+          if [[ -s "$real" ]]; then
+            echo "path=$real" >> "$GITHUB_OUTPUT"
+            echo "real=true" >> "$GITHUB_OUTPUT"
+            echo "Embedding the bitstream built by this run: $(wc -c < "$real") bytes"
+          else
+            echo "path=$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" >> "$GITHUB_OUTPUT"
+            echo "real=false" >> "$GITHUB_OUTPUT"
+            echo "No bitstream from this run; embedding the compile fixture."
+            echo "Expected for a fork pull request, which cannot pull the tools."
+          fi
+
       - name: Configure RP2354 firmware
         run: |
+          # PICO_NO_PICOTOOL: CI only needs to know this compiles and links.
+          # release.yml omits it so the SDK builds picotool and emits a UF2.
           cmake -S firmware -B build/firmware-ci -G Ninja \
             -DPICO_SDK_PATH="$GITHUB_WORKSPACE/.ci/pico-sdk" \
-            -DFPGA_IMAGE="$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" \
+            -DFPGA_IMAGE="${{ steps.image.outputs.path }}" \
             -DPICO_NO_PICOTOOL=1
 
       - name: Compile and link
@@ -146,6 +221,26 @@ jobs:
             exit 1
           fi
           echo "Firmware binary: $firmware_size / 2097152 bytes"
+
+      - name: Verify the linked firmware carries this run's bitstream
+        if: steps.image.outputs.real == 'true'
+        run: |
+          # embed_image.py generates fpga_image.c, so nothing else would notice
+          # if the wrong bytes -- or none -- were linked in. On hardware the
+          # symptom is an FPGA that never configures, which is a slow way to
+          # find out.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          image = Path(os.environ["IMAGE_PATH"]).read_bytes()
+          binary = Path("build/firmware-ci/forgix_hello_world.bin").read_bytes()
+          if image not in binary:
+              raise SystemExit("the linked firmware does not contain the bitstream verbatim")
+          print(f"Embedded bitstream verified: {len(image)} bytes at offset {binary.index(image)}")
+          PY
+        env:
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
 
       - name: Upload firmware diagnostics
         uses: actions/upload-artifact@v7
