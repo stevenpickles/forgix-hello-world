@@ -57,6 +57,8 @@ CONTROL = re.compile(r"^\s*(if|while|for|switch)\b")
 TYPEDEF_CLOSE = re.compile(r"^\}\s*([A-Za-z_]\w*)\s*;")
 TYPEDEF_OPEN = re.compile(r"^typedef\s+(struct|enum)\b\s*(\w+)?\s*$")
 ATTRIBUTE = re.compile(r"^\s*(?:__attribute__|__weak\b|__used\b|__STATIC_INLINE\b)")
+# A line ending in a binary operator runs on, so the next line aligns rather than nests.
+CONTINUATION_TAIL = re.compile(r"(?:&&|\|\||[+\-*/%&|^<>=!]=?)$")
 
 # Functions here answer to a vendor's prototype, so BSP_PascalCase does not apply to them.
 VENDOR_SECTION = "Interrupt Handler Overrides"
@@ -171,20 +173,20 @@ class Checker:
 
     def check_indent(self) -> None:
         self.apply("C7-indent")
+        depth = 0
         continued = False
         for index, line in enumerate(self.lines):
             stripped = line.strip()
-            was_continued, continued = continued, False
-            if stripped and not line.startswith((" ", "\t")):
-                continued = line.count("(") > line.count(")")
+            if not stripped or index in self.comment_lines:
                 continue
-            if not stripped or index in self.comment_lines or was_continued:
-                continued = was_continued and line.count("(") > line.count(")")
-                continue
-            indent = len(line) - len(line.lstrip(" "))
-            if indent % 4 != 0:
-                self.fail("C7-indent", index, f"indent of {indent} is not a multiple of four")
-            continued = line.count("(") > line.count(")")
+            if not continued and line.startswith(" "):
+                indent = len(line) - len(line.lstrip(" "))
+                if indent % 4 != 0:
+                    self.fail("C7-indent", index, f"indent of {indent} is not a multiple of four")
+            code = stripped.split("/*")[0].split("//")[0].rstrip()
+            depth = max(0, depth + code.count("(") - code.count(")"))
+            # A run-on statement indents to align with what it continues, not to a nesting level.
+            continued = depth > 0 or bool(CONTINUATION_TAIL.search(code))
 
     def check_allman(self) -> None:
         self.apply("C6-allman")
@@ -308,7 +310,9 @@ class Checker:
                 self.fail("B5-B6-typedef", close, f"enum typedef '{name}' must not end in _t")
             if tag != f"{name}_tag":
                 self.fail("B5-B6-typedef", index, f"{kind} tag must be '{name}_tag', found '{tag or 'none'}'")
-            if kind != "enum":
+            # B7 namespaces what escapes the translation unit. A file-local enum does not, and
+            # the reference agrees -- its own file-local constants (PC4_PORT) carry no prefix.
+            if kind != "enum" or not self.is_header:
                 continue
             for member in range(index, close):
                 constant = re.match(r"^\s{4}(\w+)\s*(?:=|,)", self.lines[member])

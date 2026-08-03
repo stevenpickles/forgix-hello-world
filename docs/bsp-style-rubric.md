@@ -193,7 +193,12 @@ typedef enum uart_id_tag
 
 The asymmetry with B5 is deliberate in the reference and is preserved here.
 
-### B7 — Enum constants: `BSP_` + SCREAMING_SNAKE
+### B7 — Enum constants that escape the file: `BSP_` + SCREAMING_SNAKE
+
+The prefix namespaces what leaves the translation unit, so it applies to enums declared in a
+header. A file-local enum — a register map, a pin assignment — uses bare SCREAMING_SNAKE. The
+reference agrees: its own file-local constants, such as `PC4_PORT` in `bsp_gpio.c`, carry no
+prefix, while the public `uart_id` members are all `BSP_UART_ID_*`.
 
 A counted enum starts with a `..._DUMMY = 0` guard value where zero is not a legal member, and ends
 with a `..._COUNT` sentinel preceded by one blank line (A7). Both the sentinel and the last real
