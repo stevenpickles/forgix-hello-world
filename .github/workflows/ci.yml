@@ -100,6 +100,22 @@ jobs:
       - name: Verify deterministic embedding
         run: python scripts/test_embed_image.py
 
+  bitstream:
+    name: FPGA bitstream
+    # Fork pull requests hold no secrets, so they cannot authenticate to the
+    # private Efinity image. Skipping keeps their runs green and readable; the
+    # thing that actually protects the tools is the missing GHCR_TOKEN, since a
+    # fork PR runs its own copy of the workflow files and could delete this line.
+    # Every other job still gives a fork's change a complete verification.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+    uses: ./.github/workflows/fpga-bitstream.yml
+    with:
+      artifact-name: forgix-fpga-bitstream-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+      retention-days: 14
+    secrets: inherit
+
   firmware:
     name: RP2354 firmware compile
     runs-on: ubuntu-24.04
