@@ -98,7 +98,7 @@ void setUp( void )
     activity_stops = 0;
     activity_polls_before_finishing = 3;
     application_console_release_Ignore();
-    application_ibit_step_count_IgnoreAndReturn( 14 );
+    application_ibit_step_count_IgnoreAndReturn( 15 );
     application_ibit_step_name_IgnoreAndReturn( "a step" );
 }
 
@@ -324,12 +324,12 @@ void test_step_submenu_lists_every_step_and_runs_the_one_chosen( void )
 }
 
 
-/* Fourteen steps do not fit in the digits, so the tail of the list is lettered. */
+/* Fifteen steps do not fit in the digits, so the tail of the list is lettered. */
 void test_step_submenu_letters_the_steps_that_run_out_of_digits( void )
 {
     open_menu_at( 0 );
     key_at( '3', 100 );
-    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "  e  a step" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "  f  a step" ) );
 
     application_diagnostics_release_led_Expect();
     application_ibit_single_ExpectAndReturn( 9, &FAKE_ACTIVITY );

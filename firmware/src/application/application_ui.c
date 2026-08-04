@@ -131,7 +131,7 @@ static void select_step( int16_t character );
 static const menu_entry_t MENU[] = {
     { '1', "Built-in test", "the whole sequence, once", action_ibit },
     { '2', "Built-in test soak", "repeat with a tally until a key is pressed", action_soak },
-    { '3', "One test at a time", "re-run a single step without the other thirteen", action_steps },
+    { '3', "One test at a time", "re-run a single step without the other fourteen", action_steps },
     { '4', "Board report", "what this board is, without judging it", action_report },
     { '5', "Blinker", "red, green, blue at 1 Hz until a key is pressed", action_blinker },
     { '6', "Advanced blinker", "heartbeat, colour wheel, aurora", action_advanced },
@@ -346,8 +346,8 @@ static void print_menu( void )
 }
 
 
-/* Steps are offered as 1..9 then a..e, because a single keypress is the whole
-   input method and fourteen of them will not fit in the digits. */
+/* Steps are offered as 1..9 then a..f, because a single keypress is the whole
+   input method and fifteen of them will not fit in the digits. */
 /// <summary>
 ///     Maps a step index onto the single key that selects it. Nothing bounds the
 ///     index: one past the table yields the next letter, which select_step then
