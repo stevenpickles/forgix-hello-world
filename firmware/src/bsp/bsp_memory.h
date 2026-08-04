@@ -42,9 +42,13 @@ typedef struct bsp_memory_report_t_tag
        device deliberately left alone. */
     bool psram_enabled;
     /* Whether the chip-select-1 device was brought up by forcing the datasheet's
-       parameters rather than by auto-detection. Detection only checks the
-       identity byte, so a device that reports an unexpected vendor can still be
-       perfectly good memory -- identity and function are separate questions. */
+       parameters rather than by auto-detection -- at any point this boot, not
+       on this call: forcing latches the SDK's initialised flag, so only the
+       first check ever takes the forcing path, and a per-call answer would
+       claim the device started auto-detecting between two reports. Detection
+       only checks the identity byte, so a device that reports an unexpected
+       vendor can still be perfectly good memory -- identity and function are
+       separate questions. */
     bool psram_forced;
     /* Vendor known-good-die and device-ID bytes as the chip reported them over
        QSPI. Captured during the SDK's own detection at boot, and refreshed by

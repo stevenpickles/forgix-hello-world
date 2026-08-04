@@ -115,6 +115,15 @@ typedef struct cs1_operation_t_tag
 static uint8_t _reportedKgd;
 static uint8_t _reportedEid;
 
+#if FORGIX_QSPI_PSRAM
+/* Whether the window was ever brought up by forcing the datasheet parameters.
+   Latched rather than derived from control flow, because a successful force
+   also latches the SDK's own initialised flag -- every later check then takes
+   the auto-detected branch and would report forced=false for a device that
+   was never auto-detected at all. */
+static bool _psramForced;
+#endif
+
 
 
 
@@ -237,10 +246,13 @@ bsp_memory_report_t BSP_MemoryCheck( void )
            Read-ID selectively and correctly, it just does not report AP Memory's
            vendor, so ask whether it works as memory rather than whether it says
            the right name. */
-        report.psram_forced = true;
         report.psram_bytes = (uint32_t) psram_get_size();
         report.psram_ok = _PsramHoldsAPattern( report.psram_bytes );
     }
+    /* From the latch, not from which branch ran: forcing sticks the SDK's
+       initialised flag, so only the first check ever takes the forcing branch
+       and a branch-derived flag would flip to false on the second report. */
+    report.psram_forced = _psramForced;
 #endif
 
     return report;
@@ -453,7 +465,12 @@ static bool _ForcePsramFromDatasheet( void )
     const int result = psram_reinitialize();
     restore_interrupts( interrupts );
 
-    return result == PICO_OK && psram_get_size() > 0u;
+    const bool forced = result == PICO_OK && psram_get_size() > 0u;
+    if ( forced )
+    {
+        _psramForced = true;
+    }
+    return forced;
 }
 
 /* Writes every pattern before reading any of them back. Checking each write
