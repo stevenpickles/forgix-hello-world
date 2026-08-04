@@ -9,7 +9,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from check_efinity_reports import EXPECTED_PINS, verify_pinout, verify_timing
+from check_efinity_reports import (
+    EXPECTED_PINS,
+    verify_pinout,
+    verify_sdc_coverage,
+    verify_timing,
+)
 from efinity_hex_to_bin import convert_file
 
 
@@ -22,6 +27,7 @@ def valid_pinout() -> str:
 
 def timing_report(setup_slack: str = "8.136", hold_slack: str = "0.642") -> str:
     return f"""
+SDC Filename: constraints/forgix_hello_world.sdc
 User target constrained clocks
   clk_32m       31.250        32.000
 Setup (Max) Clock Relationship
@@ -29,6 +35,22 @@ Setup (Max) Clock Relationship
 Hold (Min) Clock Relationship
   clk_32m       clk_32m       0.000        {hold_slack}
 """
+
+
+def sdc_text(ports: str = "clk_32m spi_cs_n") -> str:
+    names = ports.split()
+    lines = [f"create_clock -period 31.250 -name clk_32m [get_ports {{{names[0]}}}]"]
+    if len(names) > 1:
+        rest = " ".join(names[1:])
+        lines.append(f"set_false_path -from [get_ports {{{rest}}}]")
+    return "\n".join(lines) + "\n"
+
+
+def interface_csv(ports: str = "clk_32m spi_cs_n") -> str:
+    rows = ["# Efinity Interface Configuration"]
+    rows.extend(f"input, 0, {index}, 1, __bypass__, {name}"
+                for index, name in enumerate(ports.split()))
+    return "\n".join(rows) + "\n"
 
 
 class HexConversionTests(unittest.TestCase):
@@ -114,6 +136,46 @@ class ReportValidationTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "timing failed"):
                 verify_timing(timing)
+
+    def test_rejects_a_report_from_the_wrong_sdc(self) -> None:
+        # STA against a generated template or a stale constraints path passes
+        # every slack check while proving nothing about our constraints.
+        with tempfile.TemporaryDirectory() as temporary:
+            timing = self.write_report(
+                Path(temporary),
+                "timing.rpt",
+                timing_report().replace(
+                    "constraints/forgix_hello_world.sdc", "outflow/template.pt.sdc"
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "not produced from the project SDC"):
+                verify_timing(timing)
+
+    def test_accepts_matching_sdc_and_interface(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sdc = self.write_report(root, "design.sdc", sdc_text("clk_32m spi_cs_n"))
+            csv = self.write_report(root, "iface.csv", interface_csv("clk_32m spi_cs_n"))
+            with contextlib.redirect_stdout(io.StringIO()):
+                verify_sdc_coverage(sdc, csv)
+
+    def test_rejects_an_sdc_port_missing_from_the_design(self) -> None:
+        # A renamed port makes get_ports match nothing: Efinity drops the
+        # constraint without failing, so the checker has to notice instead.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sdc = self.write_report(root, "design.sdc", sdc_text("clk_32m spi_cs_renamed"))
+            csv = self.write_report(root, "iface.csv", interface_csv("clk_32m spi_cs_n"))
+            with self.assertRaisesRegex(ValueError, "spi_cs_renamed"):
+                verify_sdc_coverage(sdc, csv)
+
+    def test_rejects_an_interface_port_the_sdc_never_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sdc = self.write_report(root, "design.sdc", sdc_text("clk_32m"))
+            csv = self.write_report(root, "iface.csv", interface_csv("clk_32m button_n"))
+            with self.assertRaisesRegex(ValueError, "button_n"):
+                verify_sdc_coverage(sdc, csv)
 
 
 if __name__ == "__main__":
