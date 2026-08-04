@@ -199,7 +199,7 @@ void test_clocks_pass_when_the_measured_frequencies_match(void) {
 
     TEST_ASSERT_NOT_NULL(strstr(output, "PASS"));
     TEST_ASSERT_NOT_NULL(strstr(output, "sys=150.000MHz usb=48.000MHz"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "E12margin=ok"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "sys/usb=3.12x"));
 }
 
 /* The configured value still reads correct when a PLL never locked, so only the
@@ -228,16 +228,16 @@ void test_clocks_fail_when_the_measurement_runs_fast(void) {
     TEST_ASSERT_NOT_NULL(strstr(run_step(STEP_CLOCKS), "FAIL"));
 }
 
-/* RP2350-E12 wants clk_sys at least ten percent above clk_usb. */
-void test_clocks_fail_when_the_errata_margin_is_violated(void) {
+/* A clk_usb measured at zero is a dead domain, not a divide-by-zero. */
+void test_clocks_report_a_zero_ratio_rather_than_dividing_by_a_dead_usb_clock(void) {
     bsp_clocks_report_t clocks = healthy_clocks();
-    clocks.sys_hz = 48000000u;
+    clocks.measured_usb_hz = 0u;
     BSP_ClocksReport_ExpectAndReturn(clocks);
 
     const char *output = run_step(STEP_CLOCKS);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "FAIL"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "E12margin=VIOLATED"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "sys/usb=0.00x"));
 }
 
 void test_memory_sizing_checks_flash_and_sram_against_what_the_part_should_have(void) {

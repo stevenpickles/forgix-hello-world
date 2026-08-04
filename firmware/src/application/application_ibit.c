@@ -200,17 +200,31 @@ static application_ibit_outcome_t step_clocks(char *detail, size_t capacity) {
     const bsp_clocks_report_t clocks = BSP_ClocksReport();
     const bool sys_ok = within_tolerance(clocks.measured_sys_hz, EXPECTED_SYS_HZ);
     const bool usb_ok = within_tolerance(clocks.measured_usb_hz, EXPECTED_USB_HZ);
-    /* RP2350-E12: the USB status synchronisers need clk_sys comfortably faster
-       than clk_usb, and the errata puts the margin at ten percent. */
-    const bool errata_ok = clocks.sys_hz >= clocks.usb_hz + (clocks.usb_hz / 10u);
+    /* RP2350-E12 wants clk_sys at least ten percent above clk_usb, and there is
+       deliberately no separate verdict for it, because there cannot be a failing
+       one. A measured clk_sys within one percent of 150 MHz is by construction
+       more than ten percent above a measured clk_usb within one percent of
+       48 MHz, so a test for the margin would be a branch nothing can take. It
+       was previously read off the configured values, where it could fail --
+       which only meant it was answering a different question: whether the SDK
+       intended a legal ratio, which it always did.
 
-    snprintf(detail, capacity, "sys=%lu.%03luMHz usb=%lu.%03luMHz ref=%luHz E12margin=%s",
+       The ratio is printed instead so the margin stays visible. If the expected
+       frequencies ever stop being pinned to 150 and 48, this has to go back to
+       being a real check. */
+    const uint32_t ratio_hundredths =
+        clocks.measured_usb_hz == 0u
+            ? 0u
+            : (uint32_t)(((uint64_t)clocks.measured_sys_hz * 100u) / clocks.measured_usb_hz);
+
+    snprintf(detail, capacity, "sys=%lu.%03luMHz usb=%lu.%03luMHz ref=%luHz sys/usb=%lu.%02lux",
              (unsigned long)(clocks.measured_sys_hz / 1000000u),
              (unsigned long)((clocks.measured_sys_hz / 1000u) % 1000u),
              (unsigned long)(clocks.measured_usb_hz / 1000000u),
              (unsigned long)((clocks.measured_usb_hz / 1000u) % 1000u),
-             (unsigned long)clocks.ref_hz, errata_ok ? "ok" : "VIOLATED");
-    return verdict(sys_ok && usb_ok && errata_ok);
+             (unsigned long)clocks.ref_hz, (unsigned long)(ratio_hundredths / 100u),
+             (unsigned long)(ratio_hundredths % 100u));
+    return verdict(sys_ok && usb_ok);
 }
 
 
