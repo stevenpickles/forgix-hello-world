@@ -10,6 +10,10 @@
 # installations are unaffected. Set any of these before sourcing to override:
 #
 #   EFINITY_HOME PICO_SDK_PATH GHDL_BIN_PATH PICOTOOL_BIN_PATH PICO_TINYUSB_PATH
+#
+# Inside the forgix-build container (FORGIX_BUILD_CONTAINER=1) every one of
+# them arrives pre-set from the image's ENV contract, so the Windows defaults
+# below never apply there -- see ci/forgix-build/Dockerfile.
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   printf 'env.sh must be sourced, not executed:\n  source %s\n' "${BASH_SOURCE[0]}" >&2
