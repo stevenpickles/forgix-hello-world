@@ -89,6 +89,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      # Unlike the firmware formatter's --check, which stays local-only because its
+      # clang-format version is not pinned, vsg is pip-pinned to 3.35.0 here and in
+      # fpga/vsg.yaml's header comment. Pinning removes the failure mode that kept the
+      # other gate out: option-spelling drift cannot fail the build over formatting that
+      # is locally correct, because every runner and every contributor resolves to the
+      # same vsg. Placed before GHDL since a style violation needs no simulator to catch.
+      - name: Enforce VHDL style
+        run: |
+          pip install vsg==3.35.0
+          bash scripts/format_vhdl.sh --check
+
       - name: Install GHDL 6.0.0
         uses: ghdl/setup-ghdl@v1
         with:
