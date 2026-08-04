@@ -48,7 +48,7 @@ which one is the actual fault.
 | 4 | Memory sizing | Flash 2048 KiB, SRAM 520 KiB | The image was linked for a different part |
 | 5 | OTP flash device info | *Always `INFO`* | — |
 | 6 | Boot flash | Readable, reset vector sane | The QSPI bus or the boot die is faulty |
-| 7 | QSPI PSRAM | A pattern written across the start, middle and end of the range survives | The device on chip select 1, or the bus it shares with the boot flash |
+| 7 | QSPI PSRAM | A moving-inversion sweep over the full 2 MiB — an address-derived pattern, then its inverse, written and verified chunk by chunk through the uncached window — survives | A bad cell or address line on the chip-select-1 device, or the bus it shares with the boot flash |
 | 8 | Die temperature | Between −20 °C and +85 °C | The ADC or its reference is dead. A reading pinned at a rail is the fault worth catching; the absolute figure is several degrees out uncalibrated |
 | 9 | USB link | DTR asserted, not suspended, the host's start-of-frame counter advanced between two samples 20 ms apart, transmit FIFO not full | The host stopped framing, or the transmit path is backed up |
 | 10 | Watchdog and boot reason | The scratch marker round-trips, and the previous boot was not a watchdog reset | A prior watchdog reset means something stopped feeding the loop; the retained marker names where. A failed round-trip means the register the whole diagnosis rests on does not hold |
@@ -77,11 +77,19 @@ reason this step prints them and stops: nothing in the firmware sizes a memory
 from here. Flash comes from what the image was linked for, and the DRAM from the
 SDK's own detection.
 
-**The PSRAM identity.** The fitted device holds a pattern across its whole range
+**The PSRAM identity.** The fitted device sweeps clean across its whole range
 but reports `KGD 0x0B, EID 0x43` rather than AP Memory's `0x5D`, so it is not the
 `APS1604M-3SQR-SN` the schematic calls for. Identity and function are separate
 questions; the test answers the second and no test can answer the first. Reading
 the package marking would settle it.
+
+Step 7 re-reads those bytes on every run, in the one window the datasheet
+allows: a global reset, the 50 ns settling time, then a serial Read-ID under the
+33 MHz ceiling, with QPI re-entered immediately after in the same pass. The
+boot-time capture cannot be trusted for this — it is only legal on a cold start,
+and after a warm reboot the device is still in QPI from the previous session, so
+the serial Read-ID the SDK issues returns nonsense. The per-run read is what
+makes the reported bytes meaningful whichever way the board arrived at the menu.
 
 ## What it does not check, and why
 
@@ -95,9 +103,13 @@ the pull-up that stands in for the missing 10K resistor. It cannot test the wind
 between power-up and the first instruction, because nothing runs there. See the
 README section on the firmware lockup; fitting the resistor is the actual fix.
 
-**Anything destructive.** No SRAM march test, no deliberate watchdog reset, no
-second-core launch. Every MCU check is read-only, so a run cannot leave the board
-in a state a power cycle is needed to escape.
+**Anything destructive to the MCU.** No SRAM march test, no deliberate watchdog
+reset, no second-core launch. Every MCU check is read-only, so a run cannot leave
+the board in a state a power cycle is needed to escape. The PSRAM is the one
+deliberate exception: step 7 overwrites the whole device and global-resets it,
+which is safe because nothing in the firmware stores data there, and the device
+is re-initialised inside the same pass that reset it — an abort at any point
+leaves nothing that the next run or a power cycle is needed to repair.
 
 ## The other menu entries
 
