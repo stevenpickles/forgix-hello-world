@@ -5,11 +5,16 @@
 -- wrong value anywhere.
 --
 -- send_read_request_byte is the bench's whole point. It clocks the final bit of a read
--- request and then checks the line is still the master's mid-high-phase, and the
--- FPGA's after the following falling edge. Deleting the RTL's tx_arm_s state breaks
--- neither the readback values nor the protocol -- every register still returns the
--- right byte -- so without these two asserts the regression would be invisible here
--- and would appear as a contended bus on the board.
+-- request and pins the turnaround with three asserts: mid-high-phase before the RTL
+-- can even have seen the edge (the master owns the line, unconditionally), late in the
+-- same high phase after the RTL has had time to react wrongly (this is the one that
+-- catches a design driving oe straight out of read_wait_s -- the synchronizer puts the
+-- earliest wrong drive three clk cycles after the edge, later than the first assert
+-- samples), and after the falling edge, by which time the handover must have happened.
+-- Deleting the RTL's tx_arm_s state breaks neither the readback values nor the
+-- protocol -- every register still returns the right byte -- so without the middle
+-- assert the regression would be invisible here and would appear as a contended bus on
+-- the board.
 --
 -- Everything after that is register semantics that cannot be checked from the RTL in
 -- isolation: that reset restores the power-up LED values, that the button count
@@ -98,7 +103,17 @@ architecture sim of tb_spi_regs is
     assert dut_oe = '0'
       report "FPGA drove SDIO before MCU turnaround"
       severity failure;
-    wait for 20 ns;
+    -- The bench clock puts edges at 5 mod 10 ns, so the RTL detects the rise above at
+    -- T+25 and a design that armed oe straight out of read_wait_s drives from T+35.
+    -- Sampling at T+39 -- after that earliest wrong reaction, before the falling edge
+    -- -- is what makes premature drive fail instead of slipping between the assert
+    -- above (T+20, before the RTL can have reacted at all) and the post-fall one
+    -- below.
+    wait for 19 ns;
+    assert dut_oe = '0'
+      report "FPGA drove SDIO before the turnaround falling edge"
+      severity failure;
+    wait for 1 ns;
     sck <= '0';
     -- One falling edge later the handover must have happened, or the reply's first bit
     -- is clocked out of an undriven line. The RTL's tx_arm_s state is what puts the
