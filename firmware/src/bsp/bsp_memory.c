@@ -35,6 +35,15 @@
    address the chip-select-1 PSRAM appears at once it has been mapped. */
 #define PSRAM_WINDOW_BASE ( (uint32_t) 0x11000000u )
 
+/* The same window through the no-allocate alias. Every test access goes through
+   here, never through the cached window above: a read that hits the XIP cache
+   verifies the cache and not the DRAM, and a write that dirties a line leaves
+   the unified cache -- shared with the boot flash on chip select 0 -- with
+   writeback traffic at a time nothing controls. Never touching the cached
+   window is what makes the question "did the DRAM keep this" instead of "did
+   the cache". */
+#define PSRAM_NOCACHE_BASE ( PSRAM_WINDOW_BASE + ( XIP_NOCACHE_NOALLOC_BASE - XIP_BASE ) )
+
 /* AP Memory's known-good-die byte, at offset 5 of the Read-ID response: the
    value the datasheet says the fitted part reports. A mismatch here means an
    unexpected vendor answered, not that the memory itself is broken. */
@@ -271,7 +280,7 @@ static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
         return false;
     }
 
-    volatile uint32_t *const ptr_window = (volatile uint32_t *) PSRAM_WINDOW_BASE;
+    volatile uint32_t *const ptr_window = (volatile uint32_t *) PSRAM_NOCACHE_BASE;
     const uint32_t words = sizeBytes / (uint32_t) sizeof( uint32_t );
     const uint32_t indices[] = { 0, words / 2u, words - 1u };
     const uint32_t patterns[] = { 0xa5a5a5a5u, 0x5a5a5a5au, 0xdeadbeefu };
