@@ -196,7 +196,7 @@ void application_console_release( void )
 ///     Local rendering only: with echo off a command still runs, it just leaves
 ///     no trace of itself on the screen. Not an independent setting either --
 ///     set_quiet writes this same flag, so an explicit `echo on` lasts only
-///     until the next quiet or interactive switch.
+///     until the next quiet, interactive, or watch switch.
 /// </summary>
 void application_console_set_echo( bool enabled )
 {
@@ -221,16 +221,16 @@ void application_console_set_quiet( bool enabled )
 
 
 /// <summary>
-///     Outranks both quiet and the idle timer: it clears quiet rather than
-///     obeying it, since a watch that printed nothing would read as a hang, and
-///     the mode then survives a completed command line where idle status would
-///     be rescheduled from scratch. The first line falls a whole period from
-///     now, not immediately.
+///     Outranks both quiet and the idle timer: it leaves quiet through the
+///     composite switch rather than flag by flag, since a watch that printed
+///     nothing would read as a hang and a prompt with no echo behind it is a
+///     state no command can name. The mode then survives a completed command
+///     line where idle status would be rescheduled from scratch, and the first
+///     line falls a whole period from now, not immediately.
 /// </summary>
 void application_console_set_watch( uint32_t period_seconds )
 {
-    console.quiet = false;
-    console.auto_status_enabled = true;
+    application_console_set_quiet( false );
     console.status_mode = STATUS_WATCH;
     console.status_period_ms = period_seconds * 1000u;
     console.next_status_ms = console.current_time_ms + console.status_period_ms;

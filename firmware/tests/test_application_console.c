@@ -244,6 +244,24 @@ void test_watch_survives_a_completed_command_line( void )
 }
 
 
+/* `quiet` then `watch` used to clear the quiet flag but leave echo off -- a
+   half-quiet state no command could name, escapable only through
+   `interactive`. Arming a watch is an interactive act, so echo, prompt, and
+   telemetry all come back with it. */
+void test_watch_after_quiet_restores_echo_and_the_prompt( void )
+{
+    start_at( 0 );
+    poll_text_at( "quiet\r", 100 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_text_at( "watch 2\r", 200 );
+    MOCK_BSP_ConsoleQueueCharacter( 'x' );
+    poll_at( 300 );
+
+    TEST_ASSERT_EQUAL_STRING( "ok\nforgix> x", MOCK_BSP_ConsoleOutput() );
+}
+
+
 void test_an_empty_line_leaves_a_watch_running( void )
 {
     start_at( 0 );
