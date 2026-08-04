@@ -85,9 +85,20 @@ void application_process_command( char *line )
     {
         return;
     }
-    if ( !strcmp( argv[ 0 ], "help" ) && argc == 1 )
+    /* The gate-free commands answer their own malformed forms. Matching only
+       the exact arity and falling through would hand "help me" to the FPGA
+       gate, which on a dead FPGA blames the hardware for a typo -- on the very
+       commands kept alive so a dead FPGA can be diagnosed. */
+    if ( !strcmp( argv[ 0 ], "help" ) )
     {
-        print_help();
+        if ( argc == 1 )
+        {
+            print_help();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
     if ( !strcmp( argv[ 0 ], "quiet" ) )
@@ -149,23 +160,44 @@ void application_process_command( char *line )
         }
         return;
     }
-    if ( !strcmp( argv[ 0 ], "status" ) && argc == 1 )
+    if ( !strcmp( argv[ 0 ], "status" ) )
     {
-        application_print_status();
+        if ( argc == 1 )
+        {
+            application_print_status();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
-    if ( !strcmp( argv[ 0 ], "diag" ) && argc == 1 )
+    if ( !strcmp( argv[ 0 ], "diag" ) )
     {
-        print_memory_report();
-        application_diagnostics_print_report();
+        if ( argc == 1 )
+        {
+            print_memory_report();
+            application_diagnostics_print_report();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
     /* Above the FPGA gate: getting back to the menu is how a user reaches the
        tests that diagnose a dead FPGA, so it cannot be one of the things a dead
        FPGA takes away. */
-    if ( !strcmp( argv[ 0 ], "menu" ) && argc == 1 )
+    if ( !strcmp( argv[ 0 ], "menu" ) )
     {
-        application_ui_enter_menu();
+        if ( argc == 1 )
+        {
+            application_ui_enter_menu();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
     if ( !BSP_FpgaIsReady() )

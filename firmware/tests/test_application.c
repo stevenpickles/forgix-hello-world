@@ -373,23 +373,38 @@ void test_unknown_command_is_rejected( void )
 }
 
 
+/* The gate-free commands answer their own malformed forms without consulting
+   the FPGA at all: no readiness expectation is queued for them, so a consult
+   would fail the test through CMock. That is also the FPGA-down guarantee --
+   a typo in "help" on a board whose FPGA is dead used to be answered with the
+   FPGA error, blaming the hardware for a malformed line on the very commands
+   kept alive to diagnose it. */
 void test_known_commands_with_extra_arguments_are_rejected( void )
 {
-    const char *commands[] = {
-        "help extra", "hello extra", "off extra",   "status extra",
-        "diag extra", "menu extra",  "reset extra",
-    };
+    const char *gated_commands[] = { "hello extra", "off extra", "reset extra" };
+    const char *gate_free_commands[] = { "help extra", "status extra", "diag extra", "menu extra" };
 
-    for ( uint32_t index = 0; index < (uint32_t) ( sizeof commands / sizeof commands[ 0 ] );
-          ++index )
+    for ( uint32_t index = 0;
+          index < (uint32_t) ( sizeof gated_commands / sizeof gated_commands[ 0 ] ); ++index )
     {
         BSP_FpgaIsReady_ExpectAndReturn( true );
-        process( commands[ index ] );
+        process( gated_commands[ index ] );
+
+        TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
+        MOCK_BSP_ConsoleReset();
+    }
+
+    for ( uint32_t index = 0;
+          index < (uint32_t) ( sizeof gate_free_commands / sizeof gate_free_commands[ 0 ] );
+          ++index )
+    {
+        process( gate_free_commands[ index ] );
 
         TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
         MOCK_BSP_ConsoleReset();
     }
 }
+
 
 
 void test_command_tokenization_is_safely_limited_to_the_argument_capacity( void )
