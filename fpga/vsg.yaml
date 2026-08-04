@@ -1,0 +1,133 @@
+# VSG configuration for the forgix VHDL sources.
+#
+# Encodes the machine-enforceable half of docs/vhdl-style-rubric.md. Every rule left
+# enabled here is formatting-only, so `vsg -c fpga/vsg.yaml --fix` cannot change what the
+# design does. Rules whose default fix would alter simulation or synthesis behaviour are
+# disabled below, with the reason; rules whose default would invert a naming convention the
+# code already holds are re-cased rather than disabled.
+#
+# Pinned to vsg==3.35.0. Run over all eight files with:
+#   vsg -c fpga/vsg.yaml -ap -f fpga/rtl/*.vhd fpga/tb/*.vhd
+#
+# The -ap (--all_phases) flag matters: without it VSG stops at the first phase that has a
+# violation and reports roughly half the real surface.
+
+rule:
+
+  # ---------------------------------------------------------------------------
+  # Baseline. VSG already defaults to 2 spaces; stated so the file records it
+  # rather than inheriting it silently. (Verified: setting 4 here nearly doubles
+  # the violation count, so this key is honoured and not decoration.)
+  # ---------------------------------------------------------------------------
+  global:
+    indent_size: 2
+    indent_style: 'spaces'
+
+  # ---------------------------------------------------------------------------
+  # Semantic safety. These are disabled because their fix, or the edit they
+  # demand, would change behaviour rather than layout. Rubric section F1.
+  # ---------------------------------------------------------------------------
+
+  # Would delete signal declaration defaults. Those defaults are the FPGA's
+  # power-up state -- `:= (others => '0')` on the synchronizers and the PWM
+  # phase, `:= '1'` on the debouncer's idle level, `:= x"20"` / `:= x"40"` on the
+  # LED registers. Removing them changes what the device does at configuration.
+  signal_007:
+    disable: true
+
+  # Same, for variables. tb_pwm's `variable red_on, green_on, blue_on : natural := 0`
+  # counts from a defined start; without the default the asserts compare against 'U'.
+  variable_007:
+    disable: true
+
+  # Default demands component instantiation. The design uses direct entity
+  # instantiation (`entity work.forgix_spi port map ...`), which is a VHDL-93+
+  # feature and the simpler form. Converting would mean writing component
+  # declarations -- a structural change, not a format. Rule is not fixable, so
+  # leaving it at the default would only produce permanent noise.
+  instantiation_034:
+    method: 'entity'
+
+  # Default demands an explicit architecture identifier, `entity work.forgix_spi(rtl)`.
+  # That converts default binding into explicit binding. Each entity here has exactly
+  # one architecture, so the identifier adds nothing and pins a choice the elaborator
+  # currently makes.
+  instantiation_036:
+    action: 'remove'
+
+  # ---------------------------------------------------------------------------
+  # Naming. VSG's defaults for these three are `lower`, which would rewrite every
+  # SCREAMING_SNAKE constant and generic the code already uses consistently --
+  # DESIGN_ID, CMD_*, REG_*, STABLE_CYCLES, PERIOD, CLK_HZ, DEBOUNCE_MS.
+  # Pinned to `upper` so the rule enforces the existing convention instead of
+  # inverting it. These are no-ops against the current sources. Rubric B5.
+  # ---------------------------------------------------------------------------
+  constant_004:
+    case: 'upper'
+  generic_007:
+    case: 'upper'
+  generic_map_002:
+    case: 'upper'
+
+  # ---------------------------------------------------------------------------
+  # One identifier per declaration line. VSG defaults both of these to
+  # `consecutive: 2`, which tolerates pairs -- it would leave
+  # `signal rx_count, tx_count : ...` and `variable rise, fall : boolean` alone.
+  # The rubric takes one-per-line as the rule (C3), including grouped families
+  # like r_scaled/g_scaled/b_scaled, so the threshold drops to 1.
+  # ---------------------------------------------------------------------------
+  signal_015:
+    consecutive: 1
+  variable_015:
+    consecutive: 1
+
+  # ---------------------------------------------------------------------------
+  # Stylistic rejection. Rubric section F2.
+  # ---------------------------------------------------------------------------
+
+  # Default inserts parentheses around every if/elsif condition. VHDL does not
+  # require them, none of the eight files uses them, and `if (rst = '1') then`
+  # reads no better than `if rst = '1' then`. Set to `remove` rather than
+  # disabled so the choice is enforced in both directions.
+  if_002:
+    parenthesis: 'remove'
+
+  # ---------------------------------------------------------------------------
+  # Line length. 100 columns, matching firmware/.clang-format's ColumnLimit so
+  # the two languages in this repo wrap at the same place. VSG's default is 120
+  # at Warning severity; raised to Error so it gates. Rubric C7.
+  # ---------------------------------------------------------------------------
+  length_001:
+    length: 100
+    severity: 'Error'
+
+  # ---------------------------------------------------------------------------
+  # Everything else is VSG 3.35.0's default ruleset, which is what supplies the
+  # rubric's structural half. The rules doing the most work here, for reference:
+  #
+  #   port_map_008 / port_map_009    named association in port maps       (C1)
+  #   generic_map_005                named association in generic maps    (C1)
+  #   sequential_007, case_012,      one statement per line               (C2)
+  #     if_020, if_022, if_024,
+  #     conditional_waveforms_001,
+  #     assert_003, assert_005,
+  #     report_statement_002
+  #   signal_015, variable_015,      one identifier per declaration line  (C3)
+  #     port_026
+  #   process_016                    every process labelled               (C4)
+  #   process_018, entity_019,       named ends                           (C5)
+  #     architecture_024,
+  #     procedure_014, package_014
+  #   architecture_026, entity_017,  alignment of : := <= =>              (C8)
+  #     package_400, process_400,
+  #     declarative_part_400,
+  #     subprogram_body_400,
+  #     procedure_410,
+  #     instantiation_010,
+  #     concurrent_006
+  #
+  # port_map_008 is deliberately left at its default: it is `fixable: false`, so
+  # it gates named association in check mode but --fix cannot satisfy it by
+  # guessing. Converting the positional maps in forgix_hello_world.vhd,
+  # tb_pwm.vhd and tb_spi_regs.vhd is a hand edit, as it should be.
+  # ---------------------------------------------------------------------------
