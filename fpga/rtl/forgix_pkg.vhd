@@ -16,7 +16,7 @@ package forgix_pkg is
 
   subtype byte_t is unsigned(7 downto 0);
 
-  constant DESIGN_ID        : byte_t := x"B5";
+  constant DESIGN_ID        : byte_t := x"B6";
   constant CMD_WRITE        : byte_t := x"02";
   constant CMD_READ         : byte_t := x"03";
   constant CMD_RESET        : byte_t := x"7F";
@@ -31,6 +31,16 @@ package forgix_pkg is
   constant REG_LED_ENABLE   : byte_t := x"14";
   constant REG_BUTTON       : byte_t := x"20";
   constant REG_BUTTON_COUNT : byte_t := x"21";
+  -- REG_TICK_CAPTURE and REG_TICK_0 share an address on purpose, the same way
+  -- REG_STATUS means different things read and written: a write latches the
+  -- free-running tick counter, a read returns the latched low byte. The capture
+  -- name appears only in the write decode and the byte names only in the readback
+  -- case, so the duplicate value never collides.
+  constant REG_TICK_CAPTURE : byte_t := x"30";
+  constant REG_TICK_0       : byte_t := x"30";
+  constant REG_TICK_1       : byte_t := x"31";
+  constant REG_TICK_2       : byte_t := x"32";
+  constant REG_TICK_3       : byte_t := x"33";
 
 end package forgix_pkg;
 
