@@ -58,6 +58,12 @@ TYPEDEF_OPEN = re.compile(r"^typedef\s+(struct|enum)\b\s*(\w+)?\s*$")
 ATTRIBUTE = re.compile(r"^\s*(?:__attribute__|__weak\b|__used\b|__STATIC_INLINE\b)")
 # A line ending in a binary operator runs on, so the next line aligns rather than nests.
 CONTINUATION_TAIL = re.compile(r"(?:&&|\|\||[+\-*/%&|^<>=!]=?)$")
+# The other half of the same shape: an operand may close its parentheses and leave the operator to
+# start the next line, which the tail above cannot see. Such a line aligns under what it continues.
+CONTINUATION_HEAD = re.compile(r"^(?:&&|\|\||<<|>>|[+\-*/%&|^<>]=?|[=!]=)")
+# F: a multi-line initializer keeps its brace on the '=' line, compound literal or not. That is
+# what clang-format emits, so C6 cannot ask for the brace below without contradicting the formatter.
+INITIALIZER_BRACE = re.compile(r"(?<![=!<>])=\s*(?:\([^()]*\)\s*)?\{$")
 
 # Functions here answer to a vendor's prototype, so BSP_PascalCase does not apply to them.
 VENDOR_SECTION = "Interrupt Handler Overrides"
@@ -163,7 +169,7 @@ class Checker:
         self.violations: list[Violation] = []
         self.applied: set[str] = set()
         self.banners = self._find_banners()
-        self.comment_lines = self._block_comment_lines()
+        self.code_lines, self.comment_lines = self._scan()
 
     # -- helpers ---------------------------------------------------------------------------
 
@@ -187,28 +193,61 @@ class Checker:
             found.append((index, index + 4, title.group(1)))
         return found
 
-    def _block_comment_lines(self) -> set[int]:
-        """Line indices sitting inside a /* */ block, whose indentation is alignment not nesting."""
-        inside = set()
-        open_block = False
+    def _scan(self) -> tuple[list[str], set[int]]:
+        """One pass over the file yielding the two views the layout rules need.
+
+        The first is each line with the CONTENT of every string and character literal replaced by
+        spaces. A rule that reads code shape must not match text that is only data: a '[' inside a
+        help string is not a subscript, and a ')' inside one does not open a brace. Blanking is
+        length-preserving, so column-sensitive rules (C8) still see the columns they check.
+
+        The second is the set of lines sitting inside a /* */ block, whose indentation is alignment
+        rather than nesting. Both fall out of the same state machine because neither is decidable
+        alone: an apostrophe in a comment would open a literal that never closes, and a quoted '/*'
+        would open a comment that never ends.
+        """
+        blanked: list[str] = []
+        inside: set[int] = set()
+        in_block = False
         for index, line in enumerate(self.lines):
-            if open_block:
+            if in_block:
                 inside.add(index)
+            out: list[str] = []
             cursor = 0
-            while cursor < len(line):
-                if open_block:
-                    end = line.find("*/", cursor)
-                    if end < 0:
-                        break
-                    open_block = False
-                    cursor = end + 2
+            width = len(line)
+            while cursor < width:
+                if in_block:
+                    if line.startswith("*/", cursor):
+                        in_block = False
+                        out.append("*/")
+                        cursor += 2
+                    else:
+                        out.append(line[cursor])
+                        cursor += 1
+                elif line.startswith("/*", cursor):
+                    in_block = True
+                    out.append("/*")
+                    cursor += 2
+                elif line.startswith("//", cursor):
+                    out.append(line[cursor:])
+                    cursor = width
+                elif line[cursor] in "\"'":
+                    quote = line[cursor]
+                    out.append(quote)
+                    cursor += 1
+                    while cursor < width and line[cursor] != quote:
+                        # An escape hides its own quote, so it must be consumed as one unit.
+                        step = 2 if line[cursor] == "\\" and cursor + 1 < width else 1
+                        out.append(" " * step)
+                        cursor += step
+                    if cursor < width:
+                        out.append(quote)
+                        cursor += 1
                 else:
-                    start = line.find("/*", cursor)
-                    if start < 0:
-                        break
-                    open_block = True
-                    cursor = start + 2
-        return inside
+                    out.append(line[cursor])
+                    cursor += 1
+            blanked.append("".join(out))
+        return blanked, inside
 
     def _section_at(self, index: int) -> str | None:
         """Title of the banner section containing this line, if any."""
@@ -222,7 +261,7 @@ class Checker:
     def _definitions(self) -> list[tuple[int, str, str]]:
         """(index, return_type_and_name, name) for every Allman function definition."""
         found = []
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             match = SIGNATURE.match(line)
             if not match:
                 continue
@@ -254,26 +293,26 @@ class Checker:
         self.apply("C7-indent")
         depth = 0
         continued = False
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             stripped = line.strip()
             if not stripped or index in self.comment_lines:
                 continue
-            if not continued and line.startswith(" "):
+            code = stripped.split("/*")[0].split("//")[0].rstrip()
+            if not continued and not CONTINUATION_HEAD.match(code) and line.startswith(" "):
                 indent = len(line) - len(line.lstrip(" "))
                 if indent % 4 != 0:
                     self.fail("C7-indent", index, f"indent of {indent} is not a multiple of four")
-            code = stripped.split("/*")[0].split("//")[0].rstrip()
             depth = max(0, depth + code.count("(") - code.count(")"))
             # A run-on statement indents to align with what it continues, not to a nesting level.
             continued = depth > 0 or bool(CONTINUATION_TAIL.search(code))
 
     def check_allman(self) -> None:
         self.apply("C6-allman")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             if index in self.comment_lines:
                 continue
             code = line.split("/*")[0].split("//")[0].rstrip()
-            if re.search(r"\)\s*\{$", code):
+            if re.search(r"\)\s*\{$", code) and not INITIALIZER_BRACE.search(code):
                 self.fail("C6-allman", index, "opening brace shares the line; Allman puts it below")
             if re.search(r"\}\s*else\b", code) or re.search(r"\belse\s*\{$", code):
                 self.fail("C6-allman", index, "else must start its own line with its brace below")
@@ -341,7 +380,7 @@ class Checker:
 
     def check_spacing(self) -> None:
         self.apply("C1-paren", "C2-void", "C3-subscript", "C8-column")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             if index in self.comment_lines:
                 continue
             code = line.split("/*")[0].split("//")[0]
@@ -368,7 +407,7 @@ class Checker:
                 rule = self.profile.public_function
                 if rule.rejects(name):
                     self.fail("B1-public", index, f"public function '{name}' needs {rule.shape}")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             match = re.match(r"^static\s+(const\s+)?[\w ]+?[\w*]\s+(\w+)\s*(?:\[[^\]]*\])?\s*(?:=.*)?;", line)
             if not match:
                 continue
@@ -379,17 +418,18 @@ class Checker:
 
     def check_typedefs(self) -> None:
         self.apply("B5-B6-typedef", "B7-enum-constant")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             opening = TYPEDEF_OPEN.match(line)
             if not opening:
                 continue
             kind, tag = opening.group(1), opening.group(2)
             close = next(
-                (i for i in range(index, len(self.lines)) if TYPEDEF_CLOSE.match(self.lines[i])), None
+                (i for i in range(index, len(self.code_lines)) if TYPEDEF_CLOSE.match(self.code_lines[i])),
+                None,
             )
             if close is None:
                 continue
-            name = TYPEDEF_CLOSE.match(self.lines[close]).group(1)
+            name = TYPEDEF_CLOSE.match(self.code_lines[close]).group(1)
             rule = self.profile.struct_typedef if kind == "struct" else self.profile.enum_typedef
             if rule.rejects(name):
                 self.fail("B5-B6-typedef", close, f"{kind} typedef '{name}' {rule.shape}")
@@ -404,7 +444,7 @@ class Checker:
             if kind != "enum" or not self.is_header:
                 continue
             for member in range(index, close):
-                constant = re.match(r"^\s{4}(\w+)\s*(?:=|,)", self.lines[member])
+                constant = re.match(r"^\s{4}(\w+)\s*(?:=|,)", self.code_lines[member])
                 rule = self.profile.enum_constant
                 if constant and rule.rejects(constant.group(1)):
                     self.fail("B7-enum-constant", member, f"'{constant.group(1)}' needs {rule.shape}")
@@ -440,7 +480,7 @@ class Checker:
             return
         self.apply("A7-declarations")
         previous = None
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             if not DECLARATION.match(line):
                 continue
             if previous is not None:
