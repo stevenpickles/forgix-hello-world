@@ -1,3 +1,24 @@
+-- Guards the MCU-facing contract of the whole design, driving the top-level entity
+-- through the same transaction shapes bsp_fpga.c bit-bangs. Its real subject is the
+-- half-duplex turnaround on SDIO, which is the one place where both ends can drive the
+-- same wire and where a mistake shows up as contention on hardware rather than as a
+-- wrong value anywhere.
+--
+-- send_read_request_byte is the bench's whole point. It clocks the final bit of a read
+-- request and then checks the line is still the master's mid-high-phase, and the
+-- FPGA's after the following falling edge. Deleting the RTL's tx_arm_s state breaks
+-- neither the readback values nor the protocol -- every register still returns the
+-- right byte -- so without these two asserts the regression would be invisible here
+-- and would appear as a contended bus on the board.
+--
+-- Everything after that is register semantics that cannot be checked from the RTL in
+-- isolation: that reset restores the power-up LED values, that the button count
+-- survives a round trip and clears on a zero write, and that an unrecognized command
+-- sets a status bit that is still set by the time a separate transaction reads it.
+--
+-- This bench binds the top-level entity, whose port order is frozen by the pin
+-- constraints. That is why the instantiation below is named rather than positional.
+
 library ieee;
   use ieee.std_logic_1164.all;
   use ieee.numeric_std.all;
@@ -20,6 +41,12 @@ architecture sim of tb_spi_regs is
   signal led_g_n      : std_ulogic;
   signal led_b_n      : std_ulogic;
 
+  -- 40 ns per half period, against a 10 ns clk: four clk cycles per sck level. The RTL
+  -- oversamples sck through a three-stage synchronizer and detects edges two stages
+  -- deep, so an sck level narrower than about three clk cycles would not be seen at
+  -- all. Four is deliberately close to that floor -- the real bus runs ~64 cycles per
+  -- half period, and a bench at the same ratio would prove nothing about the sampling.
+
   procedure send_byte (
     signal sck     : out std_ulogic;
     signal sdio    : out std_ulogic;
@@ -38,6 +65,11 @@ architecture sim of tb_spi_regs is
     end loop;
 
   end procedure send_byte;
+
+  -- Sends the last byte of a read request, which is the byte the bus turns around on.
+  -- Identical to send_byte for the first seven bits; the eighth is written out longhand
+  -- because the two asserts have to land inside it. Modelled on the MCU releasing SDIO
+  -- partway through the final high phase, which is what _SendByte does in bsp_fpga.c.
 
   procedure send_read_request_byte (
     signal sck     : out std_ulogic;
@@ -60,12 +92,17 @@ architecture sim of tb_spi_regs is
     sdio <= value(0);
     wait for 40 ns;
     sck  <= '1';
+    -- Mid-high-phase of the last bit. The master still owns the line here, so the FPGA
+    -- must not be driving; if it is, both ends are.
     wait for 20 ns;
     assert dut_oe = '0'
       report "FPGA drove SDIO before MCU turnaround"
       severity failure;
     wait for 20 ns;
-    sck  <= '0';
+    sck <= '0';
+    -- One falling edge later the handover must have happened, or the reply's first bit
+    -- is clocked out of an undriven line. The RTL's tx_arm_s state is what puts the
+    -- transition here and nowhere else.
     wait for 40 ns;
     assert dut_oe = '1'
       report "FPGA did not drive SDIO after turnaround"
@@ -126,6 +163,10 @@ begin
 
   clk <= not clk after 5 ns;
 
+  -- CLK_HZ => 1_000 makes the debouncer's window a single cycle, so the button press
+  -- below registers immediately instead of after 320_000 cycles. It only reaches the
+  -- debouncer; nothing else in the design derives timing from the generic, and in
+  -- particular the SPI engine's behaviour is unaffected by it.
   dut : entity work.forgix_hello_world
     generic map (
       CLK_HZ => 1_000, DEBOUNCE_MS => 1
@@ -189,8 +230,15 @@ begin
   begin
 
     spi_sck <= '0';
+    -- Outlast the power-on reset before the first transaction. por counts to 0xFF, so
+    -- rst holds for 256 clk_32m edges -- 2.56 us at this bench's 10 ns clock. Anything
+    -- clocked in before that is swallowed by the reset and the ping below would fail
+    -- for a reason that has nothing to do with the SPI engine.
     wait for 3 us;
 
+    -- Ping first: it is the only exchange that proves the design is alive and is this
+    -- design, so a failure here localizes to configuration rather than to the register
+    -- semantics everything below depends on.
     ping(result);
     assert result = DESIGN_ID
       report "ping did not return the design ID"
@@ -222,6 +270,9 @@ begin
       report "LED enable readback mismatch"
       severity failure;
 
+    -- One clean press and release. 100 ns is 10 clk cycles, comfortably past the
+    -- two-stage input synchronizer and the one-cycle debounce window this bench's
+    -- CLK_HZ override produces, without being long enough to look like two presses.
     button_n <= '0';
     wait for 100 ns;
     button_n <= '1';
@@ -256,6 +307,10 @@ begin
       report "reset did not enable LEDs"
       severity failure;
 
+    -- x"55" is not a command. The error bit it sets has to survive the end of this
+    -- transaction and be readable by the separate one below -- a design that reported
+    -- the error only for the duration of the offending exchange would be useless to a
+    -- polling host and would pass every other check in this file.
     begin_transaction(spi_cs_n);
     send_byte(spi_sck, spi_sdio_in, x"55");
     end_transaction(spi_cs_n);

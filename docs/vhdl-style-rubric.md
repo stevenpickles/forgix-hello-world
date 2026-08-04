@@ -23,10 +23,24 @@ minus one that fights the existing baseline. The baseline — 2-space indent, lo
 keywords, `std_ulogic` throughout — was already consistent across all eight files and is kept.
 This rubric standardizes and extends what is there; it does not import an alien style.
 
-**Status: written, not yet applied.** No VHDL file has been reformatted. Applying it is a
-separate step, and the Adoption section below describes the intended order. Under
-`fpga/vsg.yaml` the eight files currently carry **653 violations**; `vsg --fix` resolves 588
-of them mechanically and leaves 65 that need a human.
+**Status: applied.** All eight files are at **zero violations** under `fpga/vsg.yaml`, and
+all three testbenches pass — stopping at 2830 ns, 2577 ns and 45140 ns, the same simulated
+times they reached before any of this, which is the evidence that none of it changed the
+design. It went in as the three commits the Adoption section describes: the 588 mechanical
+fixes, then the 65 hand repairs, then section D.
+
+Two things worth knowing for the next pass. `--fix` rejects `-ap` outright, so the flag
+belongs on the check run that verifies the fix and not on the fix itself. And adding a
+comment inside a declarative block splits its alignment group, so section D's edits made
+section C8's rules fail again — re-running `--fix` after writing comments is part of the
+job, not a sign something went wrong.
+
+The sections below are written in the present tense of the tree as it was *before* this was
+applied: the violation counts, "seven of the nine processes are unlabelled", "the eight
+files contain zero comments", and the Adoption ordering all describe the starting state.
+They are kept as written because they are the argument for each rule and the record of what
+the work cost. The rules themselves are current; only the observations about the code are
+historical.
 
 Every rule has a stable ID. Renumbering them breaks the cross-references in `fpga/vsg.yaml`,
 which cites them by ID in its comments.

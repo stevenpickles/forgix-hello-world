@@ -1,3 +1,21 @@
+-- SPI target for the register protocol, in the shape the MCU bit-bangs it: chip select
+-- frames a transaction, a command byte selects what follows, and reads turn the single
+-- SDIO line around mid-transaction so the FPGA can answer on the same wire.
+--
+-- The important structural fact is that sck is not a clock here. Everything runs on
+-- clk and sck is sampled like any other input, with edges recovered in the fabric.
+-- That keeps the whole design in one clock domain and makes it trivially synthesizable,
+-- but it imposes a rate limit the entity cannot express: sck must stay well below clk,
+-- because each sck edge has to be several clk cycles wide to be seen at all. The MCU
+-- bit-bangs at roughly 500 kHz against a 32 MHz clk, so the margin is about 64 cycles
+-- per half period. A hardware SPI master pushed at clk/4 would silently drop bits.
+--
+-- Framing is enforced by cs_n rather than by counting: deasserting chip select at any
+-- point abandons the transaction and returns to command_s, so a stalled or malformed
+-- exchange cannot wedge the engine. `error` is sticky in the other direction -- it
+-- survives to the next status read and is only cleared by CMD_RESET or rst -- because
+-- the MCU polls it long after the offending transaction has ended.
+
 library ieee;
   use ieee.std_logic_1164.all;
   use ieee.numeric_std.all;
@@ -25,8 +43,16 @@ end entity forgix_spi;
 
 architecture rtl of forgix_spi is
 
+  -- read_wait_s and tx_arm_s are not part of the wire protocol; they are the two cycles
+  -- of internal delay between the last address bit and the first reply bit. See the
+  -- turnaround comment further down.
+
   type state_t is (command_s, address_s, data_s, read_wait_s, tx_arm_s, tx_s, done_s);
 
+  -- Power-up state. These initializers are the FPGA's configuration-time values and
+  -- matter beyond simulation tidiness: cs_sync starts all ones so a design that comes
+  -- up with chip select already low is treated as idle until it sees a real assertion,
+  -- rather than decoding whatever the line happened to be doing during configuration.
   signal state    : state_t                       := command_s;
   signal command  : byte_t                        := (others => '0');
   signal address  : byte_t                        := (others => '0');
@@ -54,6 +80,15 @@ begin
   begin
 
     if rising_edge(clk) then
+      -- Three stages, not the usual two. Two flops are enough to make a metastable
+      -- sample settle; the third exists so that edge detection has a settled *pair* to
+      -- compare. Bit 0 is the freshest sample and has been through one flop only, so
+      -- it is exactly the bit that may still be resolving. Comparing bits 2 and 1
+      -- means both operands of the comparison are twice-registered, and a metastable
+      -- capture can no longer manufacture an sck edge that never happened.
+      --
+      -- Reading the settled end costs two clk cycles of latency on every edge, which
+      -- is invisible at the ~64 cycles per sck half period this runs at.
       sck_sync   <= sck_sync(1 downto 0) & sck;
       cs_sync    <= cs_sync(1 downto 0) & cs_n;
       io_sync    <= io_sync(1 downto 0) & sdio_in;
@@ -80,11 +115,26 @@ begin
       else
         activity <= '1';
 
+        -- One cycle spent letting the register file answer. reg_read was asserted on
+        -- the cycle that entered this state, so reg_rdata is only valid now.
         if state = read_wait_s then
           tx_shift <= reg_rdata;
           tx_count <= 0;
           sdio_out <= reg_rdata(7);
           state    <= tx_arm_s;
+        -- The turnaround. SDIO is one wire with two drivers, and this state exists
+        -- purely to keep oe low across the remainder of the last address bit.
+        --
+        -- The MCU releases the line partway through that bit's high phase, after it
+        -- has clocked the bit in (see _SendByte's releaseAfterSample in bsp_fpga.c).
+        -- If the FPGA asserted oe as soon as the byte completed, both ends would be
+        -- driving for the rest of that high phase. Waiting for the next falling edge
+        -- puts the handover in the gap where neither end is clocking data, at the cost
+        -- of half an sck period of latency.
+        --
+        -- tb_spi_regs pins both halves of this contract: it asserts oe is still low
+        -- mid-high-phase ("FPGA drove SDIO before MCU turnaround") and that oe has
+        -- risen after the falling edge. Removing this state passes nothing.
         elsif state = tx_arm_s and fall then
           oe    <= '1';
           state <= tx_s;
@@ -100,7 +150,15 @@ begin
           end if;
         end if;
 
+        -- Receive is gated on oe so the engine does not clock in its own reply while
+        -- it is driving the line.
         if oe = '0' and rise then
+          -- io_sync(2), not io_sync(0), and for a reason beyond metastability: `rise`
+          -- was derived from bits 2 and 1, so the sck edge being acted on is already
+          -- two clk cycles in the past. Bit 2 is the data sample from that same moment.
+          -- Taking the freshest bit here would pair a data value with an edge two
+          -- cycles older than it -- harmless at this sck rate, wrong in principle, and
+          -- the first thing to break if the bus were ever sped up.
           received := rx_shift(6 downto 0) & io_sync(2);
           if rx_count = 7 then
             rx_shift <= received;
@@ -143,6 +201,9 @@ begin
                 reg_write <= '1';
                 state     <= done_s;
 
+              -- Reached when a byte arrives in done_s, i.e. the master kept clocking
+              -- past the end of the transaction. Flagged rather than ignored because
+              -- it means the two ends disagree about the protocol.
               when others =>
 
                 error <= '1';

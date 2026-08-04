@@ -1,3 +1,13 @@
+-- The wire protocol shared by the FPGA design and the MCU that talks to it. Every
+-- constant here has a counterpart in firmware/src/bsp/bsp_fpga.c, and the two copies
+-- are only kept in step by hand -- nothing in either build checks them against each
+-- other. Changing a value here without changing it there leaves a design that
+-- configures, reports CDONE, and then answers every transaction wrongly.
+--
+-- DESIGN_ID is the byte a CMD_PING returns. It is the only evidence the MCU has that
+-- the bitstream it just loaded is this design rather than a stale or corrupt one, so
+-- it must change whenever the register map changes meaning.
+
 library ieee;
   use ieee.std_logic_1164.all;
   use ieee.numeric_std.all;

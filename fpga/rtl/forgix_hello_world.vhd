@@ -1,3 +1,18 @@
+-- Top level: the register file, and the wiring between the SPI target, the debouncer
+-- and the PWM driver. Everything the MCU can observe or change about this design goes
+-- through the register file below, so this is the file that defines what the device
+-- actually is; the three sub-entities are mechanism.
+--
+-- The register file is where the design stops being obvious. Reading a register and
+-- writing the same address are not inverses: reads are a pure combinational function
+-- of the current state, while a write to REG_STATUS acknowledges sticky bits rather
+-- than storing anything. The two directions are built by two separate processes below
+-- and share only the address.
+--
+-- Port names and port order are frozen. fpga/constraints/forgix_hello_world_io.isf
+-- binds them to pins by name, and nothing in the VHDL toolchain reads that file, so a
+-- rename here fails at place-and-route or, worse, at the bench.
+
 library ieee;
   use ieee.std_logic_1164.all;
   use ieee.numeric_std.all;
@@ -24,29 +39,48 @@ end entity forgix_hello_world;
 
 architecture rtl of forgix_hello_world is
 
-  signal por          : unsigned(7 downto 0) := (others => '0');
-  signal rst          : std_ulogic;
-  signal wr           : std_ulogic;
-  signal rd           : std_ulogic;
-  signal reset_regs   : std_ulogic;
-  signal activity     : std_ulogic;
-  signal spi_error    : std_ulogic;
-  signal addr         : byte_t;
-  signal wdata        : byte_t;
-  signal rdata        : byte_t;
-  signal red          : byte_t               := x"00";
-  signal green        : byte_t               := x"00";
-  signal blue         : byte_t               := x"20";
-  signal brightness   : byte_t               := x"40";
-  signal led_enable   : std_ulogic           := '1';
-  signal raw_button   : std_ulogic           := '0';
-  signal button       : std_ulogic           := '0';
-  signal button_press : std_ulogic           := '0';
-  signal button_event : std_ulogic           := '0';
-  signal button_count : byte_t               := x"00";
+  signal por        : unsigned(7 downto 0) := (others => '0');
+  signal rst        : std_ulogic;
+  signal wr         : std_ulogic;
+  signal rd         : std_ulogic;
+  signal reset_regs : std_ulogic;
+  signal activity   : std_ulogic;
+  signal spi_error  : std_ulogic;
+  signal addr       : byte_t;
+  signal wdata      : byte_t;
+  signal rdata      : byte_t;
+  -- Power-up state, and the appearance of the board out of configuration: a dim blue
+  -- LED at a quarter brightness. These four values are duplicated in the reset arm of
+  -- register_file below, because a CMD_RESET has to reproduce the power-up look without
+  -- reconfiguring the FPGA. tb_spi_regs checks the pair agree by resetting and reading
+  -- back x"20" and x"40", which is the only thing keeping the two copies in step.
+  signal red          : byte_t     := x"00";
+  signal green        : byte_t     := x"00";
+  signal blue         : byte_t     := x"20";
+  signal brightness   : byte_t     := x"40";
+  signal led_enable   : std_ulogic := '1';
+  signal raw_button   : std_ulogic := '0';
+  signal button       : std_ulogic := '0';
+  signal button_press : std_ulogic := '0';
+  signal button_event : std_ulogic := '0';
+  signal button_count : byte_t     := x"00";
 
 begin
 
+  -- Power-on reset. This board has no reset pin and no PLL lock to wait on, so the
+  -- only reset the design gets is the one it makes for itself: hold rst asserted until
+  -- a counter has seen a fixed number of clk_32m edges, which is proof the external
+  -- oscillator is actually running rather than still starting.
+  --
+  -- The counter is a byte because that is the cheapest width that gives a comfortable
+  -- margin, not because 256 was measured. 256 cycles is 8 us at 32 MHz. The oscillator
+  -- is enabled by the MCU before it starts loading the bitstream and the MCU then tears
+  -- down its SPI peripheral and re-initializes GPIO before the first register
+  -- transaction, so the real gap is milliseconds. Anything from a few cycles upward
+  -- would work; this is sized for headroom and costs one 8-bit counter.
+  --
+  -- Note the counter saturates rather than wraps, and nothing re-arms it. rst asserts
+  -- exactly once per configuration, so this is a startup reset and not a watchdog.
   rst <= '1' when por /= x"FF" else
          '0';
 
@@ -107,6 +141,9 @@ begin
       led_b_n    => led_b_n
     );
 
+  -- The writable state. reset_regs is CMD_RESET arriving over SPI and is treated
+  -- identically to power-on reset, so a host can restore the device to its
+  -- out-of-configuration appearance without reloading the bitstream.
   register_file : process (clk_32m) is
   begin
 
@@ -120,8 +157,15 @@ begin
         button_event <= '0';
         button_count <= x"00";
       else
+        -- button_press is the debouncer's single-cycle strobe, so this counts presses
+        -- and not levels. button_event latches until acknowledged, which is what lets
+        -- a host poll slowly and still not miss a press.
         if button_press = '1' then
           button_event <= '1';
+          -- Saturates at 0xFF instead of wrapping. A wrapped count is
+          -- indistinguishable from a small one, so a host that polls late would read
+          -- "3 presses" after 259 of them. Sticking at 0xFF at least reads as "at
+          -- least 255, you are not keeping up".
           if button_count /= x"FF" then
             button_count <= button_count + 1;
           end if;
@@ -130,6 +174,12 @@ begin
 
           case addr is
 
+            -- REG_STATUS is read/write with different meanings each way. Reading it
+            -- returns live status; writing it stores nothing and only acknowledges
+            -- sticky bits. Bit 2 is write-one-to-clear on button_event, matching the
+            -- bit position the same event is reported in, so a host clears exactly
+            -- what it just read. Writing zeros clears nothing, which is what makes a
+            -- read-modify-write safe against a press landing in between.
             when REG_STATUS =>
 
               if wdata(2) = '1' then
@@ -156,6 +206,11 @@ begin
 
               led_enable <= wdata(0);
 
+            -- Only a write of zero does anything, so the register cannot be set to an
+            -- arbitrary count and a host cannot fabricate presses. Clearing the count
+            -- clears the event with it, because the two describe the same presses and
+            -- leaving the event latched after zeroing the count would report a press
+            -- the count no longer admits to.
             when REG_BUTTON_COUNT =>
 
               if wdata = x"00" then
@@ -175,9 +230,18 @@ begin
 
   end process register_file;
 
+  -- Read side of the register file: combinational, process (all), and holding no state
+  -- of its own. Reads therefore have no side effects and cost the SPI engine a single
+  -- cycle in read_wait_s.
   readback_mux : process (all) is
   begin
 
+    -- Default first, which is what stops this inferring a latch: every path through
+    -- the case leaves rdata assigned, including the arms that fall through to null.
+    --
+    -- x"EE" rather than zero so an unmapped address is distinguishable from a register
+    -- that genuinely holds zero. A host reading a register this design does not
+    -- implement gets an answer that looks wrong on sight instead of a plausible one.
     rdata <= x"EE";
 
     case addr is
@@ -186,6 +250,9 @@ begin
 
         rdata <= DESIGN_ID;
 
+      -- Bit 0 is a constant '1'. It is not a flag about anything: it is the evidence
+      -- that this multiplexer answered at all, which distinguishes a live design from
+      -- a floating bus reading back as all zeros.
       when REG_STATUS =>
 
         rdata    <= (others => '0');

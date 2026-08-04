@@ -1,3 +1,19 @@
+-- Guards the PWM duty cycle against the 8x8 multiply being truncated at the wrong end.
+-- Red at 0xFF with brightness 0x80 must be lit for exactly 127 of 256 phases: the
+-- expected value is 127 and not 128 because the duty is the high byte of the product,
+-- 255 * 128 / 256, and the comparison against phase is strict. An off-by-one in the
+-- r_scaled(15 downto 8) slice, or taking the low byte instead, still produces a lit
+-- LED that responds to both inputs -- it fails here rather than as a dim LED on the
+-- bench, which is the entire reason this counts phases instead of watching a pin.
+--
+-- The green channel at half the intensity pins the ratio as well as the endpoint, so a
+-- scaling bug that happens to land on 127 for red still has to explain 64 for green.
+-- Blue at zero guards the other boundary: strict comparison means zero is off for all
+-- 256 phases, and a <= would light it for one.
+--
+-- The last check is about the enable path only, and exists because an active-low
+-- output makes "off" the value a broken design is most likely to produce by accident.
+
 library ieee;
   use ieee.std_logic_1164.all;
   use ieee.numeric_std.all;
@@ -55,9 +71,15 @@ begin
     blue       <= x"00";
     brightness <= x"80";
 
+    -- Exactly one full PWM period: phase is 8 bits and free-running, so 256 clocks
+    -- visits every phase value once. Sampling more or fewer would make the counts
+    -- below depend on where the loop started relative to phase.
     for cycle in 0 to 255 loop
 
       wait until rising_edge(clk);
+      -- Settle past the delta cycles before sampling. The outputs are combinational
+      -- functions of phase, which has only just been clocked, so reading them in the
+      -- same delta would see the previous phase's decision.
       wait for 1 ns;
 
       if led_r_n = '0' then
