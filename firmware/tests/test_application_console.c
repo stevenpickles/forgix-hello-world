@@ -221,6 +221,67 @@ void test_watch_uses_the_requested_period_and_stops_before_echoing_a_key( void )
 }
 
 
+/* The regression this pins: any keystroke used to stop the watch outright, so
+   the completed line fell back to the 10 s idle cadence and an hourly watch
+   silently became a ten-second one -- or a two-second one silently a ten-second
+   one. A completed command must hand the watch back with its period intact. */
+void test_watch_survives_a_completed_command_line( void )
+{
+    start_at( 0 );
+    MOCK_BSP_ConsoleReset();
+    poll_text_at( "watch 2\r", 100 );
+    expect_ready_status( 14 );
+    poll_at( 2100 );
+    poll_text_at( "help\r", 2200 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_at( 4199 );
+    expect_ready_status( 15 );
+    poll_at( 4200 );
+
+    TEST_ASSERT_EQUAL_STRING( "\r\nid=B6 status=01 button=03 count=15 fpga_status=1\nforgix> ",
+                              MOCK_BSP_ConsoleOutput() );
+}
+
+
+void test_an_empty_line_leaves_a_watch_running( void )
+{
+    start_at( 0 );
+    MOCK_BSP_ConsoleReset();
+    poll_text_at( "watch 2\r", 100 );
+    poll_text_at( "\r", 300 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_at( 2299 );
+    expect_ready_status( 16 );
+    poll_at( 2300 );
+
+    TEST_ASSERT_EQUAL_STRING( "\r\nid=B6 status=01 button=03 count=16 fpga_status=1\nforgix> ",
+                              MOCK_BSP_ConsoleOutput() );
+}
+
+
+/* Cancelling is the one line ending that ends a watch: the ^C is aimed at
+   whatever is currently claiming the terminal, and a watch that survived it
+   would keep claiming it every period. */
+void test_ctrl_c_ends_a_running_watch_and_falls_back_to_idle_status( void )
+{
+    start_at( 0 );
+    MOCK_BSP_ConsoleReset();
+    poll_text_at( "watch 2\r", 100 );
+    MOCK_BSP_ConsoleQueueCharacter( 3 );
+    poll_at( 300 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_at( 2300 );
+    TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
+
+    expect_ready_status( 17 );
+    poll_at( 10300 );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "count=17" ) );
+}
+
+
 void test_watch_off_suppresses_idle_status_until_interactive_mode_is_restored( void )
 {
     start_at( 0 );
