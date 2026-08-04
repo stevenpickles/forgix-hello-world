@@ -122,7 +122,12 @@ static void enter_menu(void) {
     print_menu();
 }
 
+/* An activity owns the LED for its whole run, not just the parts that paint it.
+   The heartbeat is a 2 Hz writer and every activity here holds a colour for
+   longer than that, so sharing the LED means the heartbeat showing through the
+   middle of whatever the activity was trying to display. */
 static void start_activity(const application_activity_t *activity) {
+    application_diagnostics_release_led();
     ui.mode = UI_MODE_ACTIVITY;
     ui.activity = activity;
     activity->start();
@@ -130,6 +135,7 @@ static void start_activity(const application_activity_t *activity) {
 
 static void finish_activity(void) {
     ui.activity = NULL;
+    application_diagnostics_reclaim_led();
     enter_menu();
 }
 

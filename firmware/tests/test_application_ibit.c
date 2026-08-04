@@ -87,6 +87,7 @@ static bsp_memory_report_t healthy_memory(void) {
         .psram_forced = false,
         .psram_kgd = 0x0bu,
         .psram_eid = 0x43u,
+        .psram_enabled = true,
     };
     return memory;
 }
@@ -199,7 +200,7 @@ void test_clocks_pass_when_the_measured_frequencies_match(void) {
 
     TEST_ASSERT_NOT_NULL(strstr(output, "PASS"));
     TEST_ASSERT_NOT_NULL(strstr(output, "sys=150.000MHz usb=48.000MHz"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "E12margin=ok"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "sys/usb=3.12x"));
 }
 
 /* The configured value still reads correct when a PLL never locked, so only the
@@ -228,16 +229,16 @@ void test_clocks_fail_when_the_measurement_runs_fast(void) {
     TEST_ASSERT_NOT_NULL(strstr(run_step(STEP_CLOCKS), "FAIL"));
 }
 
-/* RP2350-E12 wants clk_sys at least ten percent above clk_usb. */
-void test_clocks_fail_when_the_errata_margin_is_violated(void) {
+/* A clk_usb measured at zero is a dead domain, not a divide-by-zero. */
+void test_clocks_report_a_zero_ratio_rather_than_dividing_by_a_dead_usb_clock(void) {
     bsp_clocks_report_t clocks = healthy_clocks();
-    clocks.sys_hz = 48000000u;
+    clocks.measured_usb_hz = 0u;
     BSP_ClocksReport_ExpectAndReturn(clocks);
 
     const char *output = run_step(STEP_CLOCKS);
 
     TEST_ASSERT_NOT_NULL(strstr(output, "FAIL"));
-    TEST_ASSERT_NOT_NULL(strstr(output, "E12margin=VIOLATED"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "sys/usb=0.00x"));
 }
 
 void test_memory_sizing_checks_flash_and_sram_against_what_the_part_should_have(void) {
@@ -296,6 +297,22 @@ void test_psram_stays_quiet_about_identity_when_the_expected_part_is_fitted(void
     TEST_ASSERT_NULL(strstr(run_step(STEP_PSRAM), "schematic"));
 }
 
+/* A build with the device compiled out is not a board with a broken one, and the
+   report alone cannot tell them apart -- both read zero bytes and not ok. */
+void test_psram_is_skipped_when_the_build_never_brought_it_up(void) {
+    bsp_memory_report_t memory = healthy_memory();
+    memory.psram_enabled = false;
+    memory.psram_bytes = 0;
+    memory.psram_ok = false;
+    BSP_MemoryCheck_ExpectAndReturn(memory);
+
+    const char *output = run_step(STEP_PSRAM);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "SKIP"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "FORGIX_QSPI_PSRAM off"));
+    TEST_ASSERT_NULL(strstr(output, "FAIL"));
+}
+
 void test_psram_fails_when_the_pattern_is_lost(void) {
     bsp_memory_report_t memory = healthy_memory();
     memory.psram_ok = false;
@@ -321,6 +338,13 @@ void test_temperature_passes_inside_the_band_and_formats_a_negative_reading(void
     sample.milli_celsius = -5500;
     BSP_AdcTemperature_ExpectAndReturn(sample);
     TEST_ASSERT_NOT_NULL(strstr(run_step(STEP_TEMPERATURE), "-5.5C"));
+
+    /* Truncation toward zero used to eat the sign here and print "0.5C" -- a
+       wrong reading, on the one part of the scale where which side of freezing
+       the board is on actually matters. */
+    sample.milli_celsius = -500;
+    BSP_AdcTemperature_ExpectAndReturn(sample);
+    TEST_ASSERT_NOT_NULL(strstr(run_step(STEP_TEMPERATURE), "-0.5C"));
 }
 
 /* A reading pinned at a rail is the fault a band catches; the absolute figure is
@@ -460,7 +484,8 @@ void test_fpga_configuration_fails_on_a_wrong_design_id(void) {
 /* A walking pattern, because 0x00 and 0xFF are what a bus stuck low or high
    returns and either would pass a test that wrote them. */
 void test_fpga_register_bus_round_trips_a_walking_pattern_and_restores_the_colour(void) {
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_FpgaReadStatus_ExpectAndReturn(0x01u);
     BSP_LedGet_ExpectAndReturn(led_state(1, 2, 3, 4));
     BSP_LedSet_Expect(0x5au, 0xa5u, 0x3cu, 0xc3u);
@@ -484,7 +509,8 @@ void test_fpga_register_bus_fails_when_any_single_register_misreads(void) {
     };
 
     for (uint32_t index = 0; index < 4u; ++index) {
-        BSP_FpgaIsReady_ExpectAndReturn(true);
+        BSP_FpgaCdone_ExpectAndReturn(true);
+        BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
         BSP_FpgaReadStatus_ExpectAndReturn(0x01u);
         BSP_LedGet_ExpectAndReturn(led_state(1, 2, 3, 4));
         BSP_LedSet_Expect(0x5au, 0xa5u, 0x3cu, 0xc3u);
@@ -495,13 +521,26 @@ void test_fpga_register_bus_fails_when_any_single_register_misreads(void) {
     }
 }
 
+/* The skip decision is this run's evidence, not what bring-up recorded. An FPGA
+   that answers CDONE but returns the wrong design ID is not one the LED and
+   button tests can say anything about either. */
+void test_a_wrong_design_id_also_stands_the_dependent_steps_down(void) {
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(0x00u);
+
+    const char *output = run_step(STEP_LED);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "SKIP"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "FPGA not responding; this test sits behind it"));
+}
+
 /* Skipped rather than failed: the LED and the button are both behind the FPGA,
    so a verdict on either would describe the bus and not the part being named. */
 void test_steps_behind_the_fpga_are_skipped_when_it_is_unreachable(void) {
     const uint32_t behind[] = {STEP_FPGA_REGISTERS, STEP_LED, STEP_BUTTON};
 
     for (uint32_t index = 0; index < 3u; ++index) {
-        BSP_FpgaIsReady_ExpectAndReturn(false);
+        BSP_FpgaCdone_ExpectAndReturn(false);
         const char *output = run_step(behind[index]);
         TEST_ASSERT_NOT_NULL(strstr(output, "SKIP"));
         TEST_ASSERT_NOT_NULL(strstr(output, "FPGA not responding; this test sits behind it"));
@@ -514,7 +553,8 @@ static void expect_led_phase(uint8_t red, uint8_t green, uint8_t blue) {
 }
 
 void test_led_drives_each_channel_in_turn_and_restores_the_previous_colour(void) {
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_LedGet_ExpectAndReturn(led_state(9, 8, 7, 6));
     expect_led_phase(255, 0, 0);
     expect_led_phase(0, 255, 0);
@@ -553,7 +593,8 @@ void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back(
     };
 
     for (uint32_t index = 0; index < 3u; ++index) {
-        BSP_FpgaIsReady_ExpectAndReturn(true);
+        BSP_FpgaCdone_ExpectAndReturn(true);
+        BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
         BSP_LedGet_ExpectAndReturn(led_state(9, 8, 7, 6));
         BSP_LedSet_Expect(255, 0, 0, 128);
         BSP_LedGet_ExpectAndReturn(corrupted[index]);
@@ -566,14 +607,17 @@ void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back(
     }
 }
 
-/* Both halves have to move: the count alone could be a stuck event line and the
-   level alone a pin held low. */
-void test_button_passes_when_the_count_and_the_level_both_change(void) {
-    bsp_button_state_t before = {.level = 1, .count = 4};
-    bsp_button_state_t pressed = {.level = 0, .count = 5};
+/* The count is the FPGA's own debounced edge count, and it is what decides. */
+void test_button_passes_when_the_count_moves_and_the_level_is_seen(void) {
+    bsp_button_state_t before = {.level = 1, .count = 0};
+    bsp_button_state_t pressed = {.level = 0, .count = 1};
+    bsp_button_state_t holding = {.level = 0, .count = 0};
 
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_ButtonClearCount_Expect();
     BSP_ButtonGetState_ExpectAndReturn(before);
+    BSP_ButtonGetState_ExpectAndReturn(holding);
     BSP_ButtonGetState_ExpectAndReturn(pressed);
 
     MOCK_BSP_TimeSetMs(1000);
@@ -584,21 +628,29 @@ void test_button_passes_when_the_count_and_the_level_both_change(void) {
     TEST_ASSERT_TRUE(activity->poll());
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "press SW1 within 15s"));
 
+    /* Held down across two samples, so the second one finds the level already
+       known to have moved and does not need to look again. */
+    TEST_ASSERT_TRUE(activity->poll());
     MOCK_BSP_TimeSetMs(3400);
     TEST_ASSERT_FALSE(activity->poll());
 
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "PASS"));
-    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "pressed after 2.4s, count 4 -> 5"));
+    TEST_ASSERT_NOT_NULL(
+        strstr(MOCK_BSP_ConsoleOutput(), "pressed after 2.4s, count 0 -> 1, level seen to move"));
 }
 
-void test_button_ignores_a_count_that_moves_without_the_level(void) {
-    bsp_button_state_t before = {.level = 1, .count = 4};
-    bsp_button_state_t half = {.level = 1, .count = 5};
+/* The regression: a tap shorter than the 50 ms poll interval increments the
+   FPGA's counter and is back at rest before the level is next read. That is a
+   working button, and gating on the level reported it as a timeout. */
+void test_button_passes_on_a_tap_too_brief_for_the_level_to_be_sampled(void) {
+    bsp_button_state_t before = {.level = 1, .count = 0};
+    bsp_button_state_t after = {.level = 1, .count = 1};
 
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_ButtonClearCount_Expect();
     BSP_ButtonGetState_ExpectAndReturn(before);
-    BSP_ButtonGetState_ExpectAndReturn(half);
-    BSP_ButtonGetState_ExpectAndReturn(half);
+    BSP_ButtonGetState_ExpectAndReturn(after);
 
     MOCK_BSP_TimeSetMs(1000);
     const application_activity_t *activity = application_ibit_single(STEP_BUTTON);
@@ -607,18 +659,20 @@ void test_button_ignores_a_count_that_moves_without_the_level(void) {
 
     TEST_ASSERT_TRUE(activity->poll());
     MOCK_BSP_TimeSetMs(1100);
-    TEST_ASSERT_TRUE(activity->poll());
-    MOCK_BSP_TimeSetMs(16100);
     TEST_ASSERT_FALSE(activity->poll());
 
-    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "TIMEOUT"));
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL(strstr(output, "PASS"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "level never sampled moving"));
 }
 
 /* An unattended run has to finish, so silence is a timeout and not a failure. */
 void test_button_times_out_without_failing_when_nobody_presses_it(void) {
     bsp_button_state_t idle = {.level = 1, .count = 4};
 
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_ButtonClearCount_Expect();
     BSP_ButtonGetState_ExpectAndReturn(idle);
     BSP_ButtonGetState_ExpectAndReturn(idle);
     BSP_ButtonGetState_ExpectAndReturn(idle);
@@ -662,9 +716,9 @@ static void expect_sequence_without_the_fpga(void) {
     BSP_FpgaCdone_ExpectAndReturn(false);
     BSP_FpgaPing_ExpectAndReturn(0x00u);
     BSP_FpgaStatusPin_ExpectAndReturn(false);
-    BSP_FpgaIsReady_ExpectAndReturn(false);
-    BSP_FpgaIsReady_ExpectAndReturn(false);
-    BSP_FpgaIsReady_ExpectAndReturn(false);
+    BSP_FpgaCdone_ExpectAndReturn(false);
+    BSP_FpgaCdone_ExpectAndReturn(false);
+    BSP_FpgaCdone_ExpectAndReturn(false);
 }
 
 static void drive_to_completion(const application_activity_t *activity, uint32_t from_ms,
@@ -721,7 +775,8 @@ void test_the_soak_tallies_across_iterations_and_starts_the_next_run(void) {
 }
 
 void test_aborting_after_the_led_step_puts_the_previous_colour_back(void) {
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_LedGet_ExpectAndReturn(led_state(9, 8, 7, 6));
     expect_led_phase(255, 0, 0);
 
@@ -772,13 +827,13 @@ static void ignore_a_healthy_board(void) {
     BSP_ClocksReport_IgnoreAndReturn(healthy_clocks());
     BSP_MemoryCheck_IgnoreAndReturn(healthy_memory());
     BSP_AdcTemperature_IgnoreAndReturn(temperature_sample(800, 24500));
-    BSP_FpgaIsReady_IgnoreAndReturn(true);
     BSP_FpgaCdone_IgnoreAndReturn(true);
     BSP_FpgaPing_IgnoreAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_FpgaStatusPin_IgnoreAndReturn(true);
     BSP_FpgaReadStatus_IgnoreAndReturn(0x01u);
     BSP_LedSet_Ignore();
     BSP_LedGet_StubWithCallback(led_get_callback);
+    BSP_ButtonClearCount_Ignore();
     BSP_ButtonGetState_StubWithCallback(button_callback);
     application_diagnostics_boot_reason_IgnoreAndReturn(BSP_BOOT_POWER_ON);
 }

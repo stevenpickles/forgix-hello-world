@@ -35,6 +35,12 @@ typedef struct bsp_memory_report_t_tag
     bool flash_ok;        /* readable, and the reset vector is sane */
     uint32_t psram_bytes; /* detected size of the DRAM on chip select 1, 0 if absent */
     bool psram_ok;        /* survived a write/read pattern across its range */
+    /* Whether this image was built to bring the chip-select-1 device up at all.
+       Without it, a build with FORGIX_QSPI_PSRAM off is indistinguishable from a
+       build that tried and failed: both report zero bytes and not ok. A caller
+       that judges the result needs to know which, or it reports a fault for a
+       device deliberately left alone. */
+    bool psram_enabled;
     /* Whether the chip-select-1 device was brought up by forcing the datasheet's
        parameters rather than by auto-detection. Detection only checks the
        identity byte, so a device that reports an unexpected vendor can still be

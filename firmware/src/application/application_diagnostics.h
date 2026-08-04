@@ -20,6 +20,15 @@ enum {
     APPLICATION_DIAGNOSTICS_MARKER_MENU = 7,
     APPLICATION_DIAGNOSTICS_MARKER_IBIT = 8,
     APPLICATION_DIAGNOSTICS_MARKER_EFFECT = 9,
+    /* Not a code path. Written and read straight back by the built-in test's
+       watchdog step to prove the scratch register holds a value, then replaced
+       by MARKER_IBIT. A reset caught inside that window -- a few microseconds --
+       leaves this behind, which is why it is listed rather than left to decode
+       as an unrecognised number.
+
+       0x5A5A5A5A rather than its complement because an enumerator has to fit in
+       an int, and -pedantic is right to say so. */
+    APPLICATION_DIAGNOSTICS_MARKER_SELF_TEST_PATTERN = 0x5A5A5A5A,
 };
 
 enum {
@@ -46,6 +55,21 @@ void application_diagnostics_poll(void);
 
 /* Live counters plus the retained report from the previous boot. */
 void application_diagnostics_print_report(void);
+
+/* Hands the LED to something else for as long as it needs it, and takes it back.
+   The heartbeat rewrites the LED every 250 ms, which is faster than anything a
+   person can watch: a light show or an LED test that holds a colour for longer
+   than that gets the heartbeat punched through the middle of it.
+
+   Both calls are needed, not just the first. The FPGA health check reads the LED
+   back and compares it against what the heartbeat last commanded, so a heartbeat
+   that merely stopped writing would leave that comparison judging a command it
+   no longer issues and counting an FPGA failure every second. Releasing stands
+   both of them down together; reclaiming restores the heartbeat and refreshes
+   what the check compares against, in that order. */
+void application_diagnostics_release_led(void);
+
+void application_diagnostics_reclaim_led(void);
 
 /* The boot cause as it was latched by application_diagnostics_start, before the
    watchdog was armed. Anything asking later must come here rather than call

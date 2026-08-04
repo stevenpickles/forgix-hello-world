@@ -10,6 +10,7 @@
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
 #include "mock_auto_application_console.h"
+#include "mock_auto_application_diagnostics.h"
 #include "mock_auto_application_effects.h"
 #include "mock_auto_application_ibit.h"
 #include "mock_auto_bsp_button.h"
@@ -227,6 +228,7 @@ void test_menu_stays_silent_while_it_waits(void) {
 void test_built_in_test_runs_as_an_activity_and_returns_to_the_menu(void) {
     open_menu_at(0);
 
+    application_diagnostics_release_led_Expect();
     application_ibit_sequence_ExpectAndReturn(&FAKE_ACTIVITY);
     key_at('1', 100);
     TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
@@ -236,6 +238,7 @@ void test_built_in_test_runs_as_an_activity_and_returns_to_the_menu(void) {
     TEST_ASSERT_EQUAL_UINT32(2, activity_polls);
 
     /* The third poll finishes it, and the menu comes back on its own. */
+    application_diagnostics_reclaim_led_Expect();
     BSP_FpgaIsReady_ExpectAndReturn(true);
     poll_at(400);
     TEST_ASSERT_EQUAL_UINT32(0, activity_stops);
@@ -246,10 +249,12 @@ void test_built_in_test_runs_as_an_activity_and_returns_to_the_menu(void) {
    have to remember which key means stop. */
 void test_any_key_aborts_a_running_activity_and_lets_it_clean_up(void) {
     open_menu_at(0);
+    application_diagnostics_release_led_Expect();
     application_ibit_soak_ExpectAndReturn(&FAKE_ACTIVITY);
     key_at('2', 100);
     MOCK_BSP_ConsoleReset();
 
+    application_diagnostics_reclaim_led_Expect();
     BSP_FpgaIsReady_ExpectAndReturn(true);
     key_at('q', 200);
 
@@ -266,6 +271,7 @@ void test_step_submenu_lists_every_step_and_runs_the_one_chosen(void) {
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "  1  a step"));
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "  x  back to the menu"));
 
+    application_diagnostics_release_led_Expect();
     application_ibit_single_ExpectAndReturn(2, &FAKE_ACTIVITY);
     key_at('3', 200);
     TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
@@ -277,6 +283,7 @@ void test_step_submenu_letters_the_steps_that_run_out_of_digits(void) {
     key_at('3', 100);
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "  e  a step"));
 
+    application_diagnostics_release_led_Expect();
     application_ibit_single_ExpectAndReturn(9, &FAKE_ACTIVITY);
     key_at('a', 200);
     TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
@@ -298,13 +305,16 @@ void test_step_submenu_redraws_an_unknown_key_and_leaves_on_x(void) {
 void test_blinker_and_advanced_blinker_start_from_the_menu(void) {
     open_menu_at(0);
 
+    application_diagnostics_release_led_Expect();
     application_effects_blinker_ExpectAndReturn(&FAKE_ACTIVITY);
     key_at('5', 100);
     TEST_ASSERT_EQUAL_UINT32(1, activity_starts);
 
+    application_diagnostics_reclaim_led_Expect();
     BSP_FpgaIsReady_ExpectAndReturn(true);
     key_at('q', 200);
 
+    application_diagnostics_release_led_Expect();
     application_effects_advanced_ExpectAndReturn(&FAKE_ACTIVITY);
     key_at('6', 300);
     TEST_ASSERT_EQUAL_UINT32(2, activity_starts);

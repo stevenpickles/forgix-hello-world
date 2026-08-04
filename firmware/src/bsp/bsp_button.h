@@ -45,6 +45,8 @@ typedef struct bsp_button_state_t_tag
 
 bsp_button_state_t BSP_ButtonGetState( void );
 
+void BSP_ButtonClearCount( void );
+
 #ifdef __cplusplus
 }
 #endif

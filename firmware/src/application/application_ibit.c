@@ -66,6 +66,7 @@ typedef struct {
     uint32_t usb_frame_before;
     uint8_t button_count_before;
     uint8_t button_level_before;
+    bool button_level_moved;
     uint32_t soak_iterations;
     uint32_t soak_failures;
     uint32_t soak_timeouts;
@@ -144,6 +145,16 @@ static application_ibit_outcome_t verdict(bool ok) {
     return ok ? APPLICATION_IBIT_PASS : APPLICATION_IBIT_FAIL;
 }
 
+/* Asked of the FPGA itself, every time, rather than read from BSP_FpgaIsReady.
+   That flag records what bring-up found and is only rewritten by a
+   reconfiguration, so an FPGA that died after boot still reports ready and the
+   steps that sit behind it would run and produce failures of their own instead
+   of standing down. Three extra pings across a sequence is a cheap price for a
+   skip decision made on this run's evidence. */
+static bool fpga_reachable(void) {
+    return BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID;
+}
+
 
 
 
@@ -189,17 +200,31 @@ static application_ibit_outcome_t step_clocks(char *detail, size_t capacity) {
     const bsp_clocks_report_t clocks = BSP_ClocksReport();
     const bool sys_ok = within_tolerance(clocks.measured_sys_hz, EXPECTED_SYS_HZ);
     const bool usb_ok = within_tolerance(clocks.measured_usb_hz, EXPECTED_USB_HZ);
-    /* RP2350-E12: the USB status synchronisers need clk_sys comfortably faster
-       than clk_usb, and the errata puts the margin at ten percent. */
-    const bool errata_ok = clocks.sys_hz >= clocks.usb_hz + (clocks.usb_hz / 10u);
+    /* RP2350-E12 wants clk_sys at least ten percent above clk_usb, and there is
+       deliberately no separate verdict for it, because there cannot be a failing
+       one. A measured clk_sys within one percent of 150 MHz is by construction
+       more than ten percent above a measured clk_usb within one percent of
+       48 MHz, so a test for the margin would be a branch nothing can take. It
+       was previously read off the configured values, where it could fail --
+       which only meant it was answering a different question: whether the SDK
+       intended a legal ratio, which it always did.
 
-    snprintf(detail, capacity, "sys=%lu.%03luMHz usb=%lu.%03luMHz ref=%luHz E12margin=%s",
+       The ratio is printed instead so the margin stays visible. If the expected
+       frequencies ever stop being pinned to 150 and 48, this has to go back to
+       being a real check. */
+    const uint32_t ratio_hundredths =
+        clocks.measured_usb_hz == 0u
+            ? 0u
+            : (uint32_t)(((uint64_t)clocks.measured_sys_hz * 100u) / clocks.measured_usb_hz);
+
+    snprintf(detail, capacity, "sys=%lu.%03luMHz usb=%lu.%03luMHz ref=%luHz sys/usb=%lu.%02lux",
              (unsigned long)(clocks.measured_sys_hz / 1000000u),
              (unsigned long)((clocks.measured_sys_hz / 1000u) % 1000u),
              (unsigned long)(clocks.measured_usb_hz / 1000000u),
              (unsigned long)((clocks.measured_usb_hz / 1000u) % 1000u),
-             (unsigned long)clocks.ref_hz, errata_ok ? "ok" : "VIOLATED");
-    return verdict(sys_ok && usb_ok && errata_ok);
+             (unsigned long)clocks.ref_hz, (unsigned long)(ratio_hundredths / 100u),
+             (unsigned long)(ratio_hundredths % 100u));
+    return verdict(sys_ok && usb_ok);
 }
 
 
@@ -247,6 +272,16 @@ static application_ibit_outcome_t step_boot_flash(char *detail, size_t capacity)
 static application_ibit_outcome_t step_psram(char *detail, size_t capacity) {
     const bsp_memory_report_t memory = memory_report();
 
+    /* FORGIX_QSPI_PSRAM is a supported way to build this firmware, and with it
+       off the device is never brought up. Reporting that as a failure would
+       accuse a board of a fault that is really a build decision -- and the two
+       are indistinguishable from the numbers, since a device that was never
+       enabled and one that failed detection both read zero bytes and not ok. */
+    if (!memory.psram_enabled) {
+        snprintf(detail, capacity, "not enabled in this build (FORGIX_QSPI_PSRAM off)");
+        return APPLICATION_IBIT_SKIP;
+    }
+
     snprintf(detail, capacity, "%luKiB pattern %s, kgd=%02X eid=%02X%s",
              (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok ? "held" : "LOST",
              memory.psram_kgd, memory.psram_eid,
@@ -263,10 +298,16 @@ static application_ibit_outcome_t step_temperature(char *detail, size_t capacity
     const bool ok = sample.milli_celsius >= TEMPERATURE_MIN_MILLI_C &&
                     sample.milli_celsius <= TEMPERATURE_MAX_MILLI_C;
 
-    snprintf(detail, capacity, "%ld.%01ldC raw=%u", (long)(sample.milli_celsius / 1000),
-             (long)((sample.milli_celsius < 0 ? -sample.milli_celsius : sample.milli_celsius) /
-                    100 % 10),
-             sample.raw);
+    /* The sign is carried separately rather than left to the integer division.
+       Truncation toward zero loses it for anything between -1 C and 0 C, where
+       -0.5 would have printed as "0.5C" -- a wrong reading rather than an
+       imprecise one, and on the only part of the scale where the reader most
+       needs to know which side of freezing the board is on. */
+    const int32_t magnitude =
+        sample.milli_celsius < 0 ? -sample.milli_celsius : sample.milli_celsius;
+
+    snprintf(detail, capacity, "%s%ld.%01ldC raw=%u", sample.milli_celsius < 0 ? "-" : "",
+             (long)(magnitude / 1000), (long)((magnitude / 100) % 10), sample.raw);
     return verdict(ok);
 }
 
@@ -308,8 +349,15 @@ static application_ibit_outcome_t step_watchdog(char *detail, size_t capacity) {
     const bsp_boot_reason reason = application_diagnostics_boot_reason();
     static const char *const REASON_TEXT[] = {"power-on", "brownout", "watchdog", "other"};
 
+    /* A pattern, not the marker the runner already wrote a few lines earlier. A
+       register stuck at APPLICATION_DIAGNOSTICS_MARKER_IBIT would have passed a
+       round trip that wrote the value it was already stuck at, which tests
+       nothing. Restored immediately afterwards so a reset during the rest of
+       this step still attributes itself to the built-in test. */
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_SELF_TEST_PATTERN);
+    const bool marker_ok =
+        BSP_WatchdogMarkerGet() == APPLICATION_DIAGNOSTICS_MARKER_SELF_TEST_PATTERN;
     BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_IBIT);
-    const bool marker_ok = BSP_WatchdogMarkerGet() == APPLICATION_DIAGNOSTICS_MARKER_IBIT;
 
     snprintf(detail, capacity, "last boot %s, marker readback %s", REASON_TEXT[reason],
              marker_ok ? "ok" : "BAD");
@@ -394,9 +442,16 @@ static application_ibit_outcome_t step_led(char *detail, size_t capacity) {
    real press from a fault that looks like one. */
 static application_ibit_outcome_t step_button(char *detail, size_t capacity) {
     if (ibit.phase == 0) {
+        /* Cleared before the baseline is taken. The FPGA's counter is eight bits
+           and saturates rather than wrapping, so on a board anyone has been
+           pressing since power-up it eventually sits at 255 and never changes
+           again -- and a test waiting for it to change could never pass on
+           exactly the boards that have seen the most use. */
+        BSP_ButtonClearCount();
         const bsp_button_state_t start = BSP_ButtonGetState();
         ibit.button_count_before = start.count;
         ibit.button_level_before = start.level;
+        ibit.button_level_moved = false;
         ibit.phase = 1;
         ibit.next_poll_ms = ibit.current_time_ms;
         mark_write();
@@ -410,11 +465,25 @@ static application_ibit_outcome_t step_button(char *detail, size_t capacity) {
 
     ibit.next_poll_ms = ibit.current_time_ms + BUTTON_POLL_MS;
     const bsp_button_state_t now = BSP_ButtonGetState();
-    if (now.count != ibit.button_count_before && now.level != ibit.button_level_before) {
-        snprintf(detail, capacity, "pressed after %lu.%lus, count %u -> %u",
+    ibit.button_level_moved =
+        ibit.button_level_moved || (now.level != ibit.button_level_before);
+
+    /* The count alone decides it. The FPGA debounces and counts edges
+       continuously; the level is a 50 ms sample of a line a person holds down
+       for maybe a tenth of a second, so a brisk tap increments the count and is
+       back at rest before the level is next read. Requiring both threw those
+       presses away and reported a working button as a timeout.
+
+       The level is still watched, and still reported, because it is the thing
+       that says whether the pin moves as well as whether the counter does -- but
+       reporting is all it can honestly support at this sample rate. A counter
+       running free without any press shows up in how far it moved, which is why
+       the count is printed rather than merely tested. */
+    if (now.count != ibit.button_count_before) {
+        snprintf(detail, capacity, "pressed after %lu.%lus, count %u -> %u, level %s",
                  (unsigned long)(step_elapsed_ms() / 1000u),
                  (unsigned long)((step_elapsed_ms() / 100u) % 10u), ibit.button_count_before,
-                 now.count);
+                 now.count, ibit.button_level_moved ? "seen to move" : "never sampled moving");
         return APPLICATION_IBIT_PASS;
     }
     if (step_elapsed_ms() < APPLICATION_IBIT_BUTTON_TIMEOUT_MS) {
@@ -468,7 +537,7 @@ static void begin_step(uint32_t index) {
     ibit.phase = 0;
     ibit.led_saved = false;
     ibit.step_started_ms = ibit.current_time_ms;
-    ibit.skipping = STEPS[index].needs_fpga && !BSP_FpgaIsReady();
+    ibit.skipping = STEPS[index].needs_fpga && !fpga_reachable();
 }
 
 static void begin_run(uint32_t first_index, uint32_t last_index) {
