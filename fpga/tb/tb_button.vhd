@@ -1,16 +1,21 @@
--- Guards the debouncer against the two failures that a filter which "works" on the
--- bench still has: believing a bounce, and never believing anything.
+-- Guards the debouncer against the failures that a filter which "works" on the bench
+-- still has: believing a bounce, accepting before the window has re-run clean, and
+-- strobing wrongly.
 --
--- The stimulus presses, releases after 10 cycles, and presses again -- a release
--- shorter than the stability window, which is exactly what contact bounce looks like.
--- A filter that restarts its count on any disagreement rides through it; one that
--- instead counts elapsed time since the first edge latches the spurious release and
--- fails the first assert. The second assert catches the opposite defect, a filter so
--- eager to reset its counter that a genuine release never completes.
+-- The stimulus presses, then bounces -- a 10-cycle release -- straddling the moment a
+-- naive filter's window first expires, roughly 100 cycles after the press. That
+-- placement is the test: a correct filter restarts its count at the bounce and does
+-- not accept until 100 uninterrupted cycles after it, so the mid-bounce checkpoint at
+-- 203 cycles catches both a free-running sampler (which accepted at its wrap, inside
+-- or just after the glitch) and a counter that pauses without resetting (which
+-- accepted a few cycles after the glitch ended). The release asserts catch the
+-- opposite defect, a filter so eager to reset that a genuine release never completes.
 --
--- Both asserts are on `pressed` rather than `press_strobe` because the strobe is a
--- single cycle and would need sampling at the right moment; the level is the thing a
--- consumer of this module actually sees.
+-- Levels are checked on `pressed`; counting is checked on `press_strobe` through a
+-- clocked counter, because a single-cycle pulse cannot be caught by level asserts at
+-- chosen instants -- and the strobe is the one output the header of the RTL says a
+-- press counter must use. raw_pressed is checked against the synchronized input on
+-- both sides.
 
 library ieee;
   use ieee.std_logic_1164.all;
@@ -28,6 +33,7 @@ architecture sim of tb_button is
   signal   raw_pressed  : std_ulogic;
   signal   pressed      : std_ulogic;
   signal   press_strobe : std_ulogic;
+  signal   strobe_count : natural    := 0;
 
 begin
 
@@ -54,6 +60,20 @@ begin
       press_strobe => press_strobe
     );
 
+  -- press_strobe is one clk wide, so a counter clocked beside the DUT is the only
+  -- observer that can prove "exactly one strobe per accepted press": level asserts at
+  -- chosen instants would miss a double strobe or a strobe on release entirely.
+  count_strobes : process (clk) is
+  begin
+
+    if rising_edge(clk) then
+      if press_strobe = '1' then
+        strobe_count <= strobe_count + 1;
+      end if;
+    end if;
+
+  end process count_strobes;
+
   stimulus : process is
   begin
 
@@ -61,20 +81,44 @@ begin
     wait for 3 * PERIOD;
     rst      <= '0';
     button_n <= '0';
-    wait for 50 * PERIOD;
-    -- A 10-cycle release inside a 100-cycle window: bounce, not a real release. The
-    -- filter must not see it, and the assert below is what says so.
+    -- 95 press cycles, then a 10-cycle release: bounce, not a real release, placed to
+    -- straddle the ~100-cycle mark where a filter that never restarted its count
+    -- first expires. A correct filter accepts 100 clean cycles after the bounce ends;
+    -- a free-running or pause-without-reset one has already accepted by the
+    -- checkpoint below.
+    wait for 95 * PERIOD;
     button_n <= '1';
     wait for 10 * PERIOD;
     button_n <= '0';
-    wait for 110 * PERIOD;
+    -- 98 cycles in: past every wrong filter's acceptance, still 2 cycles and a
+    -- synchronizer short of the correct one's.
+    wait for 98 * PERIOD;
+    assert pressed = '0'
+      report "button accepted the press before the bounce-restarted window elapsed"
+      severity failure;
+    assert raw_pressed = '1'
+      report "raw_pressed does not follow the synchronized input while pressed"
+      severity failure;
+    assert strobe_count = 0
+      report "press_strobe fired before the press was accepted"
+      severity failure;
+    wait for 10 * PERIOD;
     assert pressed = '1'
       report "button did not debounce pressed"
+      severity failure;
+    assert strobe_count = 1
+      report "an accepted press must strobe exactly once"
       severity failure;
     button_n <= '1';
     wait for 110 * PERIOD;
     assert pressed = '0'
       report "button did not debounce released"
+      severity failure;
+    assert raw_pressed = '0'
+      report "raw_pressed does not follow the synchronized input when released"
+      severity failure;
+    assert strobe_count = 1
+      report "release must not strobe"
       severity failure;
     report "tb_button passed"
       severity note;
