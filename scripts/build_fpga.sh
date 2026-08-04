@@ -9,6 +9,8 @@ hex_image="$outflow/forgix_hello_world.hex"
 binary_image="$outflow/forgix_hello_world.bin"
 pinout_report="$outflow/forgix_hello_world.pinout.rpt"
 timing_report="$outflow/forgix_hello_world.timing.rpt"
+sdc_file="$repo_root/fpga/constraints/forgix_hello_world.sdc"
+interface_csv="$outflow/forgix_hello_world.interface.csv"
 
 if [[ ! -f "$project" ]]; then
   printf 'Efinity project metadata has not been added yet: %s\n' "$project" >&2
@@ -54,7 +56,8 @@ fi
   exit 1
 }
 
-python "$repo_root/scripts/check_efinity_reports.py" "$pinout_report" "$timing_report"
+python "$repo_root/scripts/check_efinity_reports.py" "$pinout_report" "$timing_report" \
+  "$sdc_file" "$interface_csv"
 
 python "$repo_root/scripts/efinity_hex_to_bin.py" "$hex_image" "$binary_image"
 [[ -s "$binary_image" ]] || {
