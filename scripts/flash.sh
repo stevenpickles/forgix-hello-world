@@ -58,10 +58,25 @@ fi
 
 # Confirm what is actually in flash now. A silently failed load leaves the old
 # image running, and the two images are indistinguishable from the LED alone.
-flashed_name="$(picotool info 2>/dev/null | sed -n 's/^ *name: *//p' | head -1)"
-if [[ -n "$flashed_name" && -n "$image_name" && "$flashed_name" != "$image_name" ]]; then
+# Windows can take a few seconds to re-enumerate the device after the load, so
+# poll rather than trusting the first empty answer -- and an answer that never
+# comes is a verification that never ran, which must fail loudly rather than
+# echo the requested name back as if it had been read out of the part.
+flashed_name=""
+for (( attempt = 0; attempt < 10; attempt++ )); do
+  flashed_name="$(picotool info 2>/dev/null | sed -n 's/^ *name: *//p' | head -1)"
+  [[ -n "$flashed_name" ]] && break
+  sleep 1
+done
+if [[ -z "$flashed_name" ]]; then
+  printf '\npicotool could not read back an image name, so verification did not run.\n' >&2
+  printf 'The load may still have succeeded, but nothing here confirms it. Re-seat\n' >&2
+  printf 'USB if needed and check with `picotool info` before trusting this flash.\n' >&2
+  exit 1
+fi
+if [[ -n "$image_name" && "$flashed_name" != "$image_name" ]]; then
   printf '\nFlash reports %s but %s was requested.\n' "$flashed_name" "$image_name" >&2
   exit 1
 fi
-printf 'Verified in flash: %s\n' "${flashed_name:-$image_name}"
+printf 'Verified in flash: %s\n' "$flashed_name"
 picotool reboot
