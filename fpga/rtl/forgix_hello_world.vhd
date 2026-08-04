@@ -181,10 +181,15 @@ begin
             -- sticky bits. Bit 2 is write-one-to-clear on button_event, matching the
             -- bit position the same event is reported in, so a host clears exactly
             -- what it just read. Writing zeros clears nothing, which is what makes a
-            -- read-modify-write safe against a press landing in between.
+            -- read-modify-write safe against a press landing between transactions --
+            -- and the clear is gated on button_press so a press strobing on the very
+            -- clk_32m edge the acknowledge lands on is safe too: set dominates
+            -- clear. Ungated, the later assignment in this process wins and the
+            -- press vanishes from the event bit while still incrementing the count,
+            -- the one register pair this design promises keeps agreeing.
             when REG_STATUS =>
 
-              if wdata(2) = '1' then
+              if wdata(2) = '1' and button_press = '0' then
                 button_event <= '0';
               end if;
 
