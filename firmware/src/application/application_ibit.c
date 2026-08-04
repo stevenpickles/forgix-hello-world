@@ -66,6 +66,7 @@ typedef struct {
     uint32_t usb_frame_before;
     uint8_t button_count_before;
     uint8_t button_level_before;
+    bool button_level_moved;
     uint32_t soak_iterations;
     uint32_t soak_failures;
     uint32_t soak_timeouts;
@@ -404,9 +405,16 @@ static application_ibit_outcome_t step_led(char *detail, size_t capacity) {
    real press from a fault that looks like one. */
 static application_ibit_outcome_t step_button(char *detail, size_t capacity) {
     if (ibit.phase == 0) {
+        /* Cleared before the baseline is taken. The FPGA's counter is eight bits
+           and saturates rather than wrapping, so on a board anyone has been
+           pressing since power-up it eventually sits at 255 and never changes
+           again -- and a test waiting for it to change could never pass on
+           exactly the boards that have seen the most use. */
+        BSP_ButtonClearCount();
         const bsp_button_state_t start = BSP_ButtonGetState();
         ibit.button_count_before = start.count;
         ibit.button_level_before = start.level;
+        ibit.button_level_moved = false;
         ibit.phase = 1;
         ibit.next_poll_ms = ibit.current_time_ms;
         mark_write();
@@ -420,11 +428,25 @@ static application_ibit_outcome_t step_button(char *detail, size_t capacity) {
 
     ibit.next_poll_ms = ibit.current_time_ms + BUTTON_POLL_MS;
     const bsp_button_state_t now = BSP_ButtonGetState();
-    if (now.count != ibit.button_count_before && now.level != ibit.button_level_before) {
-        snprintf(detail, capacity, "pressed after %lu.%lus, count %u -> %u",
+    ibit.button_level_moved =
+        ibit.button_level_moved || (now.level != ibit.button_level_before);
+
+    /* The count alone decides it. The FPGA debounces and counts edges
+       continuously; the level is a 50 ms sample of a line a person holds down
+       for maybe a tenth of a second, so a brisk tap increments the count and is
+       back at rest before the level is next read. Requiring both threw those
+       presses away and reported a working button as a timeout.
+
+       The level is still watched, and still reported, because it is the thing
+       that says whether the pin moves as well as whether the counter does -- but
+       reporting is all it can honestly support at this sample rate. A counter
+       running free without any press shows up in how far it moved, which is why
+       the count is printed rather than merely tested. */
+    if (now.count != ibit.button_count_before) {
+        snprintf(detail, capacity, "pressed after %lu.%lus, count %u -> %u, level %s",
                  (unsigned long)(step_elapsed_ms() / 1000u),
                  (unsigned long)((step_elapsed_ms() / 100u) % 10u), ibit.button_count_before,
-                 now.count);
+                 now.count, ibit.button_level_moved ? "seen to move" : "never sampled moving");
         return APPLICATION_IBIT_PASS;
     }
     if (step_elapsed_ms() < APPLICATION_IBIT_BUTTON_TIMEOUT_MS) {

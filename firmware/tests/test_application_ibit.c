@@ -583,15 +583,17 @@ void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back(
     }
 }
 
-/* Both halves have to move: the count alone could be a stuck event line and the
-   level alone a pin held low. */
-void test_button_passes_when_the_count_and_the_level_both_change(void) {
-    bsp_button_state_t before = {.level = 1, .count = 4};
-    bsp_button_state_t pressed = {.level = 0, .count = 5};
+/* The count is the FPGA's own debounced edge count, and it is what decides. */
+void test_button_passes_when_the_count_moves_and_the_level_is_seen(void) {
+    bsp_button_state_t before = {.level = 1, .count = 0};
+    bsp_button_state_t pressed = {.level = 0, .count = 1};
+    bsp_button_state_t holding = {.level = 0, .count = 0};
 
     BSP_FpgaCdone_ExpectAndReturn(true);
     BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_ButtonClearCount_Expect();
     BSP_ButtonGetState_ExpectAndReturn(before);
+    BSP_ButtonGetState_ExpectAndReturn(holding);
     BSP_ButtonGetState_ExpectAndReturn(pressed);
 
     MOCK_BSP_TimeSetMs(1000);
@@ -602,22 +604,29 @@ void test_button_passes_when_the_count_and_the_level_both_change(void) {
     TEST_ASSERT_TRUE(activity->poll());
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "press SW1 within 15s"));
 
+    /* Held down across two samples, so the second one finds the level already
+       known to have moved and does not need to look again. */
+    TEST_ASSERT_TRUE(activity->poll());
     MOCK_BSP_TimeSetMs(3400);
     TEST_ASSERT_FALSE(activity->poll());
 
     TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "PASS"));
-    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "pressed after 2.4s, count 4 -> 5"));
+    TEST_ASSERT_NOT_NULL(
+        strstr(MOCK_BSP_ConsoleOutput(), "pressed after 2.4s, count 0 -> 1, level seen to move"));
 }
 
-void test_button_ignores_a_count_that_moves_without_the_level(void) {
-    bsp_button_state_t before = {.level = 1, .count = 4};
-    bsp_button_state_t half = {.level = 1, .count = 5};
+/* The regression: a tap shorter than the 50 ms poll interval increments the
+   FPGA's counter and is back at rest before the level is next read. That is a
+   working button, and gating on the level reported it as a timeout. */
+void test_button_passes_on_a_tap_too_brief_for_the_level_to_be_sampled(void) {
+    bsp_button_state_t before = {.level = 1, .count = 0};
+    bsp_button_state_t after = {.level = 1, .count = 1};
 
     BSP_FpgaCdone_ExpectAndReturn(true);
     BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_ButtonClearCount_Expect();
     BSP_ButtonGetState_ExpectAndReturn(before);
-    BSP_ButtonGetState_ExpectAndReturn(half);
-    BSP_ButtonGetState_ExpectAndReturn(half);
+    BSP_ButtonGetState_ExpectAndReturn(after);
 
     MOCK_BSP_TimeSetMs(1000);
     const application_activity_t *activity = application_ibit_single(STEP_BUTTON);
@@ -626,11 +635,11 @@ void test_button_ignores_a_count_that_moves_without_the_level(void) {
 
     TEST_ASSERT_TRUE(activity->poll());
     MOCK_BSP_TimeSetMs(1100);
-    TEST_ASSERT_TRUE(activity->poll());
-    MOCK_BSP_TimeSetMs(16100);
     TEST_ASSERT_FALSE(activity->poll());
 
-    TEST_ASSERT_NOT_NULL(strstr(MOCK_BSP_ConsoleOutput(), "TIMEOUT"));
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL(strstr(output, "PASS"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "level never sampled moving"));
 }
 
 /* An unattended run has to finish, so silence is a timeout and not a failure. */
@@ -639,6 +648,7 @@ void test_button_times_out_without_failing_when_nobody_presses_it(void) {
 
     BSP_FpgaCdone_ExpectAndReturn(true);
     BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
+    BSP_ButtonClearCount_Expect();
     BSP_ButtonGetState_ExpectAndReturn(idle);
     BSP_ButtonGetState_ExpectAndReturn(idle);
     BSP_ButtonGetState_ExpectAndReturn(idle);
@@ -799,6 +809,7 @@ static void ignore_a_healthy_board(void) {
     BSP_FpgaReadStatus_IgnoreAndReturn(0x01u);
     BSP_LedSet_Ignore();
     BSP_LedGet_StubWithCallback(led_get_callback);
+    BSP_ButtonClearCount_Ignore();
     BSP_ButtonGetState_StubWithCallback(button_callback);
     application_diagnostics_boot_reason_IgnoreAndReturn(BSP_BOOT_POWER_ON);
 }

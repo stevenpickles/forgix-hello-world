@@ -54,3 +54,16 @@ bsp_button_state_t BSP_ButtonGetState( void )
     };
     return state;
 }
+
+
+/// <summary>
+///     Returns the FPGA's press count to zero. The counter is eight bits and
+///     saturates rather than wrapping, so a board that has been poked at since
+///     power-up eventually sits at 255 and stops recording presses at all. A test
+///     that waits for the count to change has to clear it first or it can never
+///     pass on exactly the boards people have been using.
+/// </summary>
+void BSP_ButtonClearCount( void )
+{
+    BSP_FpgaWriteRegister( REG_BUTTON_COUNT, 0 );
+}
