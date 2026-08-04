@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "application_ui.h"
 
 #include <stdbool.h>
@@ -10,6 +17,16 @@
 #include "application_ibit.h"
 #include "bsp.h"
 
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
 typedef enum
 {
     UI_MODE_BANNER,
@@ -18,6 +35,7 @@ typedef enum
     UI_MODE_ACTIVITY,
     UI_MODE_SHELL,
 } ui_mode_t;
+
 
 typedef struct
 {
@@ -29,6 +47,7 @@ typedef struct
     const application_activity_t *activity;
 } ui_state_t;
 
+
 typedef struct
 {
     char key;
@@ -37,21 +56,78 @@ typedef struct
     void ( *action )( void );
 } menu_entry_t;
 
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
 static ui_state_t ui;
 
-static void action_ibit( void );
-static void action_soak( void );
-static void action_steps( void );
-static void action_report( void );
-static void action_blinker( void );
-static void action_advanced( void );
-static void action_shell( void );
-static void action_reboot( void );
-static void action_bootsel( void );
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
+
+static void mark_write( void );
+
+static uint32_t uptime_seconds( void );
+
+static void print_banner( void );
+
+static void print_menu( void );
+
+static char step_key( uint32_t index );
+
+static void print_steps( void );
+
+static void enter_menu( void );
+
+static void start_activity( const application_activity_t *activity );
+
+static void finish_activity( void );
+
 static void action_redraw( void );
 
-/* One table drives both the rendering and the dispatch, so a key can never be
-   offered without doing something or do something without being offered. */
+static void action_ibit( void );
+
+static void action_soak( void );
+
+static void action_steps( void );
+
+static void action_report( void );
+
+static void action_blinker( void );
+
+static void action_advanced( void );
+
+static void action_shell( void );
+
+static void action_reboot( void );
+
+static void action_bootsel( void );
+
+static void select_entry( int16_t character );
+
+static void select_step( int16_t character );
+
+/* Takes the address of the ten action_* handlers above; C requires a
+   function be declared before its address is taken, so this table follows
+   the prototypes it binds instead of sitting under Private Variable
+   Declarations with the rest of the module's data. One table drives both
+   the rendering and the dispatch, so a key can never be offered without
+   doing something or do something without being offered. */
 static const menu_entry_t MENU[] = {
     { '1', "Built-in test", "the whole sequence, once", action_ibit },
     { '2', "Built-in test soak", "repeat with a tally until a key is pressed", action_soak },
@@ -65,184 +141,15 @@ static const menu_entry_t MENU[] = {
     { '?', "Redraw this menu", "", action_redraw },
 };
 
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
 
-/* Every console write reaches the untimed Pico SDK stdio flush loop, so the
-   marker is set immediately before the call, exactly as the shell does. */
-static void mark_write( void )
-{
-    BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
-}
 
-static uint32_t uptime_seconds( void )
-{
-    return ( ui.current_time_ms - ui.started_ms ) / 1000u;
-}
 
-static void print_banner( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "hello world - %lu - press any key\n", (unsigned long) ui.banner_count );
-}
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
 
-static void print_menu( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "\n=== Forgix menu ===   up %lus   FPGA %s\n\n",
-                       (unsigned long) uptime_seconds(),
-                       BSP_FpgaIsReady() ? "ready" : "UNAVAILABLE" );
-    for ( size_t index = 0; index < sizeof MENU / sizeof MENU[ 0 ]; ++index )
-    {
-        mark_write();
-        BSP_ConsolePrintf( "  %c  %-22s %s\n", MENU[ index ].key, MENU[ index ].label,
-                           MENU[ index ].detail );
-    }
-    mark_write();
-    BSP_ConsolePrintf( "\nselect> " );
-}
-
-/* Steps are offered as 1..9 then a..e, because a single keypress is the whole
-   input method and fourteen of them will not fit in the digits. */
-static char step_key( uint32_t index )
-{
-    return index < 9u ? (char) ( '1' + index ) : (char) ( 'a' + ( index - 9u ) );
-}
-
-static void print_steps( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "\n=== One test at a time ===\n\n" );
-    for ( uint32_t index = 0; index < application_ibit_step_count(); ++index )
-    {
-        mark_write();
-        BSP_ConsolePrintf( "  %c  %s\n", step_key( index ), application_ibit_step_name( index ) );
-    }
-    mark_write();
-    BSP_ConsolePrintf( "  x  back to the menu\n\nselect> " );
-}
-
-static void enter_menu( void )
-{
-    /* Unconditional, including on paths where the shell was never started. The
-       `menu` command reaches here from inside command dispatch, and the shell
-       would otherwise print one last prompt after the menu that replaced it. */
-    application_console_release();
-    ui.mode = UI_MODE_MENU;
-    print_menu();
-}
-
-/* An activity owns the LED for its whole run, not just the parts that paint it.
-   The heartbeat is a 2 Hz writer and every activity here holds a colour for
-   longer than that, so sharing the LED means the heartbeat showing through the
-   middle of whatever the activity was trying to display. */
-static void start_activity( const application_activity_t *activity )
-{
-    application_diagnostics_release_led();
-    ui.mode = UI_MODE_ACTIVITY;
-    ui.activity = activity;
-    activity->start();
-}
-
-static void finish_activity( void )
-{
-    ui.activity = NULL;
-    application_diagnostics_reclaim_led();
-    enter_menu();
-}
-
-static void action_redraw( void )
-{
-    enter_menu();
-}
-
-static void action_ibit( void )
-{
-    start_activity( application_ibit_sequence() );
-}
-
-static void action_soak( void )
-{
-    start_activity( application_ibit_soak() );
-}
-
-static void action_steps( void )
-{
-    ui.mode = UI_MODE_STEPS;
-    print_steps();
-}
-
-static void action_report( void )
-{
-    application_ibit_print_board_report();
-    enter_menu();
-}
-
-static void action_blinker( void )
-{
-    start_activity( application_effects_blinker() );
-}
-
-static void action_advanced( void )
-{
-    start_activity( application_effects_advanced() );
-}
-
-static void action_shell( void )
-{
-    ui.mode = UI_MODE_SHELL;
-    application_console_start();
-}
-
-static void action_reboot( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "rebooting\n" );
-    BSP_McuReboot();
-}
-
-static void action_bootsel( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "entering BOOTSEL; the serial port will disappear\n" );
-    BSP_McuRebootToBootsel();
-}
-
-/* An unrecognized key redraws rather than complaining. The menu is the only
-   thing on screen that says which keys exist, so showing it again is both the
-   error message and the fix. */
-static void select_entry( int16_t character )
-{
-    for ( size_t index = 0; index < sizeof MENU / sizeof MENU[ 0 ]; ++index )
-    {
-        if ( MENU[ index ].key == (char) character )
-        {
-            MENU[ index ].action();
-            return;
-        }
-    }
-    enter_menu();
-}
-
-static void select_step( int16_t character )
-{
-    if ( (char) character == 'x' )
-    {
-        enter_menu();
-        return;
-    }
-    for ( uint32_t index = 0; index < application_ibit_step_count(); ++index )
-    {
-        if ( step_key( index ) == (char) character )
-        {
-            start_activity( application_ibit_single( index ) );
-            return;
-        }
-    }
-    print_steps();
-}
 
 void application_ui_start( void )
 {
@@ -252,10 +159,12 @@ void application_ui_start( void )
     ui.next_banner_ms = ui.current_time_ms;
 }
 
+
 void application_ui_enter_menu( void )
 {
     enter_menu();
 }
+
 
 void application_ui_poll( void )
 {
@@ -332,4 +241,214 @@ void application_ui_poll( void )
     {
         print_banner();
     }
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
+{
+    return (int32_t) ( now_ms - deadline_ms ) >= 0;
+}
+
+
+/* Every console write reaches the untimed Pico SDK stdio flush loop, so the
+   marker is set immediately before the call, exactly as the shell does. */
+static void mark_write( void )
+{
+    BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
+}
+
+
+static uint32_t uptime_seconds( void )
+{
+    return ( ui.current_time_ms - ui.started_ms ) / 1000u;
+}
+
+
+static void print_banner( void )
+{
+    mark_write();
+    BSP_ConsolePrintf( "hello world - %lu - press any key\n", (unsigned long) ui.banner_count );
+}
+
+
+static void print_menu( void )
+{
+    mark_write();
+    BSP_ConsolePrintf( "\n=== Forgix menu ===   up %lus   FPGA %s\n\n",
+                       (unsigned long) uptime_seconds(),
+                       BSP_FpgaIsReady() ? "ready" : "UNAVAILABLE" );
+    for ( size_t index = 0; index < sizeof MENU / sizeof MENU[ 0 ]; ++index )
+    {
+        mark_write();
+        BSP_ConsolePrintf( "  %c  %-22s %s\n", MENU[ index ].key, MENU[ index ].label,
+                           MENU[ index ].detail );
+    }
+    mark_write();
+    BSP_ConsolePrintf( "\nselect> " );
+}
+
+
+/* Steps are offered as 1..9 then a..e, because a single keypress is the whole
+   input method and fourteen of them will not fit in the digits. */
+static char step_key( uint32_t index )
+{
+    return index < 9u ? (char) ( '1' + index ) : (char) ( 'a' + ( index - 9u ) );
+}
+
+
+static void print_steps( void )
+{
+    mark_write();
+    BSP_ConsolePrintf( "\n=== One test at a time ===\n\n" );
+    for ( uint32_t index = 0; index < application_ibit_step_count(); ++index )
+    {
+        mark_write();
+        BSP_ConsolePrintf( "  %c  %s\n", step_key( index ), application_ibit_step_name( index ) );
+    }
+    mark_write();
+    BSP_ConsolePrintf( "  x  back to the menu\n\nselect> " );
+}
+
+
+static void enter_menu( void )
+{
+    /* Unconditional, including on paths where the shell was never started. The
+       `menu` command reaches here from inside command dispatch, and the shell
+       would otherwise print one last prompt after the menu that replaced it. */
+    application_console_release();
+    ui.mode = UI_MODE_MENU;
+    print_menu();
+}
+
+
+/* An activity owns the LED for its whole run, not just the parts that paint it.
+   The heartbeat is a 2 Hz writer and every activity here holds a colour for
+   longer than that, so sharing the LED means the heartbeat showing through the
+   middle of whatever the activity was trying to display. */
+static void start_activity( const application_activity_t *activity )
+{
+    application_diagnostics_release_led();
+    ui.mode = UI_MODE_ACTIVITY;
+    ui.activity = activity;
+    activity->start();
+}
+
+
+static void finish_activity( void )
+{
+    ui.activity = NULL;
+    application_diagnostics_reclaim_led();
+    enter_menu();
+}
+
+
+static void action_redraw( void )
+{
+    enter_menu();
+}
+
+
+static void action_ibit( void )
+{
+    start_activity( application_ibit_sequence() );
+}
+
+
+static void action_soak( void )
+{
+    start_activity( application_ibit_soak() );
+}
+
+
+static void action_steps( void )
+{
+    ui.mode = UI_MODE_STEPS;
+    print_steps();
+}
+
+
+static void action_report( void )
+{
+    application_ibit_print_board_report();
+    enter_menu();
+}
+
+
+static void action_blinker( void )
+{
+    start_activity( application_effects_blinker() );
+}
+
+
+static void action_advanced( void )
+{
+    start_activity( application_effects_advanced() );
+}
+
+
+static void action_shell( void )
+{
+    ui.mode = UI_MODE_SHELL;
+    application_console_start();
+}
+
+
+static void action_reboot( void )
+{
+    mark_write();
+    BSP_ConsolePrintf( "rebooting\n" );
+    BSP_McuReboot();
+}
+
+
+static void action_bootsel( void )
+{
+    mark_write();
+    BSP_ConsolePrintf( "entering BOOTSEL; the serial port will disappear\n" );
+    BSP_McuRebootToBootsel();
+}
+
+
+/* An unrecognized key redraws rather than complaining. The menu is the only
+   thing on screen that says which keys exist, so showing it again is both the
+   error message and the fix. */
+static void select_entry( int16_t character )
+{
+    for ( size_t index = 0; index < sizeof MENU / sizeof MENU[ 0 ]; ++index )
+    {
+        if ( MENU[ index ].key == (char) character )
+        {
+            MENU[ index ].action();
+            return;
+        }
+    }
+    enter_menu();
+}
+
+
+static void select_step( int16_t character )
+{
+    if ( (char) character == 'x' )
+    {
+        enter_menu();
+        return;
+    }
+    for ( uint32_t index = 0; index < application_ibit_step_count(); ++index )
+    {
+        if ( step_key( index ) == (char) character )
+        {
+            start_activity( application_ibit_single( index ) );
+            return;
+        }
+    }
+    print_steps();
 }

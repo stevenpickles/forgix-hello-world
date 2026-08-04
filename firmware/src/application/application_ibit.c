@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "application_ibit.h"
 
 #include <stdbool.h>
@@ -8,6 +15,16 @@
 
 #include "application_diagnostics.h"
 #include "bsp.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 enum
 {
@@ -29,7 +46,9 @@ enum
     EXPECTED_SRAM_BYTES = 520 * 1024,
 };
 
+
 typedef application_ibit_outcome_t ( *ibit_run_fn )( char *detail, size_t capacity );
+
 
 typedef struct
 {
@@ -41,6 +60,7 @@ typedef struct
     bool needs_fpga;
     ibit_run_fn run;
 } ibit_step_t;
+
 
 typedef struct
 {
@@ -75,23 +95,104 @@ typedef struct
     uint32_t soak_timeouts;
 } ibit_state_t;
 
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
 static ibit_state_t ibit;
 
+static const char *const OUTCOME_TEXT[] = {
+    "PENDING", "PASS", "FAIL", "TIMEOUT", "SKIP", "INFO",
+};
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static void mark_write( void );
+
+static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
+
+static uint32_t step_elapsed_ms( void );
+
+static bsp_memory_report_t memory_report( void );
+
+static bool within_tolerance( uint32_t measured, uint32_t expected );
+
+static application_ibit_outcome_t verdict( bool ok );
+
+static bool fpga_reachable( void );
+
 static application_ibit_outcome_t step_chip_identity( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_board_identity( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_clocks( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_memory_sizing( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_otp_devinfo( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_boot_flash( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_psram( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_temperature( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_usb( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_watchdog( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_fpga_configuration( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_fpga_registers( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_led( char *detail, size_t capacity );
+
 static application_ibit_outcome_t step_button( char *detail, size_t capacity );
 
+static void print_result( uint32_t index, application_ibit_outcome_t outcome, const char *detail );
+
+static void tally( application_ibit_outcome_t outcome );
+
+static void begin_step( uint32_t index );
+
+static void begin_run( uint32_t first_index, uint32_t last_index );
+
+static void print_summary( void );
+
+static bool advance( void );
+
+static void restore( void );
+
+static void sequence_start( void );
+
+static bool sequence_poll( void );
+
+static void soak_start( void );
+
+static bool soak_poll( void );
+
+static void single_start( void );
+
+static bool single_poll( void );
+
+/* Takes the address of the step_* runners above; C requires a function be
+   declared before its address is taken, so this table follows the
+   prototypes it binds instead of sitting under Private Variable
+   Declarations with the rest of the module's data. */
 static const ibit_step_t STEPS[] = {
     { "Chip identity", false, step_chip_identity },
     { "Board identity", false, step_board_identity },
@@ -112,24 +213,140 @@ static const ibit_step_t STEPS[] = {
     { "Button SW1", true, step_button },
 };
 
-static const char *const OUTCOME_TEXT[] = {
-    "PENDING", "PASS", "FAIL", "TIMEOUT", "SKIP", "INFO",
+/* Each of SEQUENCE, SOAK and SINGLE takes the address of its own start/poll
+   pair and shares restore for stop, so -- for the same reason as STEPS above
+   -- the three follow the prototypes rather than sitting under Private
+   Variable Declarations. */
+static const application_activity_t SEQUENCE = {
+    .name = "IBIT",
+    .start = sequence_start,
+    .poll = sequence_poll,
+    .stop = restore,
 };
+
+static const application_activity_t SOAK = {
+    .name = "IBIT soak",
+    .start = soak_start,
+    .poll = soak_poll,
+    .stop = restore,
+};
+
+static const application_activity_t SINGLE = {
+    .name = "IBIT step",
+    .start = single_start,
+    .poll = single_poll,
+    .stop = restore,
+};
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+uint32_t application_ibit_step_count( void )
+{
+    return (uint32_t) ( sizeof STEPS / sizeof STEPS[ 0 ] );
+}
+
+
+const char *application_ibit_step_name( uint32_t index )
+{
+    return STEPS[ index ].name;
+}
+
+
+const application_activity_t *application_ibit_sequence( void )
+{
+    return &SEQUENCE;
+}
+
+
+const application_activity_t *application_ibit_soak( void )
+{
+    return &SOAK;
+}
+
+
+const application_activity_t *application_ibit_single( uint32_t index )
+{
+    ibit.index = index;
+    return &SINGLE;
+}
+
+
+/* The same facts the sequence checks, printed without judging them. Useful when
+   a board is behaving and the question is what it actually is, rather than
+   whether it is well. */
+void application_ibit_print_board_report( void )
+{
+    const bsp_mcu_info_t info = BSP_McuInfo();
+    const bsp_clocks_report_t clocks = BSP_ClocksReport();
+    const bsp_adc_temperature_t temperature = BSP_AdcTemperature();
+
+    mark_write();
+    BSP_ConsolePrintf( "\nchip     manufacturer=%03X part=%04X revision=%u %s x%u\n",
+                       info.manufacturer, info.part, info.revision,
+                       info.architecture == BSP_MCU_ARCHITECTURE_ARM ? "Arm" : "RISC-V",
+                       info.core_count );
+    mark_write();
+    BSP_ConsolePrintf( "board    %02X%02X%02X%02X%02X%02X%02X%02X\n", info.unique_id[ 0 ],
+                       info.unique_id[ 1 ], info.unique_id[ 2 ], info.unique_id[ 3 ],
+                       info.unique_id[ 4 ], info.unique_id[ 5 ], info.unique_id[ 6 ],
+                       info.unique_id[ 7 ] );
+    mark_write();
+    BSP_ConsolePrintf( "package  id=%08lX device=%08lX%08lX valid=%u\n",
+                       (unsigned long) info.package_id, (unsigned long) info.device_id_high,
+                       (unsigned long) info.device_id_low, info.chip_info_valid );
+    mark_write();
+    BSP_ConsolePrintf( "memory   flash=%luKiB sram=%luKiB otp_cs0=0x%X otp_cs1=0x%X\n",
+                       (unsigned long) ( info.flash_bytes / 1024u ),
+                       (unsigned long) ( info.sram_bytes / 1024u ), info.otp_cs0_size_code,
+                       info.otp_cs1_size_code );
+    mark_write();
+    BSP_ConsolePrintf( "clocks   sys=%lu usb=%lu ref=%lu peri=%lu adc=%lu Hz configured\n",
+                       (unsigned long) clocks.sys_hz, (unsigned long) clocks.usb_hz,
+                       (unsigned long) clocks.ref_hz, (unsigned long) clocks.peri_hz,
+                       (unsigned long) clocks.adc_hz );
+    mark_write();
+    BSP_ConsolePrintf( "measured sys=%lu usb=%lu Hz\n", (unsigned long) clocks.measured_sys_hz,
+                       (unsigned long) clocks.measured_usb_hz );
+    mark_write();
+    BSP_ConsolePrintf( "die      %ld milli-degrees C, raw=%u\n", (long) temperature.milli_celsius,
+                       temperature.raw );
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
 
 static void mark_write( void )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
 }
 
+
 static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 {
     return (int32_t) ( now_ms - deadline_ms ) >= 0;
 }
 
+
 static uint32_t step_elapsed_ms( void )
 {
     return ibit.current_time_ms - ibit.step_started_ms;
 }
+
 
 /* Samples both QSPI devices at most once per run. They share SCLK and SD0..SD3,
    so one report covers both and a second pass would only add bus traffic. */
@@ -143,6 +360,7 @@ static bsp_memory_report_t memory_report( void )
     return ibit.memory;
 }
 
+
 static bool within_tolerance( uint32_t measured, uint32_t expected )
 {
     const uint32_t allowed = expected / CLOCK_TOLERANCE_DIVISOR;
@@ -150,10 +368,12 @@ static bool within_tolerance( uint32_t measured, uint32_t expected )
     return difference <= allowed;
 }
 
+
 static application_ibit_outcome_t verdict( bool ok )
 {
     return ok ? APPLICATION_IBIT_PASS : APPLICATION_IBIT_FAIL;
 }
+
 
 /* Asked of the FPGA itself, every time, rather than read from BSP_FpgaIsReady.
    That flag records what bring-up found and is only rewritten by a
@@ -165,11 +385,6 @@ static bool fpga_reachable( void )
 {
     return BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID;
 }
-
-
-
-
-/***** the steps *****/
 
 
 static application_ibit_outcome_t step_chip_identity( char *detail, size_t capacity )
@@ -532,11 +747,6 @@ static application_ibit_outcome_t step_button( char *detail, size_t capacity )
 }
 
 
-
-
-/***** the runner *****/
-
-
 /* Left-aligned to a fixed column rather than dot-leadered. Dots read better, but
    every way of drawing them needs a "name too long" branch that no step name can
    currently reach, and an unreachable branch is a hole in the coverage gate that
@@ -548,6 +758,7 @@ static void print_result( uint32_t index, application_ibit_outcome_t outcome, co
                        (unsigned long) application_ibit_step_count(), STEPS[ index ].name,
                        OUTCOME_TEXT[ outcome ], detail );
 }
+
 
 static void tally( application_ibit_outcome_t outcome )
 {
@@ -573,6 +784,7 @@ static void tally( application_ibit_outcome_t outcome )
     }
 }
 
+
 /* The dependency is settled once, here, rather than inside the steps. A step can
    span many passes, and asking per pass would put an FPGA transaction in the
    foreground loop once a millisecond to re-answer a question that cannot change
@@ -585,6 +797,7 @@ static void begin_step( uint32_t index )
     ibit.step_started_ms = ibit.current_time_ms;
     ibit.skipping = STEPS[ index ].needs_fpga && !fpga_reachable();
 }
+
 
 static void begin_run( uint32_t first_index, uint32_t last_index )
 {
@@ -601,6 +814,7 @@ static void begin_run( uint32_t first_index, uint32_t last_index )
     begin_step( first_index );
 }
 
+
 static void print_summary( void )
 {
     const uint32_t elapsed_ms = ibit.current_time_ms - ibit.sequence_started_ms;
@@ -612,6 +826,7 @@ static void print_summary( void )
                        (unsigned long) ibit.info, (unsigned long) ( elapsed_ms / 1000u ),
                        (unsigned long) ( ( elapsed_ms / 100u ) % 10u ) );
 }
+
 
 /* One step per pass at most, so the foreground loop keeps feeding the watchdog
    whatever any individual step is waiting for. */
@@ -647,6 +862,7 @@ static bool advance( void )
     return true;
 }
 
+
 /* Anything left mid-run is put back here, because an abort is exactly when the
    LED is most likely to be sitting on a test colour. */
 static void restore( void )
@@ -659,12 +875,14 @@ static void restore( void )
     }
 }
 
+
 static void sequence_start( void )
 {
     mark_write();
     BSP_ConsolePrintf( "\nInitiated built-in test\n\n" );
     begin_run( 0, application_ibit_step_count() - 1u );
 }
+
 
 static bool sequence_poll( void )
 {
@@ -676,6 +894,7 @@ static bool sequence_poll( void )
     return false;
 }
 
+
 static void soak_start( void )
 {
     ibit.soak_iterations = 0;
@@ -685,6 +904,7 @@ static void soak_start( void )
     BSP_ConsolePrintf( "\nIBIT soak; press any key to stop\n\n" );
     begin_run( 0, application_ibit_step_count() - 1u );
 }
+
 
 static bool soak_poll( void )
 {
@@ -712,6 +932,7 @@ static bool soak_poll( void )
     return true;
 }
 
+
 static void single_start( void )
 {
     mark_write();
@@ -719,101 +940,8 @@ static void single_start( void )
     begin_run( ibit.index, ibit.index );
 }
 
+
 static bool single_poll( void )
 {
     return advance();
-}
-
-static const application_activity_t SEQUENCE = {
-    .name = "IBIT",
-    .start = sequence_start,
-    .poll = sequence_poll,
-    .stop = restore,
-};
-
-static const application_activity_t SOAK = {
-    .name = "IBIT soak",
-    .start = soak_start,
-    .poll = soak_poll,
-    .stop = restore,
-};
-
-static const application_activity_t SINGLE = {
-    .name = "IBIT step",
-    .start = single_start,
-    .poll = single_poll,
-    .stop = restore,
-};
-
-
-
-
-/***** public interface *****/
-
-
-uint32_t application_ibit_step_count( void )
-{
-    return (uint32_t) ( sizeof STEPS / sizeof STEPS[ 0 ] );
-}
-
-const char *application_ibit_step_name( uint32_t index )
-{
-    return STEPS[ index ].name;
-}
-
-const application_activity_t *application_ibit_sequence( void )
-{
-    return &SEQUENCE;
-}
-
-const application_activity_t *application_ibit_soak( void )
-{
-    return &SOAK;
-}
-
-const application_activity_t *application_ibit_single( uint32_t index )
-{
-    ibit.index = index;
-    return &SINGLE;
-}
-
-/* The same facts the sequence checks, printed without judging them. Useful when
-   a board is behaving and the question is what it actually is, rather than
-   whether it is well. */
-void application_ibit_print_board_report( void )
-{
-    const bsp_mcu_info_t info = BSP_McuInfo();
-    const bsp_clocks_report_t clocks = BSP_ClocksReport();
-    const bsp_adc_temperature_t temperature = BSP_AdcTemperature();
-
-    mark_write();
-    BSP_ConsolePrintf( "\nchip     manufacturer=%03X part=%04X revision=%u %s x%u\n",
-                       info.manufacturer, info.part, info.revision,
-                       info.architecture == BSP_MCU_ARCHITECTURE_ARM ? "Arm" : "RISC-V",
-                       info.core_count );
-    mark_write();
-    BSP_ConsolePrintf( "board    %02X%02X%02X%02X%02X%02X%02X%02X\n", info.unique_id[ 0 ],
-                       info.unique_id[ 1 ], info.unique_id[ 2 ], info.unique_id[ 3 ],
-                       info.unique_id[ 4 ], info.unique_id[ 5 ], info.unique_id[ 6 ],
-                       info.unique_id[ 7 ] );
-    mark_write();
-    BSP_ConsolePrintf( "package  id=%08lX device=%08lX%08lX valid=%u\n",
-                       (unsigned long) info.package_id, (unsigned long) info.device_id_high,
-                       (unsigned long) info.device_id_low, info.chip_info_valid );
-    mark_write();
-    BSP_ConsolePrintf( "memory   flash=%luKiB sram=%luKiB otp_cs0=0x%X otp_cs1=0x%X\n",
-                       (unsigned long) ( info.flash_bytes / 1024u ),
-                       (unsigned long) ( info.sram_bytes / 1024u ), info.otp_cs0_size_code,
-                       info.otp_cs1_size_code );
-    mark_write();
-    BSP_ConsolePrintf( "clocks   sys=%lu usb=%lu ref=%lu peri=%lu adc=%lu Hz configured\n",
-                       (unsigned long) clocks.sys_hz, (unsigned long) clocks.usb_hz,
-                       (unsigned long) clocks.ref_hz, (unsigned long) clocks.peri_hz,
-                       (unsigned long) clocks.adc_hz );
-    mark_write();
-    BSP_ConsolePrintf( "measured sys=%lu usb=%lu Hz\n", (unsigned long) clocks.measured_sys_hz,
-                       (unsigned long) clocks.measured_usb_hz );
-    mark_write();
-    BSP_ConsolePrintf( "die      %ld milli-degrees C, raw=%u\n", (long) temperature.milli_celsius,
-                       temperature.raw );
 }

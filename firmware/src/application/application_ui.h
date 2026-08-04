@@ -1,8 +1,32 @@
 #ifndef FORGIX_APPLICATION_UI_H
 #define FORGIX_APPLICATION_UI_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include <stdbool.h>
 #include <stdint.h>
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 enum
 {
@@ -32,6 +56,16 @@ typedef struct
     void ( *stop )( void );
 } application_activity_t;
 
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
 void application_ui_start( void );
 void application_ui_poll( void );
 
@@ -39,5 +73,9 @@ void application_ui_poll( void );
    Declared here rather than in application.h because the shell is a guest of the
    UI layer, not the other way round. */
 void application_ui_enter_menu( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

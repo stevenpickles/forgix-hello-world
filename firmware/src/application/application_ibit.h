@@ -1,10 +1,34 @@
 #ifndef FORGIX_APPLICATION_IBIT_H
 #define FORGIX_APPLICATION_IBIT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include <stdbool.h>
 #include <stdint.h>
 
 #include "application_ui.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 enum
 {
@@ -31,6 +55,16 @@ typedef enum
     APPLICATION_IBIT_INFO,
 } application_ibit_outcome_t;
 
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
 uint32_t application_ibit_step_count( void );
 const char *application_ibit_step_name( uint32_t index );
 
@@ -46,5 +80,9 @@ const application_activity_t *application_ibit_soak( void );
 const application_activity_t *application_ibit_single( uint32_t index );
 
 void application_ibit_print_board_report( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

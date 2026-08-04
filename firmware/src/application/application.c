@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "application.h"
 
 #include <stdbool.h>
@@ -10,53 +17,33 @@
 #include "application_ui.h"
 #include "bsp.h"
 
-static bool parse_byte( const char *text, uint8_t *value )
-{
-    char *end = NULL;
-    long parsed = strtol( text, &end, 0 );
-    if ( end == text || *end )
-    {
-        return false;
-    }
-    if ( parsed < 0 || parsed > 255 )
-    {
-        return false;
-    }
-    *value = (uint8_t) parsed;
-    return true;
-}
 
-static bool parse_watch_period( const char *text, uint32_t *seconds )
-{
-    char *end = NULL;
-    long parsed = strtol( text, &end, 10 );
-    if ( end == text || *end || parsed < APPLICATION_WATCH_MIN_SECONDS ||
-         parsed > APPLICATION_WATCH_MAX_SECONDS )
-    {
-        return false;
-    }
-    *seconds = (uint32_t) parsed;
-    return true;
-}
 
-static void print_help( void )
-{
-    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset "
-                     "| echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
-}
 
-/* Both QSPI memories share the same data lines, so a fault on one shows up as
-   the other misbehaving. Reported at boot and repeatable through `diag`, because
-   a line that only appears once is a line nobody is listening for. */
-static void print_memory_report( void )
-{
-    bsp_memory_report_t memory = BSP_MemoryCheck();
-    BSP_ConsolePrintf(
-        "Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u forced=%u kgd=%02X eid=%02X\n",
-        (unsigned long) ( memory.flash_bytes / 1024u ), memory.flash_ok,
-        (unsigned long) ( memory.psram_bytes / 1024u ), memory.psram_ok, memory.psram_forced,
-        memory.psram_kgd, memory.psram_eid );
-}
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bool parse_byte( const char *text, uint8_t *value );
+
+static bool parse_watch_period( const char *text, uint32_t *seconds );
+
+static void print_help( void );
+
+static void print_memory_report( void );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
 
 void application_print_status( void )
 {
@@ -70,6 +57,7 @@ void application_print_status( void )
     BSP_ConsolePrintf( "id=%02X status=%02X button=%02X count=%u fpga_status=%u\n", BSP_FpgaPing(),
                        BSP_FpgaReadStatus(), button.level, button.count, BSP_FpgaStatusPin() );
 }
+
 
 void application_process_command( char *line )
 {
@@ -222,6 +210,7 @@ void application_process_command( char *line )
     }
 }
 
+
 void application_init( const bsp_init_result_t *bsp_result )
 {
     print_memory_report();
@@ -235,4 +224,65 @@ void application_init( const bsp_init_result_t *bsp_result )
                          "commands are disabled" );
     }
     print_help();
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+static bool parse_byte( const char *text, uint8_t *value )
+{
+    char *end = NULL;
+    long parsed = strtol( text, &end, 0 );
+    if ( end == text || *end )
+    {
+        return false;
+    }
+    if ( parsed < 0 || parsed > 255 )
+    {
+        return false;
+    }
+    *value = (uint8_t) parsed;
+    return true;
+}
+
+
+static bool parse_watch_period( const char *text, uint32_t *seconds )
+{
+    char *end = NULL;
+    long parsed = strtol( text, &end, 10 );
+    if ( end == text || *end || parsed < APPLICATION_WATCH_MIN_SECONDS ||
+         parsed > APPLICATION_WATCH_MAX_SECONDS )
+    {
+        return false;
+    }
+    *seconds = (uint32_t) parsed;
+    return true;
+}
+
+
+static void print_help( void )
+{
+    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset "
+                     "| echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
+}
+
+
+/* Both QSPI memories share the same data lines, so a fault on one shows up as
+   the other misbehaving. Reported at boot and repeatable through `diag`, because
+   a line that only appears once is a line nobody is listening for. */
+static void print_memory_report( void )
+{
+    bsp_memory_report_t memory = BSP_MemoryCheck();
+    BSP_ConsolePrintf(
+        "Forgix: flash=%luKiB ok=%u psram=%luKiB ok=%u forced=%u kgd=%02X eid=%02X\n",
+        (unsigned long) ( memory.flash_bytes / 1024u ), memory.flash_ok,
+        (unsigned long) ( memory.psram_bytes / 1024u ), memory.psram_ok, memory.psram_forced,
+        memory.psram_kgd, memory.psram_eid );
 }

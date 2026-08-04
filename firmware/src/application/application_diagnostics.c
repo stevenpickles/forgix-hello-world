@@ -1,9 +1,26 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "application_diagnostics.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
 #include "bsp.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 enum
 {
@@ -22,6 +39,7 @@ enum
     BOOT_REPORT_REPEATS = 3,
 };
 
+
 /* Packing of snapshot slot 2. Slot 0 holds the loop-seconds counter and slot 1
    the raw USB activity counter. The FPGA counters are narrow modulo fields; the
    full-width values stay available live through the `diag` command. */
@@ -37,6 +55,7 @@ enum
     HEALTH_FPGA_RECONFIGURE_MASK = 0x3fu,
 };
 
+
 typedef struct
 {
     uint8_t red;
@@ -44,6 +63,7 @@ typedef struct
     uint8_t blue;
     uint32_t blinks;
 } boot_signature_t;
+
 
 typedef struct
 {
@@ -73,7 +93,193 @@ typedef struct
     uint32_t fpga_reconfigures;
 } diagnostics_state_t;
 
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
 static diagnostics_state_t diagnostics;
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
+
+static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms );
+
+static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue );
+
+static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue );
+
+static void apply_led( uint32_t now_ms );
+
+static bool led_readback_matches( void );
+
+static void check_fpga( uint32_t now_ms );
+
+static void sample_usb( uint32_t now_ms );
+
+static uint32_t packed_health( void );
+
+static void store_snapshots( void );
+
+static const char *boot_reason_name( void );
+
+static void print_boot_report( void );
+
+static void print_live_report( void );
+
+static uint32_t clamp_blinks( uint32_t marker );
+
+static boot_signature_t boot_signature( void );
+
+static void blink_boot_report( void );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+void application_diagnostics_start( void )
+{
+    diagnostics = (diagnostics_state_t) { 0 };
+    diagnostics.usb_present = BSP_UsbPresent();
+    diagnostics.boot_reason = BSP_WatchdogBootReason();
+    diagnostics.boot_marker = BSP_WatchdogMarkerGet();
+    for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
+    {
+        diagnostics.boot_snapshot[ slot ] = BSP_WatchdogSnapshotGet( slot );
+        BSP_WatchdogSnapshotSet( slot, 0 );
+    }
+
+    /* Printing is unconditional: with no stdio backend linked it costs nothing,
+       and when the USB-free image is built with FORGIX_DIAGNOSTIC_UART it is the
+       only report that survives the FPGA dying. The blink code is additional,
+       for the console-less build. */
+    print_boot_report();
+    if ( !diagnostics.usb_present )
+    {
+        blink_boot_report();
+    }
+
+    uint32_t now_ms = BSP_TimeNowMs();
+    diagnostics.led_on = true;
+    diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
+    diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
+    diagnostics.last_activity_ms = now_ms;
+    diagnostics.last_frame_ms = now_ms;
+    apply_led( now_ms );
+
+    BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
+    BSP_WatchdogStart( APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS );
+}
+
+void application_diagnostics_poll( void )
+{
+    BSP_WatchdogFeed();
+    BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
+
+    uint32_t now_ms = BSP_TimeNowMs();
+    bool led_due = deadline_reached( now_ms, diagnostics.next_led_ms );
+    bool sample_due = deadline_reached( now_ms, diagnostics.next_sample_ms );
+
+    /* Sampling first means the heartbeat color below reflects the health just
+       read, and the single LED write is the one the FPGA check reads back. */
+    if ( sample_due )
+    {
+        diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
+        ++diagnostics.uptime_seconds;
+        sample_usb( now_ms );
+    }
+    if ( led_due )
+    {
+        diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
+        diagnostics.led_on = !diagnostics.led_on;
+    }
+    if ( ( led_due || sample_due ) && !diagnostics.led_released )
+    {
+        apply_led( now_ms );
+    }
+    if ( led_due && diagnostics.recovery_toggles )
+    {
+        --diagnostics.recovery_toggles;
+    }
+    if ( sample_due )
+    {
+        check_fpga( now_ms );
+        store_snapshots();
+        /* One line per second in the USB-free image. On a UART build this is the
+           MCU-liveness proof the LED cannot give: it depends on nothing but the
+           foreground loop, so the last logged second dates the freeze exactly.
+           The shell image omits it, where it would flood the console. */
+        if ( !diagnostics.usb_present )
+        {
+            print_live_report();
+        }
+        BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
+    }
+}
+
+void application_diagnostics_print_report( void )
+{
+    print_boot_report();
+    BSP_ConsolePrintf(
+        "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
+        "fpga_fail=%lu fpga_reconfig=%lu\n",
+        (unsigned long) diagnostics.uptime_seconds, diagnostics.health.connected,
+        diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
+        (unsigned long) diagnostics.health.activity_count,
+        (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
+        (unsigned long) diagnostics.fpga_reconfigures );
+}
+
+void application_diagnostics_release_led( void )
+{
+    diagnostics.led_released = true;
+}
+
+void application_diagnostics_reclaim_led( void )
+{
+    diagnostics.led_released = false;
+    /* Written immediately rather than at the next 250 ms edge. Waiting would
+       leave whatever the last owner painted on the board for a quarter of a
+       second after it stopped owning it, and -- worse -- would leave the FPGA
+       health check comparing against a command that predates the handover if it
+       samples first. */
+    apply_led( BSP_TimeNowMs() );
+}
+
+bsp_boot_reason application_diagnostics_boot_reason( void )
+{
+    return diagnostics.boot_reason;
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
 
 static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 {
@@ -351,118 +557,4 @@ static void blink_boot_report( void )
         }
         BSP_TimeSleepMs( BOOT_BLINK_GAP_MS );
     }
-}
-
-void application_diagnostics_start( void )
-{
-    diagnostics = (diagnostics_state_t) { 0 };
-    diagnostics.usb_present = BSP_UsbPresent();
-    diagnostics.boot_reason = BSP_WatchdogBootReason();
-    diagnostics.boot_marker = BSP_WatchdogMarkerGet();
-    for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
-    {
-        diagnostics.boot_snapshot[ slot ] = BSP_WatchdogSnapshotGet( slot );
-        BSP_WatchdogSnapshotSet( slot, 0 );
-    }
-
-    /* Printing is unconditional: with no stdio backend linked it costs nothing,
-       and when the USB-free image is built with FORGIX_DIAGNOSTIC_UART it is the
-       only report that survives the FPGA dying. The blink code is additional,
-       for the console-less build. */
-    print_boot_report();
-    if ( !diagnostics.usb_present )
-    {
-        blink_boot_report();
-    }
-
-    uint32_t now_ms = BSP_TimeNowMs();
-    diagnostics.led_on = true;
-    diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
-    diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-    diagnostics.last_activity_ms = now_ms;
-    diagnostics.last_frame_ms = now_ms;
-    apply_led( now_ms );
-
-    BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
-    BSP_WatchdogStart( APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS );
-}
-
-void application_diagnostics_poll( void )
-{
-    BSP_WatchdogFeed();
-    BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
-
-    uint32_t now_ms = BSP_TimeNowMs();
-    bool led_due = deadline_reached( now_ms, diagnostics.next_led_ms );
-    bool sample_due = deadline_reached( now_ms, diagnostics.next_sample_ms );
-
-    /* Sampling first means the heartbeat color below reflects the health just
-       read, and the single LED write is the one the FPGA check reads back. */
-    if ( sample_due )
-    {
-        diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-        ++diagnostics.uptime_seconds;
-        sample_usb( now_ms );
-    }
-    if ( led_due )
-    {
-        diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
-        diagnostics.led_on = !diagnostics.led_on;
-    }
-    if ( ( led_due || sample_due ) && !diagnostics.led_released )
-    {
-        apply_led( now_ms );
-    }
-    if ( led_due && diagnostics.recovery_toggles )
-    {
-        --diagnostics.recovery_toggles;
-    }
-    if ( sample_due )
-    {
-        check_fpga( now_ms );
-        store_snapshots();
-        /* One line per second in the USB-free image. On a UART build this is the
-           MCU-liveness proof the LED cannot give: it depends on nothing but the
-           foreground loop, so the last logged second dates the freeze exactly.
-           The shell image omits it, where it would flood the console. */
-        if ( !diagnostics.usb_present )
-        {
-            print_live_report();
-        }
-        BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
-    }
-}
-
-void application_diagnostics_print_report( void )
-{
-    print_boot_report();
-    BSP_ConsolePrintf(
-        "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
-        "fpga_fail=%lu fpga_reconfig=%lu\n",
-        (unsigned long) diagnostics.uptime_seconds, diagnostics.health.connected,
-        diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
-        (unsigned long) diagnostics.health.activity_count,
-        (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
-        (unsigned long) diagnostics.fpga_reconfigures );
-}
-
-void application_diagnostics_release_led( void )
-{
-    diagnostics.led_released = true;
-}
-
-void application_diagnostics_reclaim_led( void )
-{
-    diagnostics.led_released = false;
-    /* Written immediately rather than at the next 250 ms edge. Waiting would
-       leave whatever the last owner painted on the board for a quarter of a
-       second after it stopped owning it, and -- worse -- would leave the FPGA
-       health check comparing against a command that predates the handover if it
-       samples first. */
-    apply_led( BSP_TimeNowMs() );
-}
-
-bsp_boot_reason application_diagnostics_boot_reason( void )
-{
-    return diagnostics.boot_reason;
 }

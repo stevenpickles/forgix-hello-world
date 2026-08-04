@@ -1,8 +1,32 @@
 #ifndef FORGIX_APPLICATION_CONSOLE_H
 #define FORGIX_APPLICATION_CONSOLE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include <stdbool.h>
 #include <stdint.h>
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 enum
 {
@@ -11,6 +35,16 @@ enum
     APPLICATION_WATCH_MIN_SECONDS = 1,
     APPLICATION_WATCH_MAX_SECONDS = 3600,
 };
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
 
 /* The console no longer reads its own characters. The UI layer owns the terminal
    and decides whether a byte belongs to the shell, so it hands one in through
@@ -31,5 +65,9 @@ void application_console_set_echo( bool enabled );
 void application_console_set_quiet( bool enabled );
 void application_console_set_watch( uint32_t period_seconds );
 void application_console_disable_watch( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

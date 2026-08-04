@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "application_effects.h"
 
 #include <stdbool.h>
@@ -6,6 +13,16 @@
 
 #include "application_diagnostics.h"
 #include "bsp.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 enum
 {
@@ -22,6 +39,7 @@ enum
     WHEEL_SECTORS = 6,
 };
 
+
 /* How a channel behaves across one sector of the colour wheel. Encoding the four
    behaviours rather than writing six triples of expressions keeps the sector
    table readable as the thing it is -- a loop around the hues. */
@@ -32,6 +50,7 @@ typedef enum
     LEVEL_FALLING,
     LEVEL_ZERO,
 } level_t;
+
 
 typedef struct
 {
@@ -45,7 +64,18 @@ typedef struct
     bsp_led_state_t before;
 } effects_state_t;
 
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
 static effects_state_t effects;
+
 
 static const level_t WHEEL[ WHEEL_SECTORS ][ 3 ] = {
     { LEVEL_FULL, LEVEL_RISING, LEVEL_ZERO },  /* red to yellow */
@@ -56,17 +86,101 @@ static const level_t WHEEL[ WHEEL_SECTORS ][ 3 ] = {
     { LEVEL_FULL, LEVEL_ZERO, LEVEL_FALLING }, /* magenta back to red */
 };
 
+
 /* One beat and a weaker echo, the shape a pulse actually has. A plain triangle
    ramp reads as breathing rather than a heartbeat. */
 static const uint8_t HEARTBEAT[] = {
     16, 90, 200, 255, 190, 90, 32, 16, 24, 120, 170, 120, 48, 16, 16, 16,
 };
 
+
 /* Cold greens and blues drifting through a violet, which is what makes it read
    as an aurora rather than a colour fade. */
 static const uint8_t AURORA[][ 3 ] = {
     { 0, 40, 80 }, { 0, 120, 140 }, { 40, 0, 190 }, { 0, 190, 110 }, { 0, 40, 80 },
 };
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
+
+static bool update_due( void );
+
+static uint8_t channel( level_t behaviour, uint8_t rising );
+
+static void begin( uint32_t update_ms );
+
+static void restore( void );
+
+static void blinker_start( void );
+
+static bool blinker_poll( void );
+
+static void advanced_start( void );
+
+static void show_heartbeat( uint32_t elapsed_ms );
+
+static void show_wheel( uint32_t elapsed_ms );
+
+static void show_aurora( uint32_t elapsed_ms );
+
+static bool advanced_poll( void );
+
+
+/* These name the static handlers above, so they have to sit after the
+   declarations that supply them and before the public functions that hand them
+   out -- the one place in the canonical section order both are true. */
+static const application_activity_t BLINKER = {
+    .name = "blinker",
+    .start = blinker_start,
+    .poll = blinker_poll,
+    .stop = restore,
+};
+
+static const application_activity_t ADVANCED = {
+    .name = "advanced blinker",
+    .start = advanced_start,
+    .poll = advanced_poll,
+    .stop = restore,
+};
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
+const application_activity_t *application_effects_blinker( void )
+{
+    return &BLINKER;
+}
+
+const application_activity_t *application_effects_advanced( void )
+{
+    return &ADVANCED;
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
 
 static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 {
@@ -195,11 +309,11 @@ static void show_aurora( uint32_t elapsed_ms )
     const uint32_t into = elapsed_ms % span_ms;
     uint8_t blended[ 3 ] = { 0 };
 
-    for ( uint32_t channelIndex = 0; channelIndex < 3u; ++channelIndex )
+    for ( uint32_t channel_index = 0; channel_index < 3u; ++channel_index )
     {
-        const int32_t from = AURORA[ stop ][ channelIndex ];
-        const int32_t to = AURORA[ stop + 1u ][ channelIndex ];
-        blended[ channelIndex ] =
+        const int32_t from = AURORA[ stop ][ channel_index ];
+        const int32_t to = AURORA[ stop + 1u ][ channel_index ];
+        blended[ channel_index ] =
             (uint8_t) ( from + ( ( to - from ) * (int32_t) into ) / (int32_t) span_ms );
     }
     BSP_LedSet( blended[ 0 ], blended[ 1 ], blended[ 2 ], EFFECT_BRIGHTNESS );
@@ -238,28 +352,4 @@ static bool advanced_poll( void )
         show_aurora( elapsed_ms - HEARTBEAT_MS - WHEEL_MS );
     }
     return true;
-}
-
-static const application_activity_t BLINKER = {
-    .name = "blinker",
-    .start = blinker_start,
-    .poll = blinker_poll,
-    .stop = restore,
-};
-
-static const application_activity_t ADVANCED = {
-    .name = "advanced blinker",
-    .start = advanced_start,
-    .poll = advanced_poll,
-    .stop = restore,
-};
-
-const application_activity_t *application_effects_blinker( void )
-{
-    return &BLINKER;
-}
-
-const application_activity_t *application_effects_advanced( void )
-{
-    return &ADVANCED;
 }

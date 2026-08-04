@@ -1,9 +1,33 @@
 #ifndef FORGIX_APPLICATION_DIAGNOSTICS_H
 #define FORGIX_APPLICATION_DIAGNOSTICS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include <stdint.h>
 
 #include "bsp.h"
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
 
 /* Progress markers written to the watchdog marker register. After a watchdog
    reset the retained value names the code path that stopped making progress. */
@@ -47,6 +71,16 @@ enum
     APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS = 30000,
 };
 
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
 /* Reports the previous boot and arms the watchdog. Must run before the
    foreground loop starts, and before anything overwrites the retained scratch. */
 void application_diagnostics_start( void );
@@ -79,5 +113,9 @@ void application_diagnostics_reclaim_led( void );
    watchdog_enable_caused_reboot consults, so a live query minutes into a session
    reports a watchdog reset on a board that powered up cleanly. */
 bsp_boot_reason application_diagnostics_boot_reason( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

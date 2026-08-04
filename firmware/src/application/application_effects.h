@@ -1,7 +1,31 @@
 #ifndef FORGIX_APPLICATION_EFFECTS_H
 #define FORGIX_APPLICATION_EFFECTS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "application_ui.h"
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
 
 /* Never ends on its own; the classic blinky, one colour at a time at 1 Hz. It is
    the first thing anyone reaches for on a new board and the last thing worth
@@ -13,5 +37,9 @@ const application_activity_t *application_effects_blinker( void );
    are the effects scripts/test_hardware.ps1 drove from the host; running them in
    firmware means a board with no host attached can still be looked at. */
 const application_activity_t *application_effects_advanced( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
