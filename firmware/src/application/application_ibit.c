@@ -88,6 +88,10 @@ typedef struct
        sampled once per run and read twice rather than run twice. */
     bool memory_sampled;
     bsp_memory_report_t memory;
+    /* The PSRAM step's scratch: chunks per sweep pass, derived from the
+       reported size, and this run's legal-window identity read. */
+    uint32_t psram_chunks;
+    bsp_memory_psram_identity_t psram_identity;
     /* Captured before the LED step drives anything, so whatever the user had
        showing comes back afterwards. */
     bool led_saved;
@@ -145,6 +149,8 @@ static bool within_tolerance( uint32_t measured, uint32_t expected );
 static application_ibit_outcome_t verdict( bool ok );
 
 static bool fpga_reachable( void );
+
+static const char *psram_schematic_note( void );
 
 static application_ibit_outcome_t step_chip_identity( char *detail, size_t capacity );
 
@@ -470,6 +476,19 @@ static bool within_tolerance( uint32_t measured, uint32_t expected )
 
 
 /// <summary>
+///     The schematic note for the PSRAM detail strings, keyed on this run's
+///     legal-window bytes rather than the boot capture, which can be stale.
+/// </summary>
+/// <returns>
+///     A suffix naming the identity mismatch, or an empty string on a match.
+/// </returns>
+static const char *psram_schematic_note( void )
+{
+    return ibit.psram_identity.kgd == 0x5du ? "" : " (not the part on the schematic)";
+}
+
+
+/// <summary>
 ///     Narrows a boolean to the pass/fail pair and nothing else. A step with any
 ///     other answer to give -- SKIP, INFO, TIMEOUT, PENDING -- returns it directly,
 ///     so a call to this is itself the sign that the step is a plain yes-or-no.
@@ -661,39 +680,89 @@ static application_ibit_outcome_t step_boot_flash( char *detail, size_t capacity
 
 
 /* The identity mismatch is reported and not failed. Identity and function are
-   separate questions: this device passes a pattern across its whole range but
-   calls itself KGD 0x0B EID 0x43 rather than AP Memory's 0x5D, so the fitted
-   part is not the APS1604M-3SQR-SN on the schematic. Reading the package marking
-   is what would settle it, and no test can. */
+   separate questions: this device sweeps clean across its whole range but calls
+   itself KGD 0x0B EID 0x43 rather than AP Memory's 0x5D, so the fitted part is
+   not the APS1604M-3SQR-SN on the schematic. Reading the package marking is
+   what would settle it, and no test can.
+
+   The identity is re-read every run in the one window the datasheet allows --
+   straight after a global reset -- because the boot capture is only meaningful
+   on a cold start. After a warm reboot the device was still in QPI when the
+   SDK's serial Read-ID ran, and the bytes it kept are nonsense. */
 /// <summary>
-///     The verdict is the pattern and nothing but the pattern; the identity bytes
-///     are appended to the detail whatever they say. A build that never brought
-///     the device up returns SKIP, so it is never counted against the board.
+///     Reads the identity in its legal window, then drives a moving-inversion
+///     sweep over the whole device one chunk per pass: the full range is written
+///     before any of it is verified, which is what catches a smaller die
+///     aliasing the window. The verdict is the sweep and nothing but the sweep;
+///     the identity bytes are appended to the detail whatever they say.
 /// </summary>
 /// <returns>
-///     SKIP when PSRAM is absent from this build, otherwise PASS or FAIL on whether
-///     the pattern survived.
+///     SKIP when PSRAM is absent from this build, PENDING between chunks, then
+///     PASS or FAIL on whether every chunk held.
 /// </returns>
 static application_ibit_outcome_t step_psram( char *detail, size_t capacity )
 {
-    const bsp_memory_report_t memory = memory_report();
-
-    /* FORGIX_QSPI_PSRAM is a supported way to build this firmware, and with it
-       off the device is never brought up. Reporting that as a failure would
-       accuse a board of a fault that is really a build decision -- and the two
-       are indistinguishable from the numbers, since a device that was never
-       enabled and one that failed detection both read zero bytes and not ok. */
-    if ( !memory.psram_enabled )
+    if ( ibit.phase == 0 )
     {
-        snprintf( detail, capacity, "not enabled in this build (FORGIX_QSPI_PSRAM off)" );
-        return APPLICATION_IBIT_SKIP;
+        const bsp_memory_report_t memory = memory_report();
+
+        /* FORGIX_QSPI_PSRAM is a supported way to build this firmware, and with
+           it off the device is never brought up. Reporting that as a failure
+           would accuse a board of a fault that is really a build decision --
+           and the two are indistinguishable from the numbers, since a device
+           that was never enabled and one that failed detection both read zero
+           bytes and not ok. */
+        if ( !memory.psram_enabled )
+        {
+            snprintf( detail, capacity, "not enabled in this build (FORGIX_QSPI_PSRAM off)" );
+            return APPLICATION_IBIT_SKIP;
+        }
+        if ( memory.psram_bytes < (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES )
+        {
+            snprintf( detail, capacity, "%luKiB reported; too small to sweep",
+                      (unsigned long) ( memory.psram_bytes / 1024u ) );
+            return APPLICATION_IBIT_FAIL;
+        }
+
+        /* Identity before sweep, because the read begins with a global reset
+           that tears the device out of QPI; the same call re-enters it. A
+           failed re-entry means there is no window to sweep. */
+        ibit.psram_identity = BSP_MemoryPsramIdentify();
+        if ( !ibit.psram_identity.restored )
+        {
+            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry failed",
+                      ibit.psram_identity.kgd, ibit.psram_identity.eid );
+            return APPLICATION_IBIT_FAIL;
+        }
+        ibit.psram_chunks = memory.psram_bytes / (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
+        ibit.phase = 1;
+        return APPLICATION_IBIT_PENDING;
     }
 
-    snprintf( detail, capacity, "%luKiB pattern %s, kgd=%02X eid=%02X%s",
-              (unsigned long) ( memory.psram_bytes / 1024u ), memory.psram_ok ? "held" : "LOST",
-              memory.psram_kgd, memory.psram_eid,
-              memory.psram_kgd == 0x5du ? "" : " (not the part on the schematic)" );
-    return verdict( memory.psram_ok );
+    const uint32_t swept_kib =
+        ibit.psram_chunks * ( (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES / 1024u );
+    const uint32_t chunk_ordinal = ibit.phase - 1u;
+    const bsp_memory_sweep_op op = (bsp_memory_sweep_op) ( chunk_ordinal / ibit.psram_chunks );
+    const bsp_memory_sweep_result_t result =
+        BSP_MemoryPsramSweepChunk( op, chunk_ordinal % ibit.psram_chunks );
+
+    if ( !result.ok )
+    {
+        snprintf( detail, capacity, "%luKiB sweep %lu/3 LOST at 0x%08lX, kgd=%02X eid=%02X%s",
+                  (unsigned long) swept_kib, (unsigned long) ( (uint32_t) op + 1u ),
+                  (unsigned long) result.fail_address, ibit.psram_identity.kgd,
+                  ibit.psram_identity.eid, psram_schematic_note() );
+        return APPLICATION_IBIT_FAIL;
+    }
+    if ( ibit.phase == 3u * ibit.psram_chunks )
+    {
+        snprintf( detail, capacity, "%luKiB sweep held, kgd=%02X eid=%02X%s",
+                  (unsigned long) swept_kib, ibit.psram_identity.kgd, ibit.psram_identity.eid,
+                  psram_schematic_note() );
+        return APPLICATION_IBIT_PASS;
+    }
+    ++ibit.phase;
+    return APPLICATION_IBIT_PENDING;
 }
 
 
