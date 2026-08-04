@@ -448,6 +448,26 @@ void test_ctrl_c_and_ctrl_l_remain_silent_in_quiet_mode( void )
 }
 
 
+/* The ^C marker and the repaint mirror what was typed, so with echo off they
+   have nothing to mirror: a script that happens to send 0x03 or 0x0C must not
+   get terminal-rendering bytes injected into its stream. The prompt after a
+   cancel is command-class output and still prints, matching a completed line. */
+void test_ctrl_c_and_ctrl_l_are_silent_with_echo_off( void )
+{
+    start_at( 0 );
+    poll_text_at( "echo off\r", 100 );
+    MOCK_BSP_ConsoleReset();
+
+    MOCK_BSP_ConsoleQueueCharacter( 12 );
+    poll_at( 200 );
+    TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
+
+    MOCK_BSP_ConsoleQueueCharacter( 3 );
+    poll_at( 200 );
+    TEST_ASSERT_EQUAL_STRING( "forgix> ", MOCK_BSP_ConsoleOutput() );
+}
+
+
 
 
 /***************************************************************************************

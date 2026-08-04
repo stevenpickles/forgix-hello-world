@@ -435,14 +435,17 @@ static void complete_line( void )
 
 /// <summary>
 ///     Drops the buffer without dispatching it and prints ^C, so an abandoned
-///     line is visibly abandoned rather than just gone. Unlike a completed line
-///     this always falls back to idle status, which means Ctrl-C also ends a
-///     running watch as a side effect of cancelling whatever was typed.
+///     line is visibly abandoned rather than just gone. The marker is
+///     echo-class output -- it mirrors what was typed -- so echo off silences
+///     it the same way it silences the characters it stands for. Unlike a
+///     completed line this always falls back to idle status, which means
+///     Ctrl-C also ends a running watch as a side effect of cancelling
+///     whatever was typed.
 /// </summary>
 static void cancel_line( void )
 {
     console.used = 0;
-    if ( !console.quiet )
+    if ( !console.quiet && console.echo_enabled )
     {
         mark_write();
         BSP_ConsolePrintf( "^C\r\n" );
@@ -455,13 +458,15 @@ static void cancel_line( void )
 
 /// <summary>
 ///     Repaints onto a new line instead of clearing the screen: the job is to
-///     recover a line that unsolicited output has scrolled through, not to hide
-///     what that output said. Printed with an explicit length because the buffer
-///     only gains its terminator when the line completes.
+///     recover a line that unsolicited output has scrolled through, not to
+///     hide what that output said. With echo off there is nothing on screen to
+///     recover, so the repaint is withheld like the echo it would restore.
+///     Printed with an explicit length because the buffer only gains its
+///     terminator when the line completes.
 /// </summary>
 static void redraw_line( void )
 {
-    if ( !console.quiet )
+    if ( !console.quiet && console.echo_enabled )
     {
         mark_write();
         BSP_ConsolePrintf( "\r\nforgix> %.*s", (int) console.used, console.line );
