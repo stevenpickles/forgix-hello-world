@@ -25,16 +25,16 @@ begin
 
   dut : entity work.forgix_rgb_pwm
     port map (
-clk,
- rst,
- enable,
- red,
- green,
- blue,
- brightness,
-              led_r_n,
- led_g_n,
- led_b_n
+      clk        => clk,
+      rst        => rst,
+      enable     => enable,
+      red        => red,
+      green      => green,
+      blue       => blue,
+      brightness => brightness,
+      led_r_n    => led_r_n,
+      led_g_n    => led_g_n,
+      led_b_n    => led_b_n
     );
 
   stimulus : process is

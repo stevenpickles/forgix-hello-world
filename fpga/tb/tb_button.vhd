@@ -32,7 +32,7 @@ begin
       press_strobe => press_strobe
     );
 
-  process is
+  stimulus : process is
   begin
 
     rst      <= '1';
@@ -57,6 +57,6 @@ begin
     stop;
     wait;
 
-  end process;
+  end process stimulus;
 
 end architecture sim;

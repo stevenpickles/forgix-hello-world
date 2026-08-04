@@ -30,7 +30,7 @@ begin
   g_scaled <= green * brightness;
   b_scaled <= blue * brightness;
 
-  process (clk) is
+  phase_counter : process (clk) is
   begin
 
     if rising_edge(clk) then
@@ -41,7 +41,7 @@ begin
       end if;
     end if;
 
-  end process;
+  end process phase_counter;
 
   led_r_n <= '0' when enable = '1' and phase < r_scaled(15 downto 8) else
              '1';

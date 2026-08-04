@@ -29,7 +29,7 @@ begin
   raw_pressed <= not sync(1);
   pressed     <= not stable;
 
-  process (clk) is
+  debounce : process (clk) is
   begin
 
     if rising_edge(clk) then
@@ -51,7 +51,7 @@ begin
       end if;
     end if;
 
-  end process;
+  end process debounce;
 
 end architecture rtl;
 

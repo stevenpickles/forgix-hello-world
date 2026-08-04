@@ -44,7 +44,7 @@ begin
   reg_addr <= address;
   sdio_oe  <= oe;
 
-  process (clk) is
+  spi_engine : process (clk) is
 
     variable received : byte_t;
     variable shifted  : byte_t;
@@ -158,7 +158,7 @@ begin
       end if;
     end if;
 
-  end process;
+  end process spi_engine;
 
 end architecture rtl;
 

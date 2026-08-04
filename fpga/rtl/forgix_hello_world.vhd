@@ -34,8 +34,10 @@ architecture rtl of forgix_hello_world is
   signal addr         : byte_t;
   signal wdata        : byte_t;
   signal rdata        : byte_t;
-  signal red          : byte_t               := x"00"; signal green : byte_t := x"00";
-  signal blue         : byte_t               := x"20"; signal brightness : byte_t := x"40";
+  signal red          : byte_t               := x"00";
+  signal green        : byte_t               := x"00";
+  signal blue         : byte_t               := x"20";
+  signal brightness   : byte_t               := x"40";
   signal led_enable   : std_ulogic           := '1';
   signal raw_button   : std_ulogic           := '0';
   signal button       : std_ulogic           := '0';
@@ -48,7 +50,7 @@ begin
   rst <= '1' when por /= x"FF" else
          '0';
 
-  process (clk_32m) is
+  por_counter : process (clk_32m) is
   begin
 
     if rising_edge(clk_32m) then
@@ -57,25 +59,25 @@ begin
       end if;
     end if;
 
-  end process;
+  end process por_counter;
 
   spi : entity work.forgix_spi
     port map (
-    clk_32m,
- rst,
- spi_cs_n,
- spi_sck,
- spi_sdio_in,
- spi_sdio_out,
- spi_sdio_oe,
-    wr,
- rd,
- addr,
- wdata,
- rdata,
- reset_regs,
- activity,
- spi_error
+      clk        => clk_32m,
+      rst        => rst,
+      cs_n       => spi_cs_n,
+      sck        => spi_sck,
+      sdio_in    => spi_sdio_in,
+      sdio_out   => spi_sdio_out,
+      sdio_oe    => spi_sdio_oe,
+      reg_write  => wr,
+      reg_read   => rd,
+      reg_addr   => addr,
+      reg_wdata  => wdata,
+      reg_rdata  => rdata,
+      reset_regs => reset_regs,
+      activity   => activity,
+      error      => spi_error
     );
 
   debounce : entity work.forgix_button
@@ -83,29 +85,29 @@ begin
       CLK_HZ => CLK_HZ, DEBOUNCE_MS => DEBOUNCE_MS
     )
     port map (
-clk_32m,
- rst,
- button_n,
- raw_button,
- button,
- button_press
+      clk          => clk_32m,
+      rst          => rst,
+      button_n     => button_n,
+      raw_pressed  => raw_button,
+      pressed      => button,
+      press_strobe => button_press
     );
 
   pwm : entity work.forgix_rgb_pwm
     port map (
-    clk_32m,
- rst,
- led_enable,
- red,
- green,
- blue,
- brightness,
- led_r_n,
- led_g_n,
- led_b_n
+      clk        => clk_32m,
+      rst        => rst,
+      enable     => led_enable,
+      red        => red,
+      green      => green,
+      blue       => blue,
+      brightness => brightness,
+      led_r_n    => led_r_n,
+      led_g_n    => led_g_n,
+      led_b_n    => led_b_n
     );
 
-  process (clk_32m) is
+  register_file : process (clk_32m) is
   begin
 
     if rising_edge(clk_32m) then
@@ -171,9 +173,9 @@ clk_32m,
       end if;
     end if;
 
-  end process;
+  end process register_file;
 
-  process (all) is
+  readback_mux : process (all) is
   begin
 
     rdata <= x"EE";
@@ -232,7 +234,7 @@ clk_32m,
 
     end case;
 
-  end process;
+  end process readback_mux;
 
 end architecture rtl;
 

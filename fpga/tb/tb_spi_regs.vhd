@@ -131,16 +131,16 @@ begin
       CLK_HZ => 1_000, DEBOUNCE_MS => 1
     )
     port map (
-clk,
- spi_cs_n,
- spi_sck,
- spi_sdio_in,
- button_n,
-              spi_sdio_out,
- spi_sdio_oe,
- led_r_n,
- led_g_n,
- led_b_n
+      clk_32m      => clk,
+      spi_cs_n     => spi_cs_n,
+      spi_sck      => spi_sck,
+      spi_sdio_in  => spi_sdio_in,
+      button_n     => button_n,
+      spi_sdio_out => spi_sdio_out,
+      spi_sdio_oe  => spi_sdio_oe,
+      led_r_n      => led_r_n,
+      led_g_n      => led_g_n,
+      led_b_n      => led_b_n
     );
 
   stimulus : process is
