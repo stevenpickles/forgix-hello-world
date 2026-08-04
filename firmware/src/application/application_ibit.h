@@ -76,7 +76,7 @@ const application_activity_t *application_ibit_sequence( void );
 const application_activity_t *application_ibit_soak( void );
 
 /* One step on its own, so a failure can be repeated without sitting through the
-   thirteen steps that already passed. */
+   fourteen steps that already passed. */
 const application_activity_t *application_ibit_single( uint32_t index );
 
 void application_ibit_print_board_report( void );

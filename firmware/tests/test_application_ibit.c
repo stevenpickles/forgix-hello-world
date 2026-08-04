@@ -51,6 +51,7 @@ enum
     STEP_FPGA_REGISTERS = 11,
     STEP_LED = 12,
     STEP_BUTTON = 13,
+    STEP_FPGA_CLOCK = 14,
 };
 
 
@@ -82,6 +83,10 @@ static const char *run_step( uint32_t index );
 
 static void run_usb_step_with( bool connected, bool suspended, uint32_t write_available,
                                uint32_t second_frame );
+
+static void run_clock_step_with( uint32_t first_tick, uint32_t second_tick );
+
+static uint32_t tick_sample_callback( int num_calls );
 
 static void expect_led_phase( uint8_t red, uint8_t green, uint8_t blue );
 
@@ -563,9 +568,9 @@ void test_a_wrong_design_id_also_stands_the_dependent_steps_down( void )
    so a verdict on either would describe the bus and not the part being named. */
 void test_steps_behind_the_fpga_are_skipped_when_it_is_unreachable( void )
 {
-    const uint32_t behind[] = { STEP_FPGA_REGISTERS, STEP_LED, STEP_BUTTON };
+    const uint32_t behind[] = { STEP_FPGA_REGISTERS, STEP_LED, STEP_BUTTON, STEP_FPGA_CLOCK };
 
-    for ( uint32_t index = 0; index < 3u; ++index )
+    for ( uint32_t index = 0; index < 4u; ++index )
     {
         BSP_FpgaCdone_ExpectAndReturn( false );
         const char *output = run_step( behind[ index ] );
@@ -699,6 +704,79 @@ void test_button_passes_on_a_tap_too_brief_for_the_level_to_be_sampled( void )
 }
 
 
+/* The step judges FPGA ticks against MCU milliseconds -- a ratio -- so the mock
+   feeds it exact numbers: sixteen million ticks over half a second is 32 MHz on
+   the nose. The mid-window poll is the branch where there is nothing to ask the
+   FPGA and the step just waits. */
+void test_fpga_clock_passes_when_the_counter_tracks_32mhz( void )
+{
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_FpgaTickSample_ExpectAndReturn( 1000u );
+    BSP_FpgaTickSample_ExpectAndReturn( 1000u + 16000000u );
+
+    MOCK_BSP_TimeSetMs( 1000 );
+    const application_activity_t *activity = application_ibit_single( STEP_FPGA_CLOCK );
+    activity->start();
+    MOCK_BSP_ConsoleReset();
+
+    TEST_ASSERT_TRUE( activity->poll() );
+    MOCK_BSP_TimeSetMs( 1400 );
+    TEST_ASSERT_TRUE( activity->poll() );
+    MOCK_BSP_TimeSetMs( 1500 );
+    TEST_ASSERT_FALSE( activity->poll() );
+
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "fpga=32.000MHz over 500ms, 16000000 ticks" ) );
+}
+
+
+/* Slow and fast are separate tests because within_tolerance takes the
+   difference in whichever order keeps it unsigned, and a suite that only ever
+   ran slow would leave the other order untried. */
+void test_fpga_clock_fails_when_the_counter_runs_slow( void )
+{
+    run_clock_step_with( 5000u, 5000u + 15000000u );
+
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "fpga=30.000MHz" ) );
+}
+
+
+void test_fpga_clock_fails_when_the_counter_runs_fast( void )
+{
+    run_clock_step_with( 5000u, 5000u + 16400000u );
+
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "fpga=32.800MHz" ) );
+}
+
+
+/* The counter wraps every 134 seconds and no capture is entitled to a wrap-free
+   window; unsigned subtraction is the whole wrap handling and this pins it. */
+void test_fpga_clock_measures_across_a_counter_wrap( void )
+{
+    run_clock_step_with( 0xfff00000u, (uint32_t) ( 0xfff00000u + 16000000u ) );
+
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "PASS" ) );
+}
+
+
+/* Exactly one percent out still passes: the band is inclusive, the same
+   contract the MCU clock step gets from within_tolerance's <=. */
+void test_fpga_clock_passes_on_the_tolerance_boundary( void )
+{
+    run_clock_step_with( 0u, 16160000u );
+
+    const char *output = MOCK_BSP_ConsoleOutput();
+    TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "fpga=32.320MHz" ) );
+}
+
+
 /* An unattended run has to finish, so silence is a timeout and not a failure. */
 void test_button_times_out_without_failing_when_nobody_presses_it( void )
 {
@@ -754,9 +832,9 @@ void test_the_sequence_runs_every_step_and_summarises_the_tally( void )
 
     const char *output = MOCK_BSP_ConsoleOutput();
     TEST_ASSERT_NOT_NULL( strstr( output, "Initiated built-in test" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "[ 1/14] Chip identity" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "[14/14] Button SW1" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "IBIT: 8 PASS  2 FAIL  0 TIMEOUT  3 SKIP  1 INFO" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "[ 1/15] Chip identity" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "[15/15] FPGA 32MHz clock" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "IBIT: 8 PASS  2 FAIL  0 TIMEOUT  4 SKIP  1 INFO" ) );
 }
 
 
@@ -828,7 +906,7 @@ void test_a_clean_soak_iteration_does_not_count_as_a_failure( void )
     }
 
     const char *output = MOCK_BSP_ConsoleOutput();
-    TEST_ASSERT_NOT_NULL( strstr( output, "IBIT: 13 PASS  0 FAIL  0 TIMEOUT  0 SKIP  1 INFO" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "IBIT: 14 PASS  0 FAIL  0 TIMEOUT  0 SKIP  1 INFO" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "soak: 1 run(s), 0 with a failure, 0 with a timeout" ) );
     activity->stop();
 }
@@ -858,7 +936,7 @@ void test_an_unattended_soak_iteration_counts_a_timeout_and_not_a_failure( void 
     }
 
     const char *output = MOCK_BSP_ConsoleOutput();
-    TEST_ASSERT_NOT_NULL( strstr( output, "12 PASS  0 FAIL  1 TIMEOUT" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "13 PASS  0 FAIL  1 TIMEOUT" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "soak: 1 run(s), 0 with a failure, 1 with a timeout" ) );
     activity->stop();
 }
@@ -866,9 +944,10 @@ void test_an_unattended_soak_iteration_counts_a_timeout_and_not_a_failure( void 
 
 void test_step_names_are_published_for_the_menu( void )
 {
-    TEST_ASSERT_EQUAL_UINT32( 14, application_ibit_step_count() );
+    TEST_ASSERT_EQUAL_UINT32( 15, application_ibit_step_count() );
     TEST_ASSERT_EQUAL_STRING( "Chip identity", application_ibit_step_name( STEP_CHIP_IDENTITY ) );
     TEST_ASSERT_EQUAL_STRING( "Button SW1", application_ibit_step_name( STEP_BUTTON ) );
+    TEST_ASSERT_EQUAL_STRING( "FPGA 32MHz clock", application_ibit_step_name( STEP_FPGA_CLOCK ) );
 }
 
 
@@ -1042,6 +1121,27 @@ static void run_usb_step_with( bool connected, bool suspended, uint32_t write_av
 }
 
 
+/* Both tick samples are declared up front and the window is crossed in one
+   jump: the verdict arithmetic is the subject here, and the mid-window waiting
+   already has its own test. */
+static void run_clock_step_with( uint32_t first_tick, uint32_t second_tick )
+{
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_FpgaTickSample_ExpectAndReturn( first_tick );
+    BSP_FpgaTickSample_ExpectAndReturn( second_tick );
+
+    MOCK_BSP_TimeSetMs( 1000 );
+    const application_activity_t *activity = application_ibit_single( STEP_FPGA_CLOCK );
+    activity->start();
+    MOCK_BSP_ConsoleReset();
+
+    TEST_ASSERT_TRUE( activity->poll() );
+    MOCK_BSP_TimeSetMs( 1500 );
+    TEST_ASSERT_FALSE( activity->poll() );
+}
+
+
 static void expect_led_phase( uint8_t red, uint8_t green, uint8_t blue )
 {
     BSP_LedSet_Expect( red, green, blue, 128 );
@@ -1063,6 +1163,7 @@ static void expect_sequence_without_the_fpga( void )
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaPing_ExpectAndReturn( 0x00u );
     BSP_FpgaStatusPin_ExpectAndReturn( false );
+    BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaCdone_ExpectAndReturn( false );
@@ -1130,7 +1231,18 @@ static void ignore_a_healthy_board( void )
     BSP_LedGet_StubWithCallback( led_get_callback );
     BSP_ButtonClearCount_Ignore();
     BSP_ButtonGetState_StubWithCallback( button_callback );
+    BSP_FpgaTickSample_StubWithCallback( tick_sample_callback );
     application_diagnostics_boot_reason_IgnoreAndReturn( BSP_BOOT_POWER_ON );
+}
+
+
+/* Consecutive samples differ by exactly sixteen million ticks: 32 MHz over the
+   500 ms window the drive loops' 100 ms stride produces. A drive whose stride
+   changes makes the healthy-board clock step fail loudly rather than drift
+   silently out of tolerance. */
+static uint32_t tick_sample_callback( int num_calls )
+{
+    return (uint32_t) num_calls * 16000000u;
 }
 
 
