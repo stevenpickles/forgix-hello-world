@@ -15,6 +15,7 @@
 #if FORGIX_QSPI_PSRAM
 #include "hardware/psram.h"
 #include "hardware/structs/qmi.h"
+#include "hardware/xip_cache.h"
 #include "pico/bootrom.h"
 #endif
 
@@ -67,6 +68,38 @@ _Static_assert( SYS_CLK_HZ / CS1_PROBE_CLKDIV <= 33000000u,
 _Static_assert( ( 64ull * CS1_PROBE_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000ull,
                 "the 64-clock Read-ID must hold chip select shorter than the 3 us tCEM" );
 
+/* tRST is 50 ns; 1500 cycles at 150 MHz is 10 us, a 200x margin. Spent as an
+   in-RAM cycle spin rather than a timer wait because it elapses inside the
+   XIP-down window, where the flash-resident busy_wait_us_32 cannot run. */
+#define CS1_TRST_WAIT_CYCLES ( (uint32_t) 1500u )
+
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
+#if FORGIX_QSPI_PSRAM
+/* One entry of a chip-select-1 direct-mode sequence. Serial entries pump the
+   TX/RX FIFOs full duplex; quad entries send a lone opcode four bits wide
+   with the response discarded, reaching a device whose command decoder is in
+   QPI mode. Each entry gets its own chip-select assertion, and the optional
+   delay elapses after deassertion -- still inside the shared XIP-down window,
+   so a tRST spent there is one no ROM traffic can interrupt. */
+typedef struct cs1_operation_t_tag
+{
+    const uint8_t *ptr_transmit;
+    uint8_t *ptr_receive;
+    size_t count;
+    bool quad;
+    uint32_t delay_cycles_after;
+} cs1_operation_t;
+#endif
+
 
 
 
@@ -96,13 +129,11 @@ static bool _FlashReadsCoherently( const uint32_t flashBytes );
 #if FORGIX_QSPI_PSRAM
 static bool _ForcePsramFromDatasheet( void );
 static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
-/* The attributes ride the prototypes so the definitions read plainly. Both
-   functions must run from RAM: they suspend chip-select-0 XIP to use the bus,
+/* The attributes ride the prototype so the definition reads plainly. The
+   function must run from RAM: it suspends chip-select-0 XIP to use the bus,
    and flash-resident code cannot execute while it is down. */
-static void _Cs1DirectTransfer( const uint8_t *ptr_transmit, uint8_t *ptr_receive, size_t count )
-    __attribute__( ( noinline, section( ".time_critical._Cs1DirectTransfer" ) ) );
-static void _Cs1QuadReset( void )
-    __attribute__( ( noinline, section( ".time_critical._Cs1QuadReset" ) ) );
+static void _Cs1OperationSequence( const cs1_operation_t *ptr_operations, size_t operationCount )
+    __attribute__( ( noinline, section( ".time_critical._Cs1OperationSequence" ) ) );
 #endif
 
 
@@ -232,6 +263,11 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
     bsp_memory_psram_identity_t identity = { 0 };
 
 #if FORGIX_QSPI_PSRAM
+    /* Flush any dirty line the unified cache holds before the ROM tears XIP
+       down, so nothing pending is lost to the flush at the end of the window
+       by luck of timing rather than by intent. */
+    xip_cache_clean_all();
+
     /* Chip select 1 needs a non-zero size for the ROM to issue its XIP exit
        sequence to it; restored afterwards so nothing else sees the change. */
     const flash_devinfo_size_t previous = flash_devinfo_get_cs_size( 1 );
@@ -241,26 +277,30 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
        opcodes do not exist for it -- then the serial pair for a device already
        in SPI mode. One of the two always applies, and the serial pair also
        cleans up after the quad opcodes a serial device would have decoded as
-       noise. Each transfer is its own chip-select assertion, which is what the
-       sequence requires. */
+       noise. The whole sequence runs inside one XIP-down window: 66h/99h is an
+       atomic pair, and re-invoking the ROM between transfers used to fire an
+       XIP exit sequence at the device mid-pair, voiding the reset -- and
+       putting foreign traffic between the reset and the Read-ID that is only
+       legal straight after it. */
     const uint8_t reset_enable[ 1 ] = { 0x66u };
     const uint8_t reset[ 1 ] = { 0x99u };
     const uint8_t read_id[ 8 ] = { 0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu };
-    uint8_t discard[ 8 ] = { 0 };
+    uint8_t discard[ 1 ] = { 0 };
     uint8_t response[ 8 ] = { 0 };
 
-    _Cs1QuadReset();
-    busy_wait_us_32( 500 );
-    _Cs1DirectTransfer( reset_enable, discard, sizeof reset_enable );
-    _Cs1DirectTransfer( reset, discard, sizeof reset );
-    /* tRST is 50 ns; this is generous and costs nothing. */
-    busy_wait_us_32( 500 );
-    _Cs1DirectTransfer( read_id, response, sizeof read_id );
+    const cs1_operation_t operations[] = {
+        { reset_enable, NULL, 1u, true, 0u },
+        { reset, NULL, 1u, true, CS1_TRST_WAIT_CYCLES },
+        { reset_enable, discard, 1u, false, 0u },
+        { reset, discard, 1u, false, CS1_TRST_WAIT_CYCLES },
+        { read_id, response, sizeof read_id, false, 0u },
+    };
+    _Cs1OperationSequence( operations, sizeof operations / sizeof operations[ 0 ] );
 
     identity.kgd = response[ 5 ];
     identity.eid = response[ 6 ];
 
-    /* _Cs1DirectTransfer leaves XIP in the ROM's plain command mode. One
+    /* _Cs1OperationSequence leaves XIP in the ROM's plain command mode. One
        ordinary SDK call restores the faster boot2 configuration, since it does
        that copyout internally. */
     const uint8_t restore_tx[ 1 ] = { 0x9fu };
@@ -454,23 +494,40 @@ static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
     return true;
 }
 
-/* The direct-mode sequence flash_do_cmd_cs performs, reimplemented so the bus
-   clock can be set at the one moment that matters. Read ID takes zero wait
-   cycles and is specified at 33 MHz maximum; over that it does not fail, it
-   samples before the data is valid and returns displaced bytes. The SDK's
-   helper cannot be told a clock -- connect_internal_flash reconfigures QMI
-   after any divisor written earlier -- so the divisor is imposed here, after
-   the ROM has finished.
+/* The direct-mode sequence flash_do_cmd_cs performs, generalised to a list of
+   transfers inside one XIP-down window and reimplemented so the bus clock can
+   be set at the one moment that matters -- the SDK's helper cannot be told a
+   clock, since connect_internal_flash reconfigures QMI after any divisor
+   written earlier.
 
-   Runs from RAM with interrupts off: the ROM calls take chip-select-0 XIP down
-   to talk to the bus, and any handler living in flash would fault while it is
-   down. XIP is left in the ROM's plain command mode on return; the caller
-   restores the faster boot2 configuration with one ordinary flash_do_cmd_cs. */
+   One window for the whole list is the point, not an optimisation: the ROM's
+   flash_exit_xip fires an XIP exit sequence at every chip select with a
+   non-zero devinfo size, so invoking the ROM per transfer would land foreign
+   traffic between a 66h and its 99h -- voiding the reset pair -- and between
+   a reset and the Read-ID that is only legal straight after it.
+
+   Quad entries reach a device sitting in QPI mode, which decodes commands
+   four bits wide across SIO[3:0] and is deaf to every serial opcode: OE
+   drives all four lines, NOPUSH discards the response nobody wants.
+
+   Runs from RAM with interrupts off: the ROM calls take chip-select-0 XIP
+   down to talk to the bus, and any handler living in flash would fault while
+   it is down. Inter-operation delays are in-window cycle spins for the same
+   reason. XIP is left in the ROM's plain command mode on return; the caller
+   restores the faster boot2 configuration with one ordinary flash_do_cmd_cs.
+
+   The QSPI pad state the ROM leaves behind is not saved and restored here on
+   purpose: the caller's recovery path re-runs flash_do_cmd_cs (whose boot2
+   copyout restores chip-select-0 timing) and psram_reinitialize (which
+   rebuilds the chip-select-1 QMI window), so a save/restore would duplicate
+   what the re-entry path rebuilds anyway. */
 /// <summary>
-///     One chip-select-1 direct-mode transfer at the probe clock, full duplex,
-///     with chip-select-0 XIP suspended for the duration.
+///     Runs a list of chip-select-1 direct-mode transfers at the probe clock
+///     inside a single XIP-down window, each with its own chip-select
+///     assertion, serial ones full duplex and quad ones response-discarded,
+///     with optional post-deselect delays spent inside the window.
 /// </summary>
-static void _Cs1DirectTransfer( const uint8_t *ptr_transmit, uint8_t *ptr_receive, size_t count )
+static void _Cs1OperationSequence( const cs1_operation_t *ptr_operations, size_t operationCount )
 {
     rom_connect_internal_flash_fn connect_internal_flash =
         (rom_connect_internal_flash_fn) rom_func_lookup_inline( ROM_FUNC_CONNECT_INTERNAL_FLASH );
@@ -490,75 +547,48 @@ static void _Cs1DirectTransfer( const uint8_t *ptr_transmit, uint8_t *ptr_receiv
                      QMI_DIRECT_CSR_CLKDIV_BITS );
     hw_set_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS );
 
-    hw_set_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
-    size_t to_send = count;
-    size_t to_receive = count;
-    while ( to_send > 0u || to_receive > 0u )
+    for ( size_t operation = 0; operation < operationCount; ++operation )
     {
-        const uint32_t status = qmi_hw->direct_csr;
-        if ( to_send > 0u && ( status & QMI_DIRECT_CSR_TXFULL_BITS ) == 0u )
-        {
-            qmi_hw->direct_tx = *ptr_transmit++;
-            --to_send;
-        }
-        if ( to_receive > 0u && ( status & QMI_DIRECT_CSR_RXEMPTY_BITS ) == 0u )
-        {
-            *ptr_receive++ = (uint8_t) qmi_hw->direct_rx;
-            --to_receive;
-        }
-    }
-    while ( ( qmi_hw->direct_csr & QMI_DIRECT_CSR_BUSY_BITS ) != 0u )
-    {
-        tight_loop_contents();
-    }
-    hw_clear_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
-    hw_clear_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS );
+        const cs1_operation_t *ptr_op = &ptr_operations[ operation ];
 
-    flash_flush_cache();
-    flash_enter_cmd_xip();
-    restore_interrupts( interrupts );
-}
-
-/* A device sitting in QPI mode decodes commands four bits wide across SIO[3:0],
-   so every serial opcode -- including the resets -- is never a valid command to
-   it. Reset Enable and Reset exist in both widths, so issuing them quad reaches
-   a device in either mode. OE drives all four lines, NOPUSH discards the
-   response nobody wants. Each opcode gets its own chip-select assertion. */
-/// <summary>
-///     Quad-width reset-enable/reset pair on chip select 1, for a device that
-///     may be in QPI mode and deaf to serial opcodes.
-/// </summary>
-static void _Cs1QuadReset( void )
-{
-    rom_connect_internal_flash_fn connect_internal_flash =
-        (rom_connect_internal_flash_fn) rom_func_lookup_inline( ROM_FUNC_CONNECT_INTERNAL_FLASH );
-    rom_flash_exit_xip_fn flash_exit_xip =
-        (rom_flash_exit_xip_fn) rom_func_lookup_inline( ROM_FUNC_FLASH_EXIT_XIP );
-    rom_flash_flush_cache_fn flash_flush_cache =
-        (rom_flash_flush_cache_fn) rom_func_lookup_inline( ROM_FUNC_FLASH_FLUSH_CACHE );
-    rom_flash_enter_cmd_xip_fn flash_enter_cmd_xip =
-        (rom_flash_enter_cmd_xip_fn) rom_func_lookup_inline( ROM_FUNC_FLASH_ENTER_CMD_XIP );
-
-    const uint32_t interrupts = save_and_disable_interrupts();
-    connect_internal_flash();
-    flash_exit_xip();
-
-    hw_write_masked( &qmi_hw->direct_csr, CS1_PROBE_CLKDIV << QMI_DIRECT_CSR_CLKDIV_LSB,
-                     QMI_DIRECT_CSR_CLKDIV_BITS );
-    hw_set_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS );
-
-    const uint8_t opcodes[ 2 ] = { 0x66u, 0x99u };
-    for ( uint32_t index = 0; index < 2u; ++index )
-    {
         hw_set_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
-        qmi_hw->direct_tx = QMI_DIRECT_TX_OE_BITS | QMI_DIRECT_TX_NOPUSH_BITS |
-                            ( QMI_DIRECT_TX_IWIDTH_VALUE_Q << QMI_DIRECT_TX_IWIDTH_LSB ) |
-                            opcodes[ index ];
+        if ( ptr_op->quad )
+        {
+            qmi_hw->direct_tx = QMI_DIRECT_TX_OE_BITS | QMI_DIRECT_TX_NOPUSH_BITS |
+                                ( QMI_DIRECT_TX_IWIDTH_VALUE_Q << QMI_DIRECT_TX_IWIDTH_LSB ) |
+                                ptr_op->ptr_transmit[ 0 ];
+        }
+        else
+        {
+            const uint8_t *ptr_transmit = ptr_op->ptr_transmit;
+            uint8_t *ptr_receive = ptr_op->ptr_receive;
+            size_t to_send = ptr_op->count;
+            size_t to_receive = ptr_op->count;
+            while ( to_send > 0u || to_receive > 0u )
+            {
+                const uint32_t status = qmi_hw->direct_csr;
+                if ( to_send > 0u && ( status & QMI_DIRECT_CSR_TXFULL_BITS ) == 0u )
+                {
+                    qmi_hw->direct_tx = *ptr_transmit++;
+                    --to_send;
+                }
+                if ( to_receive > 0u && ( status & QMI_DIRECT_CSR_RXEMPTY_BITS ) == 0u )
+                {
+                    *ptr_receive++ = (uint8_t) qmi_hw->direct_rx;
+                    --to_receive;
+                }
+            }
+        }
         while ( ( qmi_hw->direct_csr & QMI_DIRECT_CSR_BUSY_BITS ) != 0u )
         {
             tight_loop_contents();
         }
         hw_clear_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
+
+        if ( ptr_op->delay_cycles_after != 0u )
+        {
+            busy_wait_at_least_cycles( ptr_op->delay_cycles_after );
+        }
     }
 
     hw_clear_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS );
