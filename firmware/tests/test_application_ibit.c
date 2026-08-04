@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "unity.h"
 
 #include <stdbool.h>
@@ -18,6 +25,16 @@
 #include "mock_auto_bsp_mcu.h"
 #include "mock_auto_bsp_memory.h"
 
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
 enum
 {
     STEP_CHIP_IDENTITY = 0,
@@ -36,6 +53,61 @@ enum
     STEP_BUTTON = 13,
 };
 
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bsp_mcu_info_t healthy_mcu( void );
+
+static bsp_clocks_report_t healthy_clocks( void );
+
+static bsp_memory_report_t healthy_memory( void );
+
+static bsp_usb_health_t usb_health( uint32_t frame, bool connected, bool suspended,
+                                    uint32_t write_available );
+
+static bsp_adc_temperature_t temperature_sample( uint16_t raw, int32_t milli_celsius );
+
+static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness );
+
+static const char *run_step_at( uint32_t index, uint32_t now_ms );
+
+static const char *run_step( uint32_t index );
+
+static void run_usb_step_with( bool connected, bool suspended, uint32_t write_available,
+                               uint32_t second_frame );
+
+static void expect_led_phase( uint8_t red, uint8_t green, uint8_t blue );
+
+static void expect_sequence_without_the_fpga( void );
+
+static void drive_to_completion( const application_activity_t *activity, uint32_t from_ms,
+                                 uint32_t to_ms );
+
+static bsp_led_state_t led_get_callback( int num_calls );
+
+static bsp_button_state_t button_callback( int num_calls );
+
+static void ignore_a_healthy_board( void );
+
+static bsp_button_state_t button_never_pressed_callback( int num_calls );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
 void setUp( void )
 {
     MOCK_BSP_ConsoleReset();
@@ -44,108 +116,9 @@ void setUp( void )
     MOCK_BSP_WatchdogReset();
 }
 
+
 void tearDown( void )
 {
-}
-
-static bsp_mcu_info_t healthy_mcu( void )
-{
-    bsp_mcu_info_t info = {
-        .manufacturer = BSP_MCU_MANUFACTURER_RASPBERRY_PI,
-        .part = BSP_MCU_PART_RP2350,
-        .revision = 2,
-        .package_id = 0x11223344u,
-        .device_id_low = 0xaabbccddu,
-        .device_id_high = 0x01020304u,
-        .chip_info_valid = true,
-        .unique_id = { 0xe6, 0x60, 0x38, 0xb7, 0x13, 0x5f, 0x21, 0x2c },
-        .sram_bytes = 520u * 1024u,
-        .flash_bytes = 2u * 1024u * 1024u,
-        .otp_cs0_size_code = 0x9u, /* what the board actually reports: 2 MByte */
-        .otp_cs1_size_code = 0u,
-        .core_count = 2,
-        .architecture = BSP_MCU_ARCHITECTURE_ARM,
-    };
-    return info;
-}
-
-static bsp_clocks_report_t healthy_clocks( void )
-{
-    bsp_clocks_report_t clocks = {
-        .sys_hz = 150000000u,
-        .usb_hz = 48000000u,
-        .ref_hz = 12000000u,
-        .peri_hz = 150000000u,
-        .adc_hz = 48000000u,
-        .measured_sys_hz = 150000000u,
-        .measured_usb_hz = 48000000u,
-    };
-    return clocks;
-}
-
-static bsp_memory_report_t healthy_memory( void )
-{
-    bsp_memory_report_t memory = {
-        .flash_bytes = 2u * 1024u * 1024u,
-        .flash_ok = true,
-        .psram_bytes = 2u * 1024u * 1024u,
-        .psram_ok = true,
-        .psram_forced = false,
-        .psram_kgd = 0x0bu,
-        .psram_eid = 0x43u,
-        .psram_enabled = true,
-    };
-    return memory;
-}
-
-static bsp_usb_health_t usb_health( uint32_t frame, bool connected, bool suspended,
-                                    uint32_t write_available )
-{
-    bsp_usb_health_t health = {
-        .connected = connected,
-        .suspended = suspended,
-        .write_available = write_available,
-        .activity_count = 1,
-        .frame_number = frame,
-    };
-    return health;
-}
-
-/* A named helper rather than a compound literal at the call site: the commas in
-   a designated initializer split CMock's expectation macros into extra
-   arguments. */
-static bsp_adc_temperature_t temperature_sample( uint16_t raw, int32_t milli_celsius )
-{
-    bsp_adc_temperature_t sample = { .raw = raw, .milli_celsius = milli_celsius };
-    return sample;
-}
-
-static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness )
-{
-    bsp_led_state_t led = {
-        .red = red, .green = green, .blue = blue, .brightness = brightness, .enabled = true };
-    return led;
-}
-
-/* Runs one step in isolation and returns everything it printed. Each step is
-   driven through application_ibit_single so the runner, the tally and the result
-   line are exercised alongside the step itself. */
-static const char *run_step_at( uint32_t index, uint32_t now_ms )
-{
-    MOCK_BSP_TimeSetMs( now_ms );
-    const application_activity_t *activity = application_ibit_single( index );
-    activity->start();
-    MOCK_BSP_ConsoleReset();
-    while ( activity->poll() )
-    {
-        MOCK_BSP_TimeSetMs( now_ms );
-    }
-    return MOCK_BSP_ConsoleOutput();
-}
-
-static const char *run_step( uint32_t index )
-{
-    return run_step_at( index, 1000 );
 }
 
 
@@ -164,6 +137,7 @@ void test_chip_identity_passes_on_a_raspberry_pi_rp2350( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "manufacturer=493 part=0004 revision=2 Arm x2" ) );
 }
 
+
 void test_chip_identity_fails_on_an_unexpected_part( void )
 {
     bsp_mcu_info_t info = healthy_mcu();
@@ -177,6 +151,7 @@ void test_chip_identity_fails_on_an_unexpected_part( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "RISC-V" ) );
 }
 
+
 void test_chip_identity_fails_on_an_unexpected_manufacturer( void )
 {
     bsp_mcu_info_t info = healthy_mcu();
@@ -185,6 +160,7 @@ void test_chip_identity_fails_on_an_unexpected_manufacturer( void )
 
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_CHIP_IDENTITY ), "FAIL" ) );
 }
+
 
 void test_board_identity_reports_the_unique_id( void )
 {
@@ -195,6 +171,7 @@ void test_board_identity_reports_the_unique_id( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "E66038B7135F212C" ) );
 }
+
 
 /* All-zero and all-ones are what a bus that answered with nothing looks like. */
 void test_board_identity_rejects_an_all_zero_and_an_all_ones_id( void )
@@ -210,6 +187,7 @@ void test_board_identity_rejects_an_all_zero_and_an_all_ones_id( void )
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_BOARD_IDENTITY ), "FAIL" ) );
 }
 
+
 void test_clocks_pass_when_the_measured_frequencies_match( void )
 {
     BSP_ClocksReport_ExpectAndReturn( healthy_clocks() );
@@ -220,6 +198,7 @@ void test_clocks_pass_when_the_measured_frequencies_match( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "sys=150.000MHz usb=48.000MHz" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "sys/usb=3.12x" ) );
 }
+
 
 /* The configured value still reads correct when a PLL never locked, so only the
    measured one can catch it. */
@@ -238,6 +217,7 @@ void test_clocks_fail_when_the_measurement_disagrees_with_the_configuration( voi
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_CLOCKS ), "FAIL" ) );
 }
 
+
 /* Overspeed matters as much as underspeed: an over-locked PLL is still a PLL
    that is not doing what the SDK believes it is. */
 void test_clocks_fail_when_the_measurement_runs_fast( void )
@@ -248,6 +228,7 @@ void test_clocks_fail_when_the_measurement_runs_fast( void )
 
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_CLOCKS ), "FAIL" ) );
 }
+
 
 /* A clk_usb measured at zero is a dead domain, not a divide-by-zero. */
 void test_clocks_report_a_zero_ratio_rather_than_dividing_by_a_dead_usb_clock( void )
@@ -261,6 +242,7 @@ void test_clocks_report_a_zero_ratio_rather_than_dividing_by_a_dead_usb_clock( v
     TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "sys/usb=0.00x" ) );
 }
+
 
 void test_memory_sizing_checks_flash_and_sram_against_what_the_part_should_have( void )
 {
@@ -278,6 +260,7 @@ void test_memory_sizing_checks_flash_and_sram_against_what_the_part_should_have(
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_MEMORY_SIZING ), "FAIL" ) );
 }
 
+
 /* Reported, never believed: these are unprogrammed OTP defaults on this part. */
 void test_otp_device_info_is_reported_without_a_verdict( void )
 {
@@ -290,6 +273,7 @@ void test_otp_device_info_is_reported_without_a_verdict( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "not used to size anything" ) );
 }
 
+
 void test_boot_flash_reports_the_reset_vector_verdict( void )
 {
     BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
@@ -300,6 +284,7 @@ void test_boot_flash_reports_the_reset_vector_verdict( void )
     BSP_MemoryCheck_ExpectAndReturn( memory );
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_BOOT_FLASH ), "FAIL" ) );
 }
+
 
 /* The fitted part answers KGD 0x0B rather than AP Memory's 0x5D. It works, so
    identity is a note on a passing result and not a failure. */
@@ -314,6 +299,7 @@ void test_psram_passes_a_working_device_while_naming_the_identity_mismatch( void
     TEST_ASSERT_NOT_NULL( strstr( output, "not the part on the schematic" ) );
 }
 
+
 void test_psram_stays_quiet_about_identity_when_the_expected_part_is_fitted( void )
 {
     bsp_memory_report_t memory = healthy_memory();
@@ -322,6 +308,7 @@ void test_psram_stays_quiet_about_identity_when_the_expected_part_is_fitted( voi
 
     TEST_ASSERT_NULL( strstr( run_step( STEP_PSRAM ), "schematic" ) );
 }
+
 
 /* A build with the device compiled out is not a board with a broken one, and the
    report alone cannot tell them apart -- both read zero bytes and not ok. */
@@ -339,6 +326,7 @@ void test_psram_is_skipped_when_the_build_never_brought_it_up( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "FORGIX_QSPI_PSRAM off" ) );
     TEST_ASSERT_NULL( strstr( output, "FAIL" ) );
 }
+
 
 void test_psram_fails_when_the_pattern_is_lost( void )
 {
@@ -376,6 +364,7 @@ void test_temperature_passes_inside_the_band_and_formats_a_negative_reading( voi
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_TEMPERATURE ), "-0.5C" ) );
 }
 
+
 /* A reading pinned at a rail is the fault a band catches; the absolute figure is
    several degrees out on a good day and is not worth asserting on. */
 void test_temperature_fails_outside_the_plausible_band( void )
@@ -388,6 +377,7 @@ void test_temperature_fails_outside_the_plausible_band( void )
     BSP_AdcTemperature_ExpectAndReturn( hot );
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_TEMPERATURE ), "FAIL" ) );
 }
+
 
 /* Two samples twenty milliseconds apart: a single frame number proves nothing. */
 void test_usb_passes_when_the_frame_counter_advances( void )
@@ -409,6 +399,7 @@ void test_usb_passes_when_the_frame_counter_advances( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "PASS" ) );
 }
 
+
 void test_usb_fails_when_the_frame_counter_is_frozen( void )
 {
     MOCK_BSP_UsbSetHealth( usb_health( 100, true, false, 256 ) );
@@ -425,23 +416,6 @@ void test_usb_fails_when_the_frame_counter_is_frozen( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "FAIL" ) );
 }
 
-/* Each of the four conditions on its own, because a link can be unhealthy in
-   exactly one way and an && that is only ever tested with everything wrong at
-   once would never notice three of them. */
-static void run_usb_step_with( bool connected, bool suspended, uint32_t write_available,
-                               uint32_t second_frame )
-{
-    MOCK_BSP_UsbSetHealth( usb_health( 100, connected, suspended, write_available ) );
-    MOCK_BSP_TimeSetMs( 1000 );
-    const application_activity_t *activity = application_ibit_single( STEP_USB );
-    activity->start();
-    MOCK_BSP_ConsoleReset();
-
-    TEST_ASSERT_TRUE( activity->poll() );
-    MOCK_BSP_TimeSetMs( 1020 );
-    MOCK_BSP_UsbSetHealth( usb_health( second_frame, connected, suspended, write_available ) );
-    TEST_ASSERT_FALSE( activity->poll() );
-}
 
 void test_usb_fails_on_each_unhealthy_condition_in_isolation( void )
 {
@@ -455,6 +429,7 @@ void test_usb_fails_on_each_unhealthy_condition_in_isolation( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "FAIL" ) );
 }
 
+
 void test_watchdog_passes_after_a_clean_power_up( void )
 {
     application_diagnostics_boot_reason_ExpectAndReturn( BSP_BOOT_POWER_ON );
@@ -465,6 +440,7 @@ void test_watchdog_passes_after_a_clean_power_up( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "last boot power-on" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "marker readback ok" ) );
 }
+
 
 /* The whole watchdog diagnosis rests on that scratch register holding a value
    across a reset, so a register that accepts a write and drops it has to be a
@@ -479,6 +455,7 @@ void test_watchdog_fails_when_the_marker_does_not_read_back( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "marker readback BAD" ) );
 }
+
 
 /* The board is plainly running now, but something stopped feeding the loop and
    the retained marker is the only witness to where. */
@@ -511,6 +488,7 @@ void test_fpga_configuration_passes_and_implies_the_oscillator( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "32MHz oscillator implied" ) );
 }
 
+
 void test_fpga_configuration_fails_on_a_wrong_design_id( void )
 {
     BSP_FpgaCdone_ExpectAndReturn( true );
@@ -519,6 +497,7 @@ void test_fpga_configuration_fails_on_a_wrong_design_id( void )
 
     TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_FPGA_CONFIGURATION ), "FAIL" ) );
 }
+
 
 /* A walking pattern, because 0x00 and 0xFF are what a bus stuck low or high
    returns and either would pass a test that wrote them. */
@@ -537,6 +516,7 @@ void test_fpga_register_bus_round_trips_a_walking_pattern_and_restores_the_colou
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "wrote 5A,A5,3C,C3 read 5A,A5,3C,C3" ) );
 }
+
 
 /* One wrong byte at a time. A bus can corrupt a single register, and a test that
    only ever sees all four wrong together would pass three of those faults. */
@@ -563,6 +543,7 @@ void test_fpga_register_bus_fails_when_any_single_register_misreads( void )
     }
 }
 
+
 /* The skip decision is this run's evidence, not what bring-up recorded. An FPGA
    that answers CDONE but returns the wrong design ID is not one the LED and
    button tests can say anything about either. */
@@ -576,6 +557,7 @@ void test_a_wrong_design_id_also_stands_the_dependent_steps_down( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "SKIP" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "FPGA not responding; this test sits behind it" ) );
 }
+
 
 /* Skipped rather than failed: the LED and the button are both behind the FPGA,
    so a verdict on either would describe the bus and not the part being named. */
@@ -592,11 +574,6 @@ void test_steps_behind_the_fpga_are_skipped_when_it_is_unreachable( void )
     }
 }
 
-static void expect_led_phase( uint8_t red, uint8_t green, uint8_t blue )
-{
-    BSP_LedSet_Expect( red, green, blue, 128 );
-    BSP_LedGet_ExpectAndReturn( led_state( red, green, blue, 128 ) );
-}
 
 void test_led_drives_each_channel_in_turn_and_restores_the_previous_colour( void )
 {
@@ -631,6 +608,7 @@ void test_led_drives_each_channel_in_turn_and_restores_the_previous_colour( void
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "previous colour restored" ) );
 }
 
+
 /* Each channel checked on its own, so a single dead colour is caught rather than
    only the case where all three fail together. */
 void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back( void )
@@ -656,6 +634,7 @@ void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back(
         TEST_ASSERT_NOT_NULL( strstr( output, "readback mismatch at step 0" ) );
     }
 }
+
 
 /* The count is the FPGA's own debounced edge count, and it is what decides. */
 void test_button_passes_when_the_count_moves_and_the_level_is_seen( void )
@@ -690,6 +669,7 @@ void test_button_passes_when_the_count_moves_and_the_level_is_seen( void )
                                   "pressed after 2.4s, count 0 -> 1, level seen to move" ) );
 }
 
+
 /* The regression: a tap shorter than the 50 ms poll interval increments the
    FPGA's counter and is back at rest before the level is next read. That is a
    working button, and gating on the level reported it as a timeout. */
@@ -717,6 +697,7 @@ void test_button_passes_on_a_tap_too_brief_for_the_level_to_be_sampled( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "level never sampled moving" ) );
 }
+
 
 /* An unattended run has to finish, so silence is a timeout and not a failure. */
 void test_button_times_out_without_failing_when_nobody_presses_it( void )
@@ -756,36 +737,6 @@ void test_button_times_out_without_failing_when_nobody_presses_it( void )
 /***** the sequence, the soak and the report *****/
 
 
-/* Every step reachable without the FPGA, so the summary line and the tally are
-   exercised across all five outcomes in one run. */
-static void expect_sequence_without_the_fpga( void )
-{
-    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
-    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
-    BSP_ClocksReport_ExpectAndReturn( healthy_clocks() );
-    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
-    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
-    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
-    BSP_AdcTemperature_ExpectAndReturn( temperature_sample( 800, 24500 ) );
-    BSP_FpgaCdone_ExpectAndReturn( false );
-    BSP_FpgaPing_ExpectAndReturn( 0x00u );
-    BSP_FpgaStatusPin_ExpectAndReturn( false );
-    BSP_FpgaCdone_ExpectAndReturn( false );
-    BSP_FpgaCdone_ExpectAndReturn( false );
-    BSP_FpgaCdone_ExpectAndReturn( false );
-}
-
-static void drive_to_completion( const application_activity_t *activity, uint32_t from_ms,
-                                 uint32_t to_ms )
-{
-    uint32_t now_ms = from_ms;
-    while ( activity->poll() )
-    {
-        now_ms += 100u;
-        MOCK_BSP_TimeSetMs( now_ms > to_ms ? to_ms : now_ms );
-    }
-}
-
 /* A board with a dead FPGA and a frozen start-of-frame counter: two real faults,
    three tests that cannot mean anything without the FPGA, and one measurement
    with no pass criterion. The point is that all four land in different columns
@@ -807,6 +758,7 @@ void test_the_sequence_runs_every_step_and_summarises_the_tally( void )
     TEST_ASSERT_NOT_NULL( strstr( output, "[14/14] Button SW1" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "IBIT: 8 PASS  2 FAIL  0 TIMEOUT  3 SKIP  1 INFO" ) );
 }
+
 
 /* The soak never finishes on its own; it is stopped by the abort path, which is
    also what has to put the LED back. */
@@ -833,6 +785,7 @@ void test_the_soak_tallies_across_iterations_and_starts_the_next_run( void )
     activity->stop();
 }
 
+
 void test_aborting_after_the_led_step_puts_the_previous_colour_back( void )
 {
     BSP_FpgaCdone_ExpectAndReturn( true );
@@ -852,55 +805,6 @@ void test_aborting_after_the_led_step_puts_the_previous_colour_back( void )
     activity->stop();
 }
 
-/* Answers in the order one healthy sequence asks: the register-bus step reads
-   the current colour and then its own pattern back, and the LED step reads the
-   colour to restore followed by each of the five it drives. */
-static bsp_led_state_t led_get_callback( int num_calls )
-{
-    switch ( num_calls )
-    {
-    case 0:
-        return led_state( 9, 8, 7, 6 );
-    case 1:
-        return led_state( 0x5au, 0xa5u, 0x3cu, 0xc3u );
-    case 2:
-        return led_state( 9, 8, 7, 6 );
-    case 3:
-        return led_state( 255, 0, 0, 128 );
-    case 4:
-        return led_state( 0, 255, 0, 128 );
-    case 5:
-        return led_state( 0, 0, 255, 128 );
-    case 6:
-        return led_state( 255, 255, 255, 128 );
-    default:
-        return led_state( 0, 0, 0, 128 );
-    }
-}
-
-static bsp_button_state_t button_callback( int num_calls )
-{
-    bsp_button_state_t before = { .level = 1, .count = 4 };
-    bsp_button_state_t pressed = { .level = 0, .count = 5 };
-    return num_calls == 0 ? before : pressed;
-}
-
-static void ignore_a_healthy_board( void )
-{
-    BSP_McuInfo_IgnoreAndReturn( healthy_mcu() );
-    BSP_ClocksReport_IgnoreAndReturn( healthy_clocks() );
-    BSP_MemoryCheck_IgnoreAndReturn( healthy_memory() );
-    BSP_AdcTemperature_IgnoreAndReturn( temperature_sample( 800, 24500 ) );
-    BSP_FpgaCdone_IgnoreAndReturn( true );
-    BSP_FpgaPing_IgnoreAndReturn( BSP_FPGA_DESIGN_ID );
-    BSP_FpgaStatusPin_IgnoreAndReturn( true );
-    BSP_FpgaReadStatus_IgnoreAndReturn( 0x01u );
-    BSP_LedSet_Ignore();
-    BSP_LedGet_StubWithCallback( led_get_callback );
-    BSP_ButtonClearCount_Ignore();
-    BSP_ButtonGetState_StubWithCallback( button_callback );
-    application_diagnostics_boot_reason_IgnoreAndReturn( BSP_BOOT_POWER_ON );
-}
 
 /* The soak counts iterations that had a failure, not iterations, so a clean run
    has to leave the failure tally alone. */
@@ -929,12 +833,6 @@ void test_a_clean_soak_iteration_does_not_count_as_a_failure( void )
     activity->stop();
 }
 
-static bsp_button_state_t button_never_pressed_callback( int num_calls )
-{
-    (void) num_calls;
-    bsp_button_state_t idle = { .level = 1, .count = 4 };
-    return idle;
-}
 
 /* The case a real burn-in is: nobody is at the bench, so the button times out
    every iteration. That must not read as a failing run, or the one number a soak
@@ -965,12 +863,14 @@ void test_an_unattended_soak_iteration_counts_a_timeout_and_not_a_failure( void 
     activity->stop();
 }
 
+
 void test_step_names_are_published_for_the_menu( void )
 {
     TEST_ASSERT_EQUAL_UINT32( 14, application_ibit_step_count() );
     TEST_ASSERT_EQUAL_STRING( "Chip identity", application_ibit_step_name( STEP_CHIP_IDENTITY ) );
     TEST_ASSERT_EQUAL_STRING( "Button SW1", application_ibit_step_name( STEP_BUTTON ) );
 }
+
 
 void test_the_board_report_states_the_facts_without_judging_them( void )
 {
@@ -991,6 +891,7 @@ void test_the_board_report_states_the_facts_without_judging_them( void )
     TEST_ASSERT_NULL( strstr( output, "PASS" ) );
 }
 
+
 void test_the_board_report_names_a_risc_v_image( void )
 {
     bsp_mcu_info_t info = healthy_mcu();
@@ -1002,4 +903,240 @@ void test_the_board_report_names_a_risc_v_image( void )
     application_ibit_print_board_report();
 
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "RISC-V" ) );
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+static bsp_mcu_info_t healthy_mcu( void )
+{
+    bsp_mcu_info_t info = {
+        .manufacturer = BSP_MCU_MANUFACTURER_RASPBERRY_PI,
+        .part = BSP_MCU_PART_RP2350,
+        .revision = 2,
+        .package_id = 0x11223344u,
+        .device_id_low = 0xaabbccddu,
+        .device_id_high = 0x01020304u,
+        .chip_info_valid = true,
+        .unique_id = { 0xe6, 0x60, 0x38, 0xb7, 0x13, 0x5f, 0x21, 0x2c },
+        .sram_bytes = 520u * 1024u,
+        .flash_bytes = 2u * 1024u * 1024u,
+        .otp_cs0_size_code = 0x9u, /* what the board actually reports: 2 MByte */
+        .otp_cs1_size_code = 0u,
+        .core_count = 2,
+        .architecture = BSP_MCU_ARCHITECTURE_ARM,
+    };
+    return info;
+}
+
+
+static bsp_clocks_report_t healthy_clocks( void )
+{
+    bsp_clocks_report_t clocks = {
+        .sys_hz = 150000000u,
+        .usb_hz = 48000000u,
+        .ref_hz = 12000000u,
+        .peri_hz = 150000000u,
+        .adc_hz = 48000000u,
+        .measured_sys_hz = 150000000u,
+        .measured_usb_hz = 48000000u,
+    };
+    return clocks;
+}
+
+
+static bsp_memory_report_t healthy_memory( void )
+{
+    bsp_memory_report_t memory = {
+        .flash_bytes = 2u * 1024u * 1024u,
+        .flash_ok = true,
+        .psram_bytes = 2u * 1024u * 1024u,
+        .psram_ok = true,
+        .psram_forced = false,
+        .psram_kgd = 0x0bu,
+        .psram_eid = 0x43u,
+        .psram_enabled = true,
+    };
+    return memory;
+}
+
+
+static bsp_usb_health_t usb_health( uint32_t frame, bool connected, bool suspended,
+                                    uint32_t write_available )
+{
+    bsp_usb_health_t health = {
+        .connected = connected,
+        .suspended = suspended,
+        .write_available = write_available,
+        .activity_count = 1,
+        .frame_number = frame,
+    };
+    return health;
+}
+
+
+/* A named helper rather than a compound literal at the call site: the commas in
+   a designated initializer split CMock's expectation macros into extra
+   arguments. */
+static bsp_adc_temperature_t temperature_sample( uint16_t raw, int32_t milli_celsius )
+{
+    bsp_adc_temperature_t sample = { .raw = raw, .milli_celsius = milli_celsius };
+    return sample;
+}
+
+
+static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness )
+{
+    bsp_led_state_t led = {
+        .red = red, .green = green, .blue = blue, .brightness = brightness, .enabled = true };
+    return led;
+}
+
+
+/* Runs one step in isolation and returns everything it printed. Each step is
+   driven through application_ibit_single so the runner, the tally and the result
+   line are exercised alongside the step itself. */
+static const char *run_step_at( uint32_t index, uint32_t now_ms )
+{
+    MOCK_BSP_TimeSetMs( now_ms );
+    const application_activity_t *activity = application_ibit_single( index );
+    activity->start();
+    MOCK_BSP_ConsoleReset();
+    while ( activity->poll() )
+    {
+        MOCK_BSP_TimeSetMs( now_ms );
+    }
+    return MOCK_BSP_ConsoleOutput();
+}
+
+
+static const char *run_step( uint32_t index )
+{
+    return run_step_at( index, 1000 );
+}
+
+
+/* Each of the four conditions on its own, because a link can be unhealthy in
+   exactly one way and an && that is only ever tested with everything wrong at
+   once would never notice three of them. */
+static void run_usb_step_with( bool connected, bool suspended, uint32_t write_available,
+                               uint32_t second_frame )
+{
+    MOCK_BSP_UsbSetHealth( usb_health( 100, connected, suspended, write_available ) );
+    MOCK_BSP_TimeSetMs( 1000 );
+    const application_activity_t *activity = application_ibit_single( STEP_USB );
+    activity->start();
+    MOCK_BSP_ConsoleReset();
+
+    TEST_ASSERT_TRUE( activity->poll() );
+    MOCK_BSP_TimeSetMs( 1020 );
+    MOCK_BSP_UsbSetHealth( usb_health( second_frame, connected, suspended, write_available ) );
+    TEST_ASSERT_FALSE( activity->poll() );
+}
+
+
+static void expect_led_phase( uint8_t red, uint8_t green, uint8_t blue )
+{
+    BSP_LedSet_Expect( red, green, blue, 128 );
+    BSP_LedGet_ExpectAndReturn( led_state( red, green, blue, 128 ) );
+}
+
+
+/* Every step reachable without the FPGA, so the summary line and the tally are
+   exercised across all five outcomes in one run. */
+static void expect_sequence_without_the_fpga( void )
+{
+    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
+    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
+    BSP_ClocksReport_ExpectAndReturn( healthy_clocks() );
+    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
+    BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
+    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    BSP_AdcTemperature_ExpectAndReturn( temperature_sample( 800, 24500 ) );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    BSP_FpgaPing_ExpectAndReturn( 0x00u );
+    BSP_FpgaStatusPin_ExpectAndReturn( false );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+}
+
+
+static void drive_to_completion( const application_activity_t *activity, uint32_t from_ms,
+                                 uint32_t to_ms )
+{
+    uint32_t now_ms = from_ms;
+    while ( activity->poll() )
+    {
+        now_ms += 100u;
+        MOCK_BSP_TimeSetMs( now_ms > to_ms ? to_ms : now_ms );
+    }
+}
+
+
+/* Answers in the order one healthy sequence asks: the register-bus step reads
+   the current colour and then its own pattern back, and the LED step reads the
+   colour to restore followed by each of the five it drives. */
+static bsp_led_state_t led_get_callback( int num_calls )
+{
+    switch ( num_calls )
+    {
+    case 0:
+        return led_state( 9, 8, 7, 6 );
+    case 1:
+        return led_state( 0x5au, 0xa5u, 0x3cu, 0xc3u );
+    case 2:
+        return led_state( 9, 8, 7, 6 );
+    case 3:
+        return led_state( 255, 0, 0, 128 );
+    case 4:
+        return led_state( 0, 255, 0, 128 );
+    case 5:
+        return led_state( 0, 0, 255, 128 );
+    case 6:
+        return led_state( 255, 255, 255, 128 );
+    default:
+        return led_state( 0, 0, 0, 128 );
+    }
+}
+
+
+static bsp_button_state_t button_callback( int num_calls )
+{
+    bsp_button_state_t before = { .level = 1, .count = 4 };
+    bsp_button_state_t pressed = { .level = 0, .count = 5 };
+    return num_calls == 0 ? before : pressed;
+}
+
+
+static void ignore_a_healthy_board( void )
+{
+    BSP_McuInfo_IgnoreAndReturn( healthy_mcu() );
+    BSP_ClocksReport_IgnoreAndReturn( healthy_clocks() );
+    BSP_MemoryCheck_IgnoreAndReturn( healthy_memory() );
+    BSP_AdcTemperature_IgnoreAndReturn( temperature_sample( 800, 24500 ) );
+    BSP_FpgaCdone_IgnoreAndReturn( true );
+    BSP_FpgaPing_IgnoreAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_FpgaStatusPin_IgnoreAndReturn( true );
+    BSP_FpgaReadStatus_IgnoreAndReturn( 0x01u );
+    BSP_LedSet_Ignore();
+    BSP_LedGet_StubWithCallback( led_get_callback );
+    BSP_ButtonClearCount_Ignore();
+    BSP_ButtonGetState_StubWithCallback( button_callback );
+    application_diagnostics_boot_reason_IgnoreAndReturn( BSP_BOOT_POWER_ON );
+}
+
+
+static bsp_button_state_t button_never_pressed_callback( int num_calls )
+{
+    (void) num_calls;
+    bsp_button_state_t idle = { .level = 1, .count = 4 };
+    return idle;
 }

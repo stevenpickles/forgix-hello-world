@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "unity.h"
 
 #include <stdbool.h>
@@ -18,6 +25,36 @@
 #include "mock_auto_bsp_led.h"
 #include "mock_auto_bsp_memory.h"
 
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static void process( const char *command );
+
+static void expect_memory_report( void );
+
+static bsp_memory_report_t memory_report( void );
+
+static bsp_led_state_t expected_hello_led( void );
+
+static void expect_hello_readback( uint8_t design_id, bsp_led_state_t led );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
 void setUp( void )
 {
     MOCK_BSP_ConsoleReset();
@@ -26,54 +63,11 @@ void setUp( void )
     MOCK_BSP_WatchdogReset();
 }
 
+
 void tearDown( void )
 {
 }
 
-static void process( const char *command )
-{
-    char mutable_command[ 128 ];
-    snprintf( mutable_command, sizeof mutable_command, "%s", command );
-    application_process_command( mutable_command );
-}
-
-static bsp_memory_report_t memory_report( void );
-
-static void expect_memory_report( void )
-{
-    BSP_MemoryCheck_ExpectAndReturn( memory_report() );
-}
-
-static bsp_memory_report_t memory_report( void )
-{
-    bsp_memory_report_t report = {
-        .flash_bytes = 2u * 1024u * 1024u,
-        .flash_ok = true,
-        .psram_bytes = 8u * 1024u * 1024u,
-        .psram_ok = true,
-    };
-    return report;
-}
-
-static bsp_led_state_t expected_hello_led( void )
-{
-    bsp_led_state_t led = {
-        .red = 0,
-        .green = 255,
-        .blue = 255,
-        .brightness = 64,
-        .enabled = true,
-    };
-    return led;
-}
-
-static void expect_hello_readback( uint8_t design_id, bsp_led_state_t led )
-{
-    BSP_FpgaIsReady_ExpectAndReturn( true );
-    BSP_LedSet_Expect( 0, 255, 255, 64 );
-    BSP_FpgaPing_ExpectAndReturn( design_id );
-    BSP_LedGet_ExpectAndReturn( led );
-}
 
 void test_application_init_reports_ready_hardware_and_help( void )
 {
@@ -92,6 +86,7 @@ void test_application_init_reports_ready_hardware_and_help( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "runtime=ready" ) );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "hello | color" ) );
 }
+
 
 void test_application_init_preserves_diagnostics_when_hardware_is_unavailable( void )
 {
@@ -112,17 +107,20 @@ void test_application_init_preserves_diagnostics_when_hardware_is_unavailable( v
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "hello | color" ) );
 }
 
+
 void test_empty_command_has_no_effect( void )
 {
     process( " \t" );
     TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_help_remains_available_without_fpga_access( void )
 {
     process( "help" );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "hello | color" ) );
 }
+
 
 /* The menu is how a user reaches the tests that diagnose a dead FPGA, so getting
    back to it must not be one of the things a dead FPGA takes away. */
@@ -132,6 +130,7 @@ void test_menu_returns_to_the_ui_without_consulting_the_fpga( void )
     process( "menu" );
     TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_hardware_command_is_rejected_when_fpga_is_unavailable( void )
 {
@@ -143,6 +142,7 @@ void test_hardware_command_is_rejected_when_fpga_is_unavailable( void )
         strstr( MOCK_BSP_ConsoleOutput(), "FPGA is not configured and responding" ) );
 }
 
+
 void test_color_uses_default_brightness( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -152,6 +152,7 @@ void test_color_uses_default_brightness( void )
 
     TEST_ASSERT_EQUAL_STRING( "ok\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_color_forwards_explicit_brightness( void )
 {
@@ -163,6 +164,7 @@ void test_color_forwards_explicit_brightness( void )
     TEST_ASSERT_EQUAL_STRING( "ok\n", MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_color_rejects_values_above_a_byte_without_writing_hardware( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -171,6 +173,7 @@ void test_color_rejects_values_above_a_byte_without_writing_hardware( void )
 
     TEST_ASSERT_EQUAL_STRING( "error: values must be 0..255\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_color_rejects_negative_values_without_writing_hardware( void )
 {
@@ -181,6 +184,7 @@ void test_color_rejects_negative_values_without_writing_hardware( void )
     TEST_ASSERT_EQUAL_STRING( "error: values must be 0..255\n", MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_color_rejects_non_numeric_values_without_writing_hardware( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -189,6 +193,7 @@ void test_color_rejects_non_numeric_values_without_writing_hardware( void )
 
     TEST_ASSERT_EQUAL_STRING( "error: values must be 0..255\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_color_rejects_trailing_characters_without_writing_hardware( void )
 {
@@ -199,6 +204,7 @@ void test_color_rejects_trailing_characters_without_writing_hardware( void )
     TEST_ASSERT_EQUAL_STRING( "error: values must be 0..255\n", MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_color_rejects_the_wrong_argument_count( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -208,6 +214,7 @@ void test_color_rejects_the_wrong_argument_count( void )
     TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_hello_programs_and_verifies_the_expected_led_state( void )
 {
     expect_hello_readback( BSP_FPGA_DESIGN_ID, expected_hello_led() );
@@ -216,6 +223,7 @@ void test_hello_programs_and_verifies_the_expected_led_state( void )
 
     TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B5\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_hello_reports_failed_readback( void )
 {
@@ -227,6 +235,7 @@ void test_hello_reports_failed_readback( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "hello readback failed" ) );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "id=00" ) );
 }
+
 
 void test_hello_reports_each_led_readback_mismatch( void )
 {
@@ -254,6 +263,7 @@ void test_hello_reports_each_led_readback_mismatch( void )
     }
 }
 
+
 void test_off_disables_the_led( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -263,6 +273,7 @@ void test_off_disables_the_led( void )
 
     TEST_ASSERT_EQUAL_STRING( "ok\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_status_reports_fpga_and_button_state( void )
 {
@@ -279,6 +290,7 @@ void test_status_reports_fpga_and_button_state( void )
                               MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_console_control_commands_remain_available_without_fpga_access( void )
 {
     const char *commands[] = {
@@ -293,6 +305,7 @@ void test_console_control_commands_remain_available_without_fpga_access( void )
         MOCK_BSP_ConsoleReset();
     }
 }
+
 
 void test_console_control_commands_report_invalid_usage( void )
 {
@@ -310,6 +323,7 @@ void test_console_control_commands_report_invalid_usage( void )
     }
 }
 
+
 void test_status_reports_unavailable_hardware_without_accessing_registers( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( false );
@@ -319,6 +333,7 @@ void test_status_reports_unavailable_hardware_without_accessing_registers( void 
     TEST_ASSERT_EQUAL_STRING( "status unavailable: FPGA is not configured and responding\n",
                               MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access( void )
 {
@@ -336,6 +351,7 @@ void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access( v
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "fpga_reconfig=" ) );
 }
 
+
 void test_reset_reaches_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -346,6 +362,7 @@ void test_reset_reaches_the_fpga( void )
     TEST_ASSERT_EQUAL_STRING( "ok\n", MOCK_BSP_ConsoleOutput() );
 }
 
+
 void test_unknown_command_is_rejected( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -354,6 +371,7 @@ void test_unknown_command_is_rejected( void )
 
     TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_known_commands_with_extra_arguments_are_rejected( void )
 {
@@ -373,6 +391,7 @@ void test_known_commands_with_extra_arguments_are_rejected( void )
     }
 }
 
+
 void test_command_tokenization_is_safely_limited_to_the_argument_capacity( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -380,4 +399,61 @@ void test_command_tokenization_is_safely_limited_to_the_argument_capacity( void 
     process( "unknown 1 2 3 4 5 6" );
 
     TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+static void process( const char *command )
+{
+    char mutable_command[ 128 ];
+    snprintf( mutable_command, sizeof mutable_command, "%s", command );
+    application_process_command( mutable_command );
+}
+
+
+static void expect_memory_report( void )
+{
+    BSP_MemoryCheck_ExpectAndReturn( memory_report() );
+}
+
+
+static bsp_memory_report_t memory_report( void )
+{
+    bsp_memory_report_t report = {
+        .flash_bytes = 2u * 1024u * 1024u,
+        .flash_ok = true,
+        .psram_bytes = 8u * 1024u * 1024u,
+        .psram_ok = true,
+    };
+    return report;
+}
+
+
+static bsp_led_state_t expected_hello_led( void )
+{
+    bsp_led_state_t led = {
+        .red = 0,
+        .green = 255,
+        .blue = 255,
+        .brightness = 64,
+        .enabled = true,
+    };
+    return led;
+}
+
+
+static void expect_hello_readback( uint8_t design_id, bsp_led_state_t led )
+{
+    BSP_FpgaIsReady_ExpectAndReturn( true );
+    BSP_LedSet_Expect( 0, 255, 255, 64 );
+    BSP_FpgaPing_ExpectAndReturn( design_id );
+    BSP_LedGet_ExpectAndReturn( led );
 }

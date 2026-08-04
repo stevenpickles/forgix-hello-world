@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 /* USB-free control image for the lockup investigation.
  *
  * Restored from the feature/5 diagnostic stash and instrumented: it runs the
@@ -12,6 +19,16 @@
  */
 #include "application_diagnostics.h"
 #include "bsp.h"
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
 
 int main( void )
 {

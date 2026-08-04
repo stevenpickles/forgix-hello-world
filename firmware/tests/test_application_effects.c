@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "unity.h"
 
 #include <stdbool.h>
@@ -14,6 +21,31 @@
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
 
+
+
+
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness );
+
+static const application_activity_t *start_at( const application_activity_t *activity,
+                                               uint32_t now_ms );
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
+
 void setUp( void )
 {
     MOCK_BSP_ConsoleReset();
@@ -22,24 +54,11 @@ void setUp( void )
     MOCK_BSP_WatchdogReset();
 }
 
+
 void tearDown( void )
 {
 }
 
-static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness )
-{
-    bsp_led_state_t led = {
-        .red = red, .green = green, .blue = blue, .brightness = brightness, .enabled = true };
-    return led;
-}
-
-static const application_activity_t *start_at( const application_activity_t *activity,
-                                               uint32_t now_ms )
-{
-    MOCK_BSP_TimeSetMs( now_ms );
-    activity->start();
-    return activity;
-}
 
 void test_blinker_cycles_red_green_and_blue_with_a_gap_between_each( void )
 {
@@ -69,6 +88,7 @@ void test_blinker_cycles_red_green_and_blue_with_a_gap_between_each( void )
     activity->stop();
 }
 
+
 void test_blinker_says_why_it_cannot_run_without_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( false );
@@ -82,6 +102,7 @@ void test_blinker_says_why_it_cannot_run_without_the_fpga( void )
     /* Nothing was saved, so stopping must not write a colour back. */
     activity->stop();
 }
+
 
 /* The whole show, sampled densely enough to walk every sector of the wheel and
    every leg of the aurora blend. */
@@ -106,6 +127,7 @@ void test_advanced_blinker_runs_the_whole_show_and_then_restores_the_colour( voi
     /* Already restored on the way out, so a later stop is a no-op. */
     activity->stop();
 }
+
 
 void test_advanced_blinker_paints_each_phase_of_the_show( void )
 {
@@ -138,6 +160,7 @@ void test_advanced_blinker_paints_each_phase_of_the_show( void )
     activity->stop();
 }
 
+
 void test_advanced_blinker_stops_immediately_without_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( false );
@@ -147,6 +170,7 @@ void test_advanced_blinker_stops_immediately_without_the_fpga( void )
     TEST_ASSERT_FALSE( activity->poll() );
     activity->stop();
 }
+
 
 void test_effects_mark_their_own_path_for_the_watchdog( void )
 {
@@ -159,4 +183,30 @@ void test_effects_mark_their_own_path_for_the_watchdog( void )
 
     TEST_ASSERT_TRUE( MOCK_BSP_WatchdogMarkerWasWritten( APPLICATION_DIAGNOSTICS_MARKER_EFFECT ) );
     activity->stop();
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness )
+{
+    bsp_led_state_t led = {
+        .red = red, .green = green, .blue = blue, .brightness = brightness, .enabled = true };
+    return led;
+}
+
+
+static const application_activity_t *start_at( const application_activity_t *activity,
+                                               uint32_t now_ms )
+{
+    MOCK_BSP_TimeSetMs( now_ms );
+    activity->start();
+    return activity;
 }

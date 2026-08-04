@@ -1,3 +1,10 @@
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include "unity.h"
 
 #include <stdint.h>
@@ -19,6 +26,16 @@
 #include "mock_auto_bsp_mcu.h"
 #include "mock_auto_bsp_memory.h"
 
+
+
+
+/***************************************************************************************
+**
+** Private Variable Declarations
+**
+***************************************************************************************/
+
+
 /* A stand-in for whatever the menu starts, so the UI tests exercise the activity
    contract -- start, repeated poll, abort through stop -- without dragging the
    built-in test's own behavior in with it. */
@@ -27,28 +44,48 @@ static uint32_t activity_polls;
 static uint32_t activity_stops;
 static uint32_t activity_polls_before_finishing;
 
-static void fake_start( void )
-{
-    ++activity_starts;
-}
 
-static bool fake_poll( void )
-{
-    ++activity_polls;
-    return activity_polls < activity_polls_before_finishing;
-}
 
-static void fake_stop( void )
-{
-    ++activity_stops;
-}
 
+/***************************************************************************************
+**
+** Private Function Declarations
+**
+***************************************************************************************/
+
+
+static void fake_start( void );
+
+static bool fake_poll( void );
+
+static void fake_stop( void );
+
+static void start_at( uint32_t now_ms );
+
+static void poll_at( uint32_t now_ms );
+
+static void key_at( char key, uint32_t now_ms );
+
+static void open_menu_at( uint32_t now_ms );
+
+/* Must follow the declarations above: the initializer takes the address of
+   fake_start, fake_poll and fake_stop, which have to be declared first. */
 static const application_activity_t FAKE_ACTIVITY = {
     .name = "fake",
     .start = fake_start,
     .poll = fake_poll,
     .stop = fake_stop,
 };
+
+
+
+
+/***************************************************************************************
+**
+** Public Function Definitions
+**
+***************************************************************************************/
+
 
 void setUp( void )
 {
@@ -65,39 +102,11 @@ void setUp( void )
     application_ibit_step_name_IgnoreAndReturn( "a step" );
 }
 
+
 void tearDown( void )
 {
 }
 
-static void start_at( uint32_t now_ms )
-{
-    MOCK_BSP_TimeSetMs( now_ms );
-    application_ui_start();
-}
-
-static void poll_at( uint32_t now_ms )
-{
-    MOCK_BSP_TimeSetMs( now_ms );
-    application_ui_poll();
-}
-
-static void key_at( char key, uint32_t now_ms )
-{
-    MOCK_BSP_ConsoleQueueCharacter( (uint8_t) key );
-    poll_at( now_ms );
-}
-
-/* Drives a fresh boot and the banner-dismissing keypress, so the tests that care
-   about menu behavior neither repeat the way in nor inherit the mode a previous
-   test left in the module's static state. */
-static void open_menu_at( uint32_t now_ms )
-{
-    start_at( now_ms );
-    application_console_release_Ignore();
-    BSP_FpgaIsReady_ExpectAndReturn( true );
-    key_at( ' ', now_ms );
-    MOCK_BSP_ConsoleReset();
-}
 
 void test_banner_repeats_once_a_second_until_a_key_arrives( void )
 {
@@ -111,6 +120,7 @@ void test_banner_repeats_once_a_second_until_a_key_arrives( void )
                               "hello world - 2 - press any key\n",
                               MOCK_BSP_ConsoleOutput() );
 }
+
 
 /* The count is what tells a user how long the board has been up by the time they
    found the port, so it must advance while nobody is listening. */
@@ -128,6 +138,7 @@ void test_banner_counts_while_the_host_is_absent_so_it_reads_as_uptime( void )
     TEST_ASSERT_EQUAL_STRING( "hello world - 3 - press any key\n", MOCK_BSP_ConsoleOutput() );
 }
 
+
 /* 'r' is the reboot key. Reaching for "any key" must not be able to fire it. */
 void test_the_key_that_ends_the_banner_does_not_also_select_from_the_menu( void )
 {
@@ -139,6 +150,7 @@ void test_the_key_that_ends_the_banner_does_not_also_select_from_the_menu( void 
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
     TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "rebooting" ) );
 }
+
 
 void test_menu_reports_uptime_and_a_healthy_fpga( void )
 {
@@ -152,6 +164,7 @@ void test_menu_reports_uptime_and_a_healthy_fpga( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "select> " ) );
 }
 
+
 /* A dead FPGA must be visible on the menu itself. The tests that diagnose it are
    reached from here, so the user has to know before they choose. */
 void test_menu_names_an_unavailable_fpga( void )
@@ -164,6 +177,7 @@ void test_menu_names_an_unavailable_fpga( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "FPGA UNAVAILABLE" ) );
 }
 
+
 void test_unknown_menu_key_redraws_rather_than_complaining( void )
 {
     open_menu_at( 0 );
@@ -174,6 +188,7 @@ void test_unknown_menu_key_redraws_rather_than_complaining( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
 }
 
+
 void test_redraw_key_reprints_the_menu( void )
 {
     open_menu_at( 0 );
@@ -183,6 +198,7 @@ void test_redraw_key_reprints_the_menu( void )
 
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "Redraw this menu" ) );
 }
+
 
 void test_shell_key_hands_the_terminal_to_the_console( void )
 {
@@ -197,6 +213,7 @@ void test_shell_key_hands_the_terminal_to_the_console( void )
     application_console_idle_Expect();
     poll_at( 300 );
 }
+
 
 void test_menu_command_takes_the_terminal_back_from_the_shell( void )
 {
@@ -214,6 +231,7 @@ void test_menu_command_takes_the_terminal_back_from_the_shell( void )
     key_at( '?', 200 );
 }
 
+
 void test_reboot_key_warns_before_restarting_the_board( void )
 {
     open_menu_at( 0 );
@@ -223,6 +241,7 @@ void test_reboot_key_warns_before_restarting_the_board( void )
 
     TEST_ASSERT_EQUAL_STRING( "rebooting\n", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_bootsel_key_warns_that_the_port_is_about_to_vanish( void )
 {
@@ -234,6 +253,7 @@ void test_bootsel_key_warns_that_the_port_is_about_to_vanish( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "serial port will disappear" ) );
 }
 
+
 /* Nothing is due in the menu, so an empty poll must stay silent -- otherwise the
    menu would scroll itself off the screen while the user is reading it. */
 void test_menu_stays_silent_while_it_waits( void )
@@ -244,6 +264,7 @@ void test_menu_stays_silent_while_it_waits( void )
 
     TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
 }
+
 
 void test_built_in_test_runs_as_an_activity_and_returns_to_the_menu( void )
 {
@@ -266,6 +287,7 @@ void test_built_in_test_runs_as_an_activity_and_returns_to_the_menu( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
 }
 
+
 /* Any key aborts, because a user watching a test they no longer want should not
    have to remember which key means stop. */
 void test_any_key_aborts_a_running_activity_and_lets_it_clean_up( void )
@@ -285,6 +307,7 @@ void test_any_key_aborts_a_running_activity_and_lets_it_clean_up( void )
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
 }
 
+
 void test_step_submenu_lists_every_step_and_runs_the_one_chosen( void )
 {
     open_menu_at( 0 );
@@ -300,6 +323,7 @@ void test_step_submenu_lists_every_step_and_runs_the_one_chosen( void )
     TEST_ASSERT_EQUAL_UINT32( 1, activity_starts );
 }
 
+
 /* Fourteen steps do not fit in the digits, so the tail of the list is lettered. */
 void test_step_submenu_letters_the_steps_that_run_out_of_digits( void )
 {
@@ -312,6 +336,7 @@ void test_step_submenu_letters_the_steps_that_run_out_of_digits( void )
     key_at( 'a', 200 );
     TEST_ASSERT_EQUAL_UINT32( 1, activity_starts );
 }
+
 
 void test_step_submenu_redraws_an_unknown_key_and_leaves_on_x( void )
 {
@@ -326,6 +351,7 @@ void test_step_submenu_redraws_an_unknown_key_and_leaves_on_x( void )
     key_at( 'x', 300 );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
 }
+
 
 void test_blinker_and_advanced_blinker_start_from_the_menu( void )
 {
@@ -346,6 +372,7 @@ void test_blinker_and_advanced_blinker_start_from_the_menu( void )
     TEST_ASSERT_EQUAL_UINT32( 2, activity_starts );
 }
 
+
 void test_board_report_prints_and_comes_straight_back_to_the_menu( void )
 {
     open_menu_at( 0 );
@@ -356,6 +383,7 @@ void test_board_report_prints_and_comes_straight_back_to_the_menu( void )
 
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
 }
+
 
 void test_ui_marks_the_menu_and_read_paths_for_the_watchdog( void )
 {
@@ -368,4 +396,66 @@ void test_ui_marks_the_menu_and_read_paths_for_the_watchdog( void )
     TEST_ASSERT_TRUE(
         MOCK_BSP_WatchdogMarkerWasWritten( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE ) );
     TEST_ASSERT_TRUE( MOCK_BSP_WatchdogMarkerWasWritten( APPLICATION_DIAGNOSTICS_MARKER_MENU ) );
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
+
+
+static void fake_start( void )
+{
+    ++activity_starts;
+}
+
+
+static bool fake_poll( void )
+{
+    ++activity_polls;
+    return activity_polls < activity_polls_before_finishing;
+}
+
+
+static void fake_stop( void )
+{
+    ++activity_stops;
+}
+
+
+static void start_at( uint32_t now_ms )
+{
+    MOCK_BSP_TimeSetMs( now_ms );
+    application_ui_start();
+}
+
+
+static void poll_at( uint32_t now_ms )
+{
+    MOCK_BSP_TimeSetMs( now_ms );
+    application_ui_poll();
+}
+
+
+static void key_at( char key, uint32_t now_ms )
+{
+    MOCK_BSP_ConsoleQueueCharacter( (uint8_t) key );
+    poll_at( now_ms );
+}
+
+
+/* Drives a fresh boot and the banner-dismissing keypress, so the tests that care
+   about menu behavior neither repeat the way in nor inherit the mode a previous
+   test left in the module's static state. */
+static void open_menu_at( uint32_t now_ms )
+{
+    start_at( now_ms );
+    application_console_release_Ignore();
+    BSP_FpgaIsReady_ExpectAndReturn( true );
+    key_at( ' ', now_ms );
+    MOCK_BSP_ConsoleReset();
 }
