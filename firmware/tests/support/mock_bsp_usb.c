@@ -41,7 +41,7 @@ void MOCK_BSP_UsbReset( void )
 {
     _present = true;
     _connected = true;
-    _health = (bsp_usb_health_t) { 0 };
+    _health = ( bsp_usb_health_t ){ 0 };
     _serviceCount = 0;
 }
 

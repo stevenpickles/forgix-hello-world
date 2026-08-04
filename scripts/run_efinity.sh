@@ -22,11 +22,13 @@ if [[ ! -f "$efinity_home/bin/setup.sh" ]]; then
 fi
 
 # setup.sh reads SYSTEM_LIBSTDCXX_VERSION before assigning it, so it aborts under
-# `set -u`. Relax only for the source.
-set +u
+# `set -u`, and its pipelines are not written for pipefail: on Ubuntu 24.04 the
+# source dies with SIGPIPE (141) under pipefail while passing under plain
+# `set -eu`. Relax both only for the source.
+set +u +o pipefail
 # shellcheck disable=SC1091
 source "$efinity_home/bin/setup.sh"
-set -u
+set -u -o pipefail
 
 # setup.sh exports EFINITY_USER_DIR_INI=$HOME/.local/share/efinity/user_dir.ini,
 # so it has to be pinned after the source rather than in the environment. $HOME

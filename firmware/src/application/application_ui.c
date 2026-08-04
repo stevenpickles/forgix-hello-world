@@ -159,7 +159,7 @@ static const menu_entry_t MENU[] = {
 /// </summary>
 void application_ui_start( void )
 {
-    ui = (ui_state_t) { .mode = UI_MODE_BANNER };
+    ui = ( ui_state_t ){ .mode = UI_MODE_BANNER };
     ui.current_time_ms = BSP_TimeNowMs();
     ui.started_ms = ui.current_time_ms;
     ui.next_banner_ms = ui.current_time_ms;

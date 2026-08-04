@@ -3,7 +3,15 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/scripts/env.sh"
-build_dir="$repo_root/build/firmware"
+# Separate build trees per platform: a CMake cache records absolute paths, so
+# the Windows tree and the forgix-build container cannot share one directory --
+# CMake refuses the mismatch outright when the same checkout is mounted into
+# the container.
+if command -v cygpath >/dev/null 2>&1; then
+  build_dir="$repo_root/build/firmware"
+else
+  build_dir="$repo_root/build/firmware-linux"
+fi
 fpga_image="$repo_root/fpga/outflow/forgix_hello_world.bin"
 firmware_binary="$build_dir/forgix_hello_world.bin"
 uf2="$build_dir/forgix_hello_world.uf2"
@@ -14,18 +22,27 @@ if [[ ! -s "$fpga_image" ]]; then
   exit 1
 fi
 
-repo_native="$(cygpath -w "$repo_root")"
-build_native="$(cygpath -w "$build_dir")"
-sdk_native="$(cygpath -w "$PICO_SDK_PATH")"
-image_native="$(cygpath -w "$fpga_image")"
+# CMake on Windows is a native binary and must be handed Windows paths; in the
+# forgix-build container (and any Linux host) the POSIX paths already are
+# native -- the same split scripts/build_fpga.sh makes.
+if command -v cygpath >/dev/null 2>&1; then
+  native() { cygpath -w "$1"; }
+  firmware_src="$(native "$repo_root")\\firmware"
+else
+  native() { printf '%s' "$1"; }
+  firmware_src="$repo_root/firmware"
+fi
+build_native="$(native "$build_dir")"
+sdk_native="$(native "$PICO_SDK_PATH")"
+image_native="$(native "$fpga_image")"
 tinyusb_posix="${PICO_TINYUSB_PATH:-}"
 if [[ -z "$tinyusb_posix" || ! -f "$tinyusb_posix/src/tusb.c" ]]; then
   printf 'TinyUSB is missing. Initialize lib/tinyusb in the Pico SDK or set PICO_TINYUSB_PATH.\n' >&2
   exit 1
 fi
-tinyusb_native="$(cygpath -w "$tinyusb_posix")"
+tinyusb_native="$(native "$tinyusb_posix")"
 
-cmake -S "$repo_native\\firmware" -B "$build_native" -G Ninja \
+cmake -S "$firmware_src" -B "$build_native" -G Ninja \
   -DPICO_SDK_PATH="$sdk_native" \
   -DPICO_TINYUSB_PATH="$tinyusb_native" \
   -DFPGA_IMAGE="$image_native"

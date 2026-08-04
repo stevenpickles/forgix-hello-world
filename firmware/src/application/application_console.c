@@ -120,7 +120,7 @@ static void process_character( int16_t character );
 /// </summary>
 void application_console_start( void )
 {
-    console = (console_state_t) {
+    console = ( console_state_t ){
         .echo_enabled = true,
         .auto_status_enabled = true,
     };

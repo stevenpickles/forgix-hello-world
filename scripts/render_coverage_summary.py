@@ -41,23 +41,36 @@ def read_metrics(
             threshold=threshold,
         )
 
-    return [
+    metrics = [
         metric("Lines", "lines-covered", "lines-valid", "line-rate", line_threshold),
-        metric(
-            "Functions",
-            "functions-covered",
-            "functions-valid",
-            "function-rate",
-            None,
-        ),
+    ]
+    # The functions-* triple is a gcovr extension to Cobertura, present through
+    # gcovr 7.x and absent from 8.x, so the row is reported when available
+    # rather than required. Functions are informational only -- the gates are
+    # lines and branches, which every producer emits.
+    if all(
+        name in coverage.attrib
+        for name in ("functions-covered", "functions-valid", "function-rate")
+    ):
+        metrics.append(
+            metric(
+                "Functions",
+                "functions-covered",
+                "functions-valid",
+                "function-rate",
+                None,
+            )
+        )
+    metrics.append(
         metric(
             "Branches",
             "branches-covered",
             "branches-valid",
             "branch-rate",
             branch_threshold,
-        ),
-    ]
+        )
+    )
+    return metrics
 
 
 def coverage_indicator(percent: float) -> str:

@@ -165,7 +165,7 @@ static void blink_boot_report( void );
 /// </summary>
 void application_diagnostics_start( void )
 {
-    diagnostics = (diagnostics_state_t) { 0 };
+    diagnostics = ( diagnostics_state_t ){ 0 };
     diagnostics.usb_present = BSP_UsbPresent();
     diagnostics.boot_reason = BSP_WatchdogBootReason();
     diagnostics.boot_marker = BSP_WatchdogMarkerGet();
@@ -449,7 +449,7 @@ static void apply_led( uint32_t now_ms )
         uint8_t blue = 0;
         heartbeat_color( now_ms, &red, &green, &blue );
         BSP_LedSet( red, green, blue, HEARTBEAT_BRIGHTNESS );
-        diagnostics.commanded = (bsp_led_state_t) {
+        diagnostics.commanded = ( bsp_led_state_t ){
             .red = red,
             .green = green,
             .blue = blue,
@@ -674,13 +674,13 @@ static boot_signature_t boot_signature( void )
     {
     case BSP_BOOT_WATCHDOG:
         /* red, blinked as many times as the retained progress marker */
-        signature = (boot_signature_t) { 255, 0, 0, clamp_blinks( diagnostics.boot_marker ) };
+        signature = ( boot_signature_t ){ 255, 0, 0, clamp_blinks( diagnostics.boot_marker ) };
         break;
     case BSP_BOOT_BROWNOUT:
-        signature = (boot_signature_t) { 255, 255, 0, 2 }; /* yellow */
+        signature = ( boot_signature_t ){ 255, 255, 0, 2 }; /* yellow */
         break;
     case BSP_BOOT_OTHER:
-        signature = (boot_signature_t) { 0, 255, 255, 3 }; /* cyan */
+        signature = ( boot_signature_t ){ 0, 255, 255, 3 }; /* cyan */
         break;
     default:
         break;

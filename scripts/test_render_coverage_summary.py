@@ -52,6 +52,20 @@ class CoverageSummaryTests(unittest.TestCase):
         self.assertIn("&#x1F534; <strong>50.0%</strong>", summary)
         self.assertIn("&#x274C; Fail", summary)
 
+    def test_omits_functions_when_the_report_carries_none(self) -> None:
+        # gcovr 8.x dropped the functions-* extension attributes that 7.x
+        # wrote; the renderer must keep working against both shapes.
+        without_functions = COBERTURA.replace(' function-rate="1.0"', "").replace(
+            ' functions-covered="4" functions-valid="4"', ""
+        )
+        metrics = read_metrics_from_text(without_functions)
+        summary = render_html(metrics)
+
+        self.assertNotIn("<strong>Functions</strong>", summary)
+        self.assertIn("<strong>Lines</strong>", summary)
+        self.assertIn("<strong>Branches</strong>", summary)
+        self.assertIn("&#x2705; Pass", summary)
+
 
 def read_metrics_from_text(contents: str):
     with tempfile.TemporaryDirectory() as temporary:

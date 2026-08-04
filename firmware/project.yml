@@ -1,7 +1,7 @@
 ---
 :project:
   :which_ceedling: gem
-  :ceedling_version: 1.0.1
+  :ceedling_version: 1.1.2
   :use_mocks: TRUE
   :use_test_preprocessor: :none
   :use_deep_preprocessor: :none

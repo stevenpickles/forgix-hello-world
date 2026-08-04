@@ -649,12 +649,15 @@ The application and test layers followed the same three steps afterwards, and th
 scope widened from the BSP alone to all three layers once they had. CI's command did not change —
 it has always been the plain `--strict` run, so widening the default *is* the gate flip.
 
-**`scripts/format_firmware.sh --check` is deliberately not in CI.** The config uses options whose
-spelling and behaviour changed across clang-format versions — `SpacesInParentheses` became
-`SpacesInParens` in 17, `Cpp11BracedListStyle` became an enum in 21 — and the runner's version is
-not pinned. A version mismatch would fail the build over formatting that is locally correct.
-Adding it means pinning a clang-format version in the workflow first; until then the Python
-checker, which has no such dependency, is what CI enforces.
+**`scripts/format_firmware.sh --check` gates in CI.** It was deliberately absent for as long as
+the runner's clang-format version was unpinned: the config uses options whose spelling and
+behaviour changed across versions — `SpacesInParentheses` became `SpacesInParens` in 17,
+`Cpp11BracedListStyle` became an enum in 21 — so a version mismatch could fail the build over
+formatting that is locally correct. The forgix-build image removed that failure mode by pinning
+clang-format (18.x, the symlinked `clang-format-18`), and the check joined `ci.yml`'s verify job.
+A locally installed LLVM may still disagree with the pin; format with the container, or point
+`CLANG_FORMAT` at a matching version. Bumping the image's clang-format major is a deliberate act
+that ships with a full-tree reformat in the same change.
 
 ### What conforming cost — the bsp profile
 

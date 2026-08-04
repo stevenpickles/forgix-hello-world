@@ -22,8 +22,13 @@ PICO_TINYUSB_PATH  resolved from the SDK submodule, or build/tinyusb
 ```
 
 Any variable already set in the environment wins, so a non-default installation
-only needs that one export. Source the file yourself when invoking `cmake`,
-`ninja`, or `picotool` by hand; `--print` reports what it resolved:
+only needs that one export. That same rule is what makes the private
+`ghcr.io/stevenpickles/forgix-build` container work: it bakes every toolchain
+at known `/opt` paths, pre-sets all of these variables, and marks itself with
+`FORGIX_BUILD_CONTAINER=1`, so the identical scripts run unchanged inside it
+(see `ci/forgix-build/Dockerfile` and `docs/fpga-ci.md`). Source the file
+yourself when invoking `cmake`, `ninja`, or `picotool` by hand; `--print`
+reports what it resolved:
 
 ```bash
 source ./scripts/env.sh --print
@@ -200,9 +205,14 @@ Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open fo
 the whole run and never reopens it after a failure, since a single controlled
 reopen is itself one of the experiments.
 
-Application behavior can also be exercised without a board. The Ceedling toolchain
-is pinned in a Docker image, so the same compiler, Unity, CMock, and coverage tools
-run on Windows and in CI:
+Application behavior can also be exercised without a board. The Ceedling
+toolchain (Ceedling 1.1.2, gcovr 8.6, host gcc) is pinned in the private
+`forgix-build` Docker image, so the same compiler, Unity, CMock, and coverage
+tools run on Windows and in CI. The image is private because it also carries
+the licensed Efinity tools, so running it locally needs a one-time
+`docker login ghcr.io` with a `read:packages` PAT; contributors without access
+can instead install Ceedling 1.1.2 and gcovr 8.6 natively and run `ceedling`
+from `firmware/`:
 
 ```bash
 python scripts/check_firmware_layers.py
@@ -214,8 +224,10 @@ Detailed HTML, Cobertura XML, and text coverage reports are written beneath
 `firmware/build/ceedling/artifacts/gcov/gcovr/`. Pass explicit Ceedling tasks when a faster
 development loop is useful, for example `./scripts/test_ceedling.sh test:all`.
 Application policy is gated at 100% line and branch coverage. The
-GitHub Actions summary renders color-coded line, function, and branch totals and
-links to the detailed annotated HTML report in the downloadable test artifact.
+GitHub Actions summary renders color-coded line and branch totals (plus
+functions when the report carries them; gcovr 8.x dropped that Cobertura
+extension) and links to the detailed annotated HTML report in the downloadable
+test artifact.
 CI artifact names include the workflow run ID and attempt number so downloaded
 reports and firmware images can be traced back to an exact execution.
 
@@ -228,24 +240,25 @@ See `docs/register-map.md` for the runtime protocol. The Efinity project files
 build a placed-and-routed T8F49 passive-SPI image locally and verify the board
 pinout plus setup/hold timing before firmware compilation begins.
 
-GitHub Actions runs the open-source verification path on every push and pull
-request: Dockerized Ceedling application tests with BSP mocks and enforced
-coverage, firmware-layering checks, VHDL 2008 simulation with GHDL 6.0.0,
-deterministic image-embedding and Efinity-helper checks, static project-metadata
-validation, and an RP2354 USB firmware compile with a 2 MB flash-budget gate
-against Pico SDK 2.3.0. The application job publishes its JUnit, detailed HTML,
-Cobertura XML, and text reports as a workflow artifact. The firmware CI build
-embeds `tests/fixtures/fpga-test.bin`; it is a compile fixture, not a loadable FPGA
-image. Hardware tests remain local.
+GitHub Actions runs entirely inside the `forgix-build` image on every push and
+same-repository pull request: a `verify` job (script and project-metadata
+validation, firmware-layering checks, the clang-format and VSG format gates,
+VHDL 2008 simulation with GHDL 6.0.0, and the Ceedling application tests with
+BSP mocks and enforced coverage), the Efinity synthesis job, and an RP2354 USB
+firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
+last linking the bitstream that same run produced, falling back to the
+`tests/fixtures/fpga-test.bin` compile fixture only if synthesis failed. The
+verify job publishes its JUnit, detailed HTML, Cobertura XML, and text reports
+as a workflow artifact. Hardware tests remain local.
 
-Efinity synthesis also runs in CI, in a private container image built from the
-registration-gated Linux tarball, so a routing or timing regression surfaces on
-the push that caused it. Pushing a `v*` tag runs `release.yml`, which places and
-routes the T8F49 design, builds the RP2354 firmware against that exact bitstream,
-checks the image appears byte-for-byte in the linked binary, and publishes the
-UF2, ELF, bitstream, pinout and timing reports, and `SHA256SUMS` as a GitHub
-release. Fork pull requests skip the synthesis job: they are never issued the
-registry secret, so they cannot pull the tools however the workflow is rewritten.
-Every other job still runs for them. See `docs/fpga-ci.md` for the one-time image
-setup, the reason the package is never granted to this repository, and the
-licensing constraints that shape both.
+Pushing a `v*` tag runs `release.yml`, which places and routes the T8F49
+design, builds the RP2354 firmware against that exact bitstream using the
+image's prebuilt picotool for UF2 generation, checks the image appears
+byte-for-byte in the linked binary, and publishes the UF2, ELF, bitstream,
+pinout and timing reports, and `SHA256SUMS` as a GitHub release. Fork pull
+requests cannot pull the private image — they are never issued the registry
+secret, however the workflow is rewritten — so they run the reduced
+`fork-verify` job (the freely installable tools only), and the full pipeline
+runs when a maintainer pushes the branch. See `docs/fpga-ci.md` for the
+one-time image setup, the reason the package is never granted to this
+repository, and the licensing constraints that shape both.
