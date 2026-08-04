@@ -15,7 +15,20 @@ from check_efinity_reports import (
     verify_sdc_coverage,
     verify_timing,
 )
-from efinity_hex_to_bin import convert_file
+from efinity_hex_to_bin import BITSTREAM_HEADER_BYTES, BITSTREAM_MIN_BYTES, convert_file
+
+
+def bitstream_hex(header_line: str = "Mode: passive", total_bytes: int | None = None) -> str:
+    """Hex text for a synthetic image: the documented 256-byte NUL-padded ASCII
+    header followed by payload padding out to a plausible bitstream size."""
+    if total_bytes is None:
+        total_bytes = BITSTREAM_MIN_BYTES
+    header = (
+        f"Version: 2026.1\nProject: test\nFamily: Trion\n{header_line}\n".encode("ascii")
+    )
+    image = header.ljust(BITSTREAM_HEADER_BYTES, b"\x00")
+    image += b"\xa5" * max(0, total_bytes - len(image))
+    return image[:total_bytes].hex()
 
 
 def valid_pinout() -> str:
@@ -86,6 +99,54 @@ class HexConversionTests(unittest.TestCase):
             source.write_text("00xz", encoding="ascii")
             with self.assertRaisesRegex(ValueError, "invalid Efinity hex image"):
                 convert_file(source, source.with_suffix(".bin"))
+
+    def test_accepts_a_plausible_bitstream_when_validating(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "image.hex"
+            source.write_text(bitstream_hex(), encoding="ascii")
+
+            count = convert_file(
+                source, source.with_suffix(".bin"), validate_bitstream_image=True
+            )
+
+            self.assertEqual(count, BITSTREAM_MIN_BYTES)
+
+    def test_rejects_a_truncated_bitstream(self) -> None:
+        # An interrupted write or a full disk leaves a short hex that still
+        # converts cleanly and passes a non-empty check.
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "short.hex"
+            source.write_text(bitstream_hex(total_bytes=100), encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "implausibly small"):
+                convert_file(
+                    source, source.with_suffix(".bin"), validate_bitstream_image=True
+                )
+
+    def test_rejects_a_header_without_the_passive_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "wrongmode.hex"
+            source.write_text(bitstream_hex(header_line="Mode: jtag"), encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "Mode: passive"):
+                convert_file(
+                    source, source.with_suffix(".bin"), validate_bitstream_image=True
+                )
+
+    def test_rejects_a_non_ascii_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "binary.hex"
+            source.write_text("a5" * BITSTREAM_MIN_BYTES, encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "ASCII Efinity header"):
+                convert_file(
+                    source, source.with_suffix(".bin"), validate_bitstream_image=True
+                )
+
+    def test_validation_is_off_by_default(self) -> None:
+        # The CI fixture path converts tiny non-bitstream files on purpose;
+        # plain conversion must keep accepting them.
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "tiny.hex"
+            source.write_text("00 12", encoding="ascii")
+            self.assertEqual(convert_file(source, source.with_suffix(".bin")), 2)
 
 
 class ReportValidationTests(unittest.TestCase):

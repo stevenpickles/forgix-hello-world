@@ -59,7 +59,7 @@ fi
 python "$repo_root/scripts/check_efinity_reports.py" "$pinout_report" "$timing_report" \
   "$sdc_file" "$interface_csv"
 
-python "$repo_root/scripts/efinity_hex_to_bin.py" "$hex_image" "$binary_image"
+python "$repo_root/scripts/efinity_hex_to_bin.py" --expect-bitstream "$hex_image" "$binary_image"
 [[ -s "$binary_image" ]] || {
   printf 'Converted FPGA image is empty: %s\n' "$binary_image" >&2
   exit 1
