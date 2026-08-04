@@ -70,6 +70,13 @@ static bsp_clocks_report_t healthy_clocks( void );
 
 static bsp_memory_report_t healthy_memory( void );
 
+static bsp_memory_psram_identity_t healthy_identity( void );
+
+static bsp_memory_sweep_result_t ok_sweep( void );
+
+static bsp_memory_sweep_result_t sweep_callback( bsp_memory_sweep_op op, uint32_t chunk_index,
+                                                 int num_calls );
+
 static bsp_usb_health_t usb_health( uint32_t frame, bool connected, bool suspended,
                                     uint32_t write_available );
 
@@ -113,12 +120,22 @@ static bsp_button_state_t button_never_pressed_callback( int num_calls );
 ***************************************************************************************/
 
 
+/* The sweep callback's shared state, reset per test: how many chunks each
+   sweep pass should span, and which call -- if any -- stands in for a fault. */
+static uint32_t sweep_chunks_expected;
+static int sweep_fail_at_call;
+static uint32_t sweep_fail_address;
+
+
 void setUp( void )
 {
     MOCK_BSP_ConsoleReset();
     MOCK_BSP_TimeReset();
     MOCK_BSP_UsbReset();
     MOCK_BSP_WatchdogReset();
+    sweep_chunks_expected = 32;
+    sweep_fail_at_call = -1;
+    sweep_fail_address = 0;
 }
 
 
@@ -296,22 +313,33 @@ void test_boot_flash_reports_the_reset_vector_verdict( void )
 void test_psram_passes_a_working_device_while_naming_the_identity_mismatch( void )
 {
     BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    BSP_MemoryPsramIdentify_ExpectAndReturn( healthy_identity() );
+    BSP_MemoryPsramSweepChunk_StubWithCallback( sweep_callback );
 
     const char *output = run_step( STEP_PSRAM );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "2048KiB sweep held" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B eid=43" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "not the part on the schematic" ) );
 }
 
 
+/* The note is keyed on this run's legal-window bytes, not the boot capture:
+   the report still says 0B here, and only the fresh read says 5D. */
 void test_psram_stays_quiet_about_identity_when_the_expected_part_is_fitted( void )
 {
-    bsp_memory_report_t memory = healthy_memory();
-    memory.psram_kgd = 0x5du;
-    BSP_MemoryCheck_ExpectAndReturn( memory );
+    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    bsp_memory_psram_identity_t identity = healthy_identity();
+    identity.kgd = 0x5du;
+    identity.eid = 0x26u;
+    BSP_MemoryPsramIdentify_ExpectAndReturn( identity );
+    BSP_MemoryPsramSweepChunk_StubWithCallback( sweep_callback );
 
-    TEST_ASSERT_NULL( strstr( run_step( STEP_PSRAM ), "schematic" ) );
+    const char *output = run_step( STEP_PSRAM );
+
+    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=5D eid=26" ) );
+    TEST_ASSERT_NULL( strstr( output, "schematic" ) );
 }
 
 
@@ -333,16 +361,102 @@ void test_psram_is_skipped_when_the_build_never_brought_it_up( void )
 }
 
 
-void test_psram_fails_when_the_pattern_is_lost( void )
+/* The first chunk of sweep 2 is where a smaller die aliasing the window shows
+   up: sweep 1 finished writing the whole range first, so the early pattern the
+   verify expects has been overwritten by a later chunk that landed on it. */
+void test_psram_fails_when_a_verify_chunk_is_lost( void )
+{
+    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    BSP_MemoryPsramIdentify_ExpectAndReturn( healthy_identity() );
+    sweep_fail_at_call = 32;
+    sweep_fail_address = 0x15000000u;
+    BSP_MemoryPsramSweepChunk_StubWithCallback( sweep_callback );
+
+    const char *output = run_step( STEP_PSRAM );
+
+    TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "2048KiB sweep 2/3 LOST at 0x15000000" ) );
+}
+
+
+/* The very last chunk still decides the verdict -- the pass/fail choice on the
+   final pass is a boundary its own test has to sit on. */
+void test_psram_fails_on_the_final_chunk_of_the_last_sweep( void )
+{
+    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    BSP_MemoryPsramIdentify_ExpectAndReturn( healthy_identity() );
+    sweep_fail_at_call = 95;
+    sweep_fail_address = 0x151ffffcu;
+    BSP_MemoryPsramSweepChunk_StubWithCallback( sweep_callback );
+
+    const char *output = run_step( STEP_PSRAM );
+
+    TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "sweep 3/3 LOST at 0x151FFFFC" ) );
+}
+
+
+/* A write chunk cannot fail on real hardware, but the step does not
+   special-case it, and the mock keeps the branch honest. */
+void test_psram_fails_during_the_write_sweep( void )
+{
+    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    BSP_MemoryPsramIdentify_ExpectAndReturn( healthy_identity() );
+    sweep_fail_at_call = 0;
+    sweep_fail_address = 0x15000000u;
+    BSP_MemoryPsramSweepChunk_StubWithCallback( sweep_callback );
+
+    TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_PSRAM ), "sweep 1/3 LOST" ) );
+}
+
+
+/* The chunk count follows the reported size: a 1 MiB report sweeps 16 chunks
+   per pass, and the order assert inside the callback holds for that span. */
+void test_psram_sweeps_the_size_the_report_declares( void )
 {
     bsp_memory_report_t memory = healthy_memory();
-    memory.psram_ok = false;
+    memory.psram_bytes = 1024u * 1024u;
+    BSP_MemoryCheck_ExpectAndReturn( memory );
+    BSP_MemoryPsramIdentify_ExpectAndReturn( healthy_identity() );
+    sweep_chunks_expected = 16;
+    BSP_MemoryPsramSweepChunk_StubWithCallback( sweep_callback );
+
+    const char *output = run_step( STEP_PSRAM );
+
+    TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "1024KiB sweep held" ) );
+}
+
+
+/* A window that failed to come back is not a memory to sweep. The identity is
+   still reported -- it was read before the re-entry failed -- and the strict
+   mocks prove the sweep never ran. */
+void test_psram_fails_when_qpi_reentry_fails_and_never_sweeps( void )
+{
+    BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    bsp_memory_psram_identity_t identity = healthy_identity();
+    identity.restored = false;
+    BSP_MemoryPsramIdentify_ExpectAndReturn( identity );
+
+    const char *output = run_step( STEP_PSRAM );
+
+    TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B eid=43 read but QPI re-entry failed" ) );
+}
+
+
+/* Nothing should global-reset a device that reported no usable size; the
+   strict mocks prove the identity read never ran either. */
+void test_psram_fails_when_the_reported_size_is_too_small_to_sweep( void )
+{
+    bsp_memory_report_t memory = healthy_memory();
+    memory.psram_bytes = 1024u;
     BSP_MemoryCheck_ExpectAndReturn( memory );
 
     const char *output = run_step( STEP_PSRAM );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "pattern LOST" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "1KiB reported; too small to sweep" ) );
 }
 
 
@@ -1061,6 +1175,39 @@ static bsp_usb_health_t usb_health( uint32_t frame, bool connected, bool suspend
 }
 
 
+static bsp_memory_psram_identity_t healthy_identity( void )
+{
+    bsp_memory_psram_identity_t identity = { .kgd = 0x0bu, .eid = 0x43u, .restored = true };
+    return identity;
+}
+
+
+static bsp_memory_sweep_result_t ok_sweep( void )
+{
+    bsp_memory_sweep_result_t result = { .ok = true, .fail_address = 0 };
+    return result;
+}
+
+
+/* Pins the property the sweep exists for: every chunk of a pass runs before any
+   chunk of the next, in order. A configured call index can be made to fail,
+   standing in for a bad cell or an aliased address at that point in the run. */
+static bsp_memory_sweep_result_t sweep_callback( bsp_memory_sweep_op op, uint32_t chunk_index,
+                                                 int num_calls )
+{
+    TEST_ASSERT_EQUAL_UINT32( (uint32_t) num_calls / sweep_chunks_expected, (uint32_t) op );
+    TEST_ASSERT_EQUAL_UINT32( (uint32_t) num_calls % sweep_chunks_expected, chunk_index );
+
+    bsp_memory_sweep_result_t result = ok_sweep();
+    if ( num_calls == sweep_fail_at_call )
+    {
+        result.ok = false;
+        result.fail_address = sweep_fail_address;
+    }
+    return result;
+}
+
+
 /* A named helper rather than a compound literal at the call site: the commas in
    a designated initializer split CMock's expectation macros into extra
    arguments. */
@@ -1159,6 +1306,8 @@ static void expect_sequence_without_the_fpga( void )
     BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
     BSP_McuInfo_ExpectAndReturn( healthy_mcu() );
     BSP_MemoryCheck_ExpectAndReturn( healthy_memory() );
+    BSP_MemoryPsramIdentify_ExpectAndReturn( healthy_identity() );
+    BSP_MemoryPsramSweepChunk_IgnoreAndReturn( ok_sweep() );
     BSP_AdcTemperature_ExpectAndReturn( temperature_sample( 800, 24500 ) );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaPing_ExpectAndReturn( 0x00u );
@@ -1222,6 +1371,8 @@ static void ignore_a_healthy_board( void )
     BSP_McuInfo_IgnoreAndReturn( healthy_mcu() );
     BSP_ClocksReport_IgnoreAndReturn( healthy_clocks() );
     BSP_MemoryCheck_IgnoreAndReturn( healthy_memory() );
+    BSP_MemoryPsramIdentify_IgnoreAndReturn( healthy_identity() );
+    BSP_MemoryPsramSweepChunk_IgnoreAndReturn( ok_sweep() );
     BSP_AdcTemperature_IgnoreAndReturn( temperature_sample( 800, 24500 ) );
     BSP_FpgaCdone_IgnoreAndReturn( true );
     BSP_FpgaPing_IgnoreAndReturn( BSP_FPGA_DESIGN_ID );

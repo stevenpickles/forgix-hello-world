@@ -190,11 +190,17 @@ GPIO 0 to 3V3 is the actual fix and is a board respin item.
 
 The secondary memory is 2 MByte of QSPI PSRAM at `0x11000000`, enabled by
 default through `FORGIX_QSPI_PSRAM`. It is sized by the SDK and verified at boot
-by a pattern written across the start, middle and end of its range; `diag`
-reports both memories. One open question remains: the device identifies itself
-as `KGD 0x0B, EID 0x43` rather than AP Memory's `0x5D`, so the fitted part does
-not match the `APS1604M-3SQR-SN` on the schematic even though it works correctly.
-Reading the package marking would settle it.
+by a pattern written across the start, middle and end of its range, through the
+uncached alias so the answer describes the DRAM rather than the XIP cache; the
+built-in test goes further and runs a moving-inversion sweep over the whole
+device. `diag` reports both memories. The built-in test also re-reads the
+identity every run in the datasheet's legal window -- global reset, then Read-ID
+-- which is the only capture that stays meaningful after a warm reboot; the
+boot-time bytes come from a device still in QPI mode and are nonsense then. One
+open question remains: the device identifies itself as `KGD 0x0B, EID 0x43`
+rather than AP Memory's `0x5D`, so the fitted part does not match the
+`APS1604M-3SQR-SN` on the schematic even though it works correctly. Reading the
+package marking would settle it.
 
 See the [lockup investigation plan](docs/lockup-investigation-plan.md) for the
 full record, including the wrong turns and why they were wrong, and the
