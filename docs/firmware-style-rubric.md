@@ -19,14 +19,14 @@ no `.clang-format`, no `.editorconfig`, no style guide, and no C linter enabled 
 `.trunk/trunk.yaml`. The convention survives there by copy-paste, which is why its newest files
 carry the most drift. This document is the written form.
 
-**Status: applied to the bsp profile.** All 34 files in it score 100% on the automated rules.
-`scripts/check_firmware_style.py --strict` runs in CI, so a regression fails the build. Reproduce the
-formatter half with `scripts/format_firmware.sh`, or `--check` to verify without writing. The
-application and test profiles are being brought in now; the status tables below still count the BSP
-only.
+**Status: applied to all three profiles.** All 55 files in the firmware tree score 100% on the
+automated rules — 34 in **bsp**, 15 in **application**, 6 in **tests**. `scripts/check_firmware_style.py
+--strict` runs in CI over all of them by default, so a regression in any layer fails the build.
+Reproduce the formatter half with `scripts/format_firmware.sh`, or `--check` to verify without
+writing.
 
-That score is not a claim that the BSP is well documented — D2, the rule that a summary must add
-information, is the most important one here and no script can judge it. The checker confirms the
+That score is not a claim that the firmware is well documented — D2, the rule that a summary must
+add information, is the most important one here and no script can judge it. The checker confirms the
 blocks exist.
 
 Every rule has a stable ID. The checker cites these, so renumbering them breaks its output. That is
@@ -283,6 +283,11 @@ option for breaking there — braced lists answer to `Cpp11BracedListStyle`, whi
 rather than placement, and `BraceWrapping` has no `AfterInitializer`. The rule was dropped rather
 than maintained by hand, on the grounds that a rule a machine cannot reproduce is not a rule.
 
+A compound literal is the same case, and the application layer is where it first came up:
+`console = (console_state_t) {` is an initializer whose brace stays put. The `)` before it closes a
+cast, not a parameter list — which is the distinction the checker has to make, since Allman is
+about the brace that follows a signature or a condition.
+
 ### C10 — Inline braced values are spaced: `{ 0 }`
 
 A side effect rather than a preference. `SpacesInParentheses` also spaces braced initializer
@@ -294,6 +299,17 @@ deviates to keep the format machine-reproducible.
 
 Continuation lines of a `/* … */` block comment align under the `/* ` with three extra leading
 spaces.
+
+A continued *expression* is not indented to a nesting level either — it aligns under what it
+continues, whichever side of the line break the operator falls on — trailing on the first line, or
+leading the second, as clang-format decides:
+
+```c
+    packed |= ( diagnostics.fpga_reconfigures & HEALTH_FPGA_RECONFIGURE_MASK )
+              << HEALTH_FPGA_RECONFIGURE_SHIFT;
+```
+
+The four-space rule governs nesting, and a run-on line is not a nesting level.
 
 ### C8 — Trailing declaration comments at column 89
 
@@ -386,7 +402,7 @@ the majority form and the reformat fixes the outlier.
 | A1 header skeleton | as written | n/a — no test headers |
 | A2 source skeleton | as written; `led_only_main.c` is the one file with a preamble to move (E7) | as written |
 | A3 banner form | as written | as written |
-| A4 / A5 sections | as written | as written, with the placement rule in E6 |
+| A4 / A5 sections | as written, with the table placement rule in E10 | as written, with the placement rules in E6 and E10 |
 | A6 / A7 | as written | as written |
 | A8 include grouping | own header, C standard, project (E5) | `"unity.h"`, C standard, project (E5) |
 | B1 public functions | `application_` + snake_case, plus `main` | `test_*`, `setUp`, `tearDown` (E2) |
@@ -407,9 +423,9 @@ the majority form and the reformat fixes the outlier.
 | D5 no `///` in headers | as written, and headers carry `/* … */` contract prose (E9) | n/a |
 | D6 `<param>` tags | as written — not required | n/a |
 
-One outlier is known and is a fix rather than a delta: `channelIndex`, the loop variable in
-`application_effects.c`'s aurora blend, is the single camelCase local in the layer. It becomes
-`channel_index`.
+One outlier was known and was a fix rather than a delta: `channelIndex`, the loop variable in
+`application_effects.c`'s aurora blend, was the single camelCase local in the layer. It is now
+`channel_index`, and it was the only rename the whole layer needed.
 
 ### E2 — Public names the layer does not own
 
@@ -514,6 +530,31 @@ the caller reading the header — which is the only place it can be read from. I
 prohibition remains what the checker enforces: no `///` blocks in headers, so there is exactly one
 place a `<summary>` can live.
 
+### E10 — A table of private functions lives at the tail of `Private Function Declarations`
+
+A5 puts file-scope data under `Private Variable Declarations`, which comes before
+`Private Function Declarations`. A `static const` table whose initializer takes the *address of a
+private function* cannot go there: C requires the declarations first, and at that point in the file
+they have not been written yet.
+
+The convention is that such a table sits at the **tail** of `Private Function Declarations`, after
+the prototypes it binds. It is a declaration of the same private machinery the section is already
+about, and the alternative — splitting the prototype list so the table can sit between the
+prototypes it needs and the ones it does not — would be worse: it makes the section's contents
+depend on an initializer several screens below.
+
+The BSP never had occasion to need this, which is why A5 does not mention it. Where it applies:
+
+| File | Tables |
+|---|---|
+| `application_effects.c` | `BLINKER`, `ADVANCED` |
+| `application_ibit.c` | `STEPS`, `SEQUENCE`, `SOAK`, `SINGLE` |
+| `application_ui.c` | `MENU` |
+| `test_application_ui.c` | `FAKE_ACTIVITY` |
+
+A table that binds nothing — `WHEEL`, `HEARTBEAT`, `AURORA`, `OUTCOME_TEXT` — is ordinary file-scope
+data and stays under `Private Variable Declarations`, where A5 puts it.
+
 ---
 
 ## F. Deviations from the reference, and why
@@ -604,6 +645,10 @@ Done, in this order:
 2. Naming and documentation by hand, in commits grouped by concern.
 3. `scripts/check_firmware_style.py --strict` in `.github/workflows/ci.yml`.
 
+The application and test layers followed the same three steps afterwards, and the checker's default
+scope widened from the BSP alone to all three layers once they had. CI's command did not change —
+it has always been the plain `--strict` run, so widening the default *is* the gate flip.
+
 **`scripts/format_firmware.sh --check` is deliberately not in CI.** The config uses options whose
 spelling and behaviour changed across clang-format versions — `SpacesInParentheses` became
 `SpacesInParens` in 17, `Cpp11BracedListStyle` became an enum in 21 — and the runner's version is
@@ -611,7 +656,7 @@ not pinned. A version mismatch would fail the build over formatting that is loca
 Adding it means pinning a clang-format version in the workflow first; until then the Python
 checker, which has no such dependency, is what CI enforces.
 
-### What conforming cost
+### What conforming cost — the bsp profile
 
 Worth recording, because the rubric was written before any of it was applied and three rules did
 not survive contact:
@@ -624,3 +669,45 @@ not survive contact:
   comment instead.
 
 Each was resolved the same way: a rule a machine cannot reproduce is not a rule.
+
+### What conforming cost — the application and test profiles
+
+The BSP had already absorbed the rules that did not survive contact, so this half cost effort rather
+than revisions. In order:
+
+- **A mechanical clang-format pass over 21 files** — 13 in `src/application`, the 6 test files,
+  `main.c` and `led_only_main.c`. No hand edits. Semantic neutrality was proved rather than
+  asserted: both target images rebuilt byte-identical to the pre-format baseline, all 140 Ceedling
+  tests passed, and coverage held at 100% line and branch. It held for every commit after it too.
+- **A structural pass**, which is where the work actually was: banners and canonical sections
+  throughout, `extern "C"` wrappers on the application headers, and 110 `static` prototypes written
+  out — the layer had been declaring private functions by defining them in call order, so giving it
+  `Private Function Declarations` meant creating the declarations that section is named after.
+  E10 is the one convention this turned up that A–D had no answer for.
+- **One rename**: `channelIndex` → `channel_index`. B10's camelCase locals are a bsp-profile rule
+  and E1 does not carry them over, so exactly one identifier in the layer was in the wrong dialect.
+  Compare the BSP, where B5/B6 renamed the package's types.
+- **130 `/// <summary>` blocks**, on every application definition. The test files got none, and E8
+  is the argument for why that is the honest answer rather than the lazy one.
+- **Three fixes to the checker**, for false positives the new layers exposed and the BSP never
+  could: `[` inside a string literal read as a subscript, a multi-line compound literal's brace read
+  as a function brace, and a continuation aligned under an operator that started its own line. All
+  three were the checker disagreeing with conforming code — verified by re-running the BSP report
+  before and after and diffing it byte for byte.
+
+Then the checker's default scope widened from the BSP to all three layers, which flipped the CI gate
+without touching `ci.yml`.
+
+### The drift lesson
+
+While this work was in flight, the BSP was found to have drifted out of its own fixed point.
+`bsp_adc.c` and `bsp_mcu.c` were edited by an earlier PR without re-running the formatter, and
+nothing gated it, so the drift sat in `main` until a `--check` run during this effort turned it up.
+Whitespace only, and restored in a single commit — but it had been there a while.
+
+The widened gate closes part of this: structure, naming and documentation are now checked in CI for
+every layer, not just the BSP. It does not close all of it. `format_firmware.sh --check` remains
+local-only for the reason recorded above — the runner's clang-format version is not pinned, and that
+decision has not changed — so drift of the pure-formatting kind is still possible between formatter
+runs. The honest statement is that CI now catches everything the Python checker can decide, and the
+gap is exactly the set of rules only clang-format can.

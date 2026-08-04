@@ -5,10 +5,9 @@ Section E splits the rubric into three profiles -- bsp, application, tests -- th
 layout rule and differ on naming and documentation. A profile here is those deltas as data; the
 checks themselves are written once.
 
-The default scope is the layers that conform today, which is the bsp profile, so a plain run is the
-gate CI enforces with --strict. --layer widens the scope to a layer that does not conform yet,
-where the run is advisory and reads as a work list. When the remaining layers conform, the default
-scope becomes all of them and the gate moves with it.
+The default scope is every layer, because every layer conforms: a plain run is the whole firmware
+tree, and that plain run with --strict is the gate CI enforces. --layer narrows the scope to one
+profile, which is useful while working on it and says nothing the default does not.
 
 Only the mechanically decidable rules are implemented. The rubric's conformance table marks which
 those are; the rest need a reviewer, and the most important rule of all -- D2, that a summary must
@@ -61,8 +60,8 @@ CONTINUATION_TAIL = re.compile(r"(?:&&|\|\||[+\-*/%&|^<>=!]=?)$")
 # The other half of the same shape: an operand may close its parentheses and leave the operator to
 # start the next line, which the tail above cannot see. Such a line aligns under what it continues.
 CONTINUATION_HEAD = re.compile(r"^(?:&&|\|\||<<|>>|[+\-*/%&|^<>]=?|[=!]=)")
-# F: a multi-line initializer keeps its brace on the '=' line, compound literal or not. That is
-# what clang-format emits, so C6 cannot ask for the brace below without contradicting the formatter.
+# C6 exempts a multi-line initializer, and a compound literal is one: the cast's ')' is not a
+# parameter list. clang-format emits this shape, so asking for the brace below contradicts it.
 INITIALIZER_BRACE = re.compile(r"(?<![=!<>])=\s*(?:\([^()]*\)\s*)?\{$")
 
 # Functions here answer to a vendor's prototype, so BSP_PascalCase does not apply to them.
@@ -522,8 +521,8 @@ FIRMWARE = ROOT / "firmware"
 BSP_GLOBS = ("bsp*.h", "bsp*.c", "mock_bsp*.h", "mock_bsp*.c")
 APPLICATION_GLOBS = ("application*.h", "application*.c", "main.c", "*_main.c")
 
-# What each layer is made of. The bsp entry is the default scope: the layers below it do not
-# conform yet, so widening the default is the commit that follows their reformat, not this one.
+# What each layer is made of. All three are the default scope; every one of them conforms, so
+# there is no longer a layer the gate has to leave out.
 LAYERS = {
     "bsp": (
         Scope(FIRMWARE / "src" / "bsp", BSP_GLOBS, BSP_PROFILE),
@@ -559,7 +558,7 @@ def main() -> int:
         "--layer",
         action="append",
         choices=("bsp", "application", "tests", "all"),
-        help="layer to scan, repeatable; defaults to bsp, the scope that conforms today",
+        help="layer to scan, repeatable; defaults to all of them, which all conform",
     )
     parser.add_argument(
         "--root", type=Path, action="append", help="directory to scan instead of a layer; repeatable"
@@ -578,7 +577,7 @@ def main() -> int:
         profile = PROFILES[arguments.profile]
         scopes = [Scope(root, PROFILE_GLOBS[arguments.profile], profile) for root in arguments.root]
     else:
-        names = arguments.layer or ["bsp"]
+        names = arguments.layer or list(LAYERS)
         if "all" in names:
             names = list(LAYERS)
         scopes = [scope for name in names for scope in LAYERS[name]]
