@@ -47,13 +47,29 @@ typedef struct bsp_memory_report_t_tag
        perfectly good memory -- identity and function are separate questions. */
     bool psram_forced;
     /* Vendor known-good-die and device-ID bytes as the chip reported them over
-       QSPI. Captured during the SDK's own detection, which is the only moment
-       they are readable: afterwards the device is switched to QPI so XIP can run
-       four bits wide, and a serial Read-ID against it returns nonsense. Both
-       zero means detection never ran. */
+       QSPI. Captured during the SDK's own detection at boot, and refreshed by
+       every BSP_MemoryPsramIdentify call, which reads them in the datasheet's
+       legal window. The boot capture alone is only trustworthy on a cold start:
+       after a warm reboot the device is still in QPI from the previous session
+       and the SDK's serial Read-ID returns nonsense. Both zero means neither
+       path has run. */
     uint8_t psram_kgd;
     uint8_t psram_eid;
 } bsp_memory_report_t;
+
+
+/* The identity bytes read in the one window the datasheet allows: straight
+   after a global reset. The read tears the device out of QPI, so the same call
+   re-enters it before returning -- restored is whether that re-entry worked. */
+typedef struct bsp_memory_psram_identity_t_tag
+{
+    uint8_t kgd; /* byte 5 of the Read-ID response */
+    uint8_t eid; /* byte 6 */
+    /* False means the memory window is down until the next successful call;
+       nothing else in the firmware stores data there, so the failure is inert,
+       but the caller should say so rather than report a working memory. */
+    bool restored;
+} bsp_memory_psram_identity_t;
 
 
 
@@ -66,6 +82,11 @@ typedef struct bsp_memory_report_t_tag
 
 
 bsp_memory_report_t BSP_MemoryCheck( void );
+
+/* Global reset, Read-ID in the legal window, then QPI re-entry, all in one call
+   so an abort can never leave the device reset but not re-initialised. Costs a
+   few bus transactions with interrupts briefly off; safe to call every run. */
+bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void );
 
 #ifdef __cplusplus
 }
