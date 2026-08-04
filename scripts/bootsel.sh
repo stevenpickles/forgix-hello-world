@@ -57,11 +57,18 @@ fi
 # never changes device state. Do not add --force to probe: it resets a running
 # board to execute the command, which would silently end a soak run.
 #
-# picotool exits 0 whether or not it finds anything, so the output is the signal.
+# picotool exits 0 whether or not it finds anything, so the output is the
+# signal -- and it must be positive evidence. Matching on the absence of the
+# "No accessible RP-series devices" string turned every libusb error, driver
+# fault, and future wording change into a false "already in BOOTSEL". A device
+# in BOOTSEL always prints a Program Information section, even over empty
+# flash, so that heading is what presence means.
 bootsel_present() {
   local output
-  output="$(picotool info 2>&1 || true)"
-  [[ "$output" != *"No accessible RP-series devices"* ]]
+  if ! output="$(picotool info 2>&1)"; then
+    return 1
+  fi
+  [[ "$output" == *"Program Information"* ]]
 }
 
 print_manual_recovery() {
