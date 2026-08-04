@@ -51,11 +51,21 @@
    unexpected vendor answered, not that the memory itself is broken. */
 #define EXPECTED_KGD ( (uint8_t) 0x5du )
 
-/* Comfortably inside the 33 MHz ceiling Read-ID carries for having no wait
-   cycles: divisor 8 against a 150 MHz clk_sys clocks the bus at 18.75 MHz. The
-   original probe swept 37.5 down to 9.4 MHz and read identical bytes at every
-   step, so the clock is not a variable worth re-testing on every run. */
-#define CS1_PROBE_CLKDIV ( (uint32_t) 8u )
+/* The probe clock answers to two datasheet limits at once. Read-ID has no
+   wait cycles, so it carries a 33 MHz ceiling -- over that the QMI samples
+   before the data is valid and returns displaced bytes. And the 8-byte
+   Read-ID holds chip select low for 64 clocks in one stretch, which must fit
+   inside tCEM (3 us at 105 C): the DRAM cannot refresh while selected, so an
+   overrun risks the array. Divisor 8 (18.75 MHz) satisfied the ceiling but
+   stretched the transfer to 3.4 us; 6 gives 25 MHz and 2.56 us, inside both.
+   The asserts pin the arithmetic to clk_sys so neither limit can be broken by
+   a clock change that never looked at this file. */
+#define CS1_PROBE_CLKDIV ( (uint32_t) 6u )
+
+_Static_assert( SYS_CLK_HZ / CS1_PROBE_CLKDIV <= 33000000u,
+                "Read-ID must stay at or under its 33 MHz no-wait-state ceiling" );
+_Static_assert( ( 64ull * CS1_PROBE_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000ull,
+                "the 64-clock Read-ID must hold chip select shorter than the 3 us tCEM" );
 
 
 
