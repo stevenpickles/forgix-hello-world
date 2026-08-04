@@ -8,7 +8,7 @@
 # firmware/build/ holds generated and vendored code, but it is never passed to
 # the formatter, so it needs no exclusion here.
 #
-# Run it with scripts/format_bsp.sh, which locates clang-format even when the
+# Run it with scripts/format_firmware.sh, which locates clang-format even when the
 # Windows LLVM installer leaves it off PATH. `--check` verifies without writing.
 # Verified against clang-format 22.1.7; the formatted tree is a fixed point
 # under it.
