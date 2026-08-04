@@ -182,8 +182,12 @@ size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
     }
 
     /* Density lives in the top three bits of the EID, and the mapping is the
-       SDK's, kept identical so overriding the hook changes nothing but
-       observability. */
+       SDK's (pico-sdk 2.3.0 psram.c), kept identical so overriding the hook
+       changes nothing but observability. That includes the tail: unknown
+       density codes stay at the 1 MiB base rather than being promoted to
+       2 MiB, because a guessed-large size makes the moving-inversion sweep
+       run off the die and file the mistake as a memory fault at an address
+       nothing owns. */
     uint32_t psramSize = 1024u * 1024u;
     const uint8_t sizeId = eid >> 5;
     if ( sizeId == 4u )
@@ -198,7 +202,7 @@ size_t psram_eid_to_size( const uint8_t kgd, const uint8_t eid )
     {
         psramSize *= 4u;
     }
-    else
+    else if ( sizeId == 0u )
     {
         psramSize *= 2u;
     }
