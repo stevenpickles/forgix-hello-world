@@ -290,8 +290,7 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
 /// <returns>
 ///     Whether the chunk held, and the failing address when it did not.
 /// </returns>
-bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op,
-                                                     uint32_t chunk_index )
+bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uint32_t chunk_index )
 {
     bsp_memory_sweep_result_t result = { 0 };
 
@@ -299,7 +298,8 @@ bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op,
     const uint32_t base =
         (uint32_t) PSRAM_NOCACHE_BASE + chunk_index * (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
     volatile uint32_t *const ptr_chunk = (volatile uint32_t *) base;
-    const uint32_t words = (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES / (uint32_t) sizeof( uint32_t );
+    const uint32_t words =
+        (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES / (uint32_t) sizeof( uint32_t );
 
     result.ok = true;
     for ( uint32_t index = 0; index < words; ++index )
@@ -313,8 +313,7 @@ bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op,
         }
         else
         {
-            const uint32_t expected =
-                op == BSP_MEMORY_SWEEP_VERIFY_INVERT ? pattern : ~pattern;
+            const uint32_t expected = op == BSP_MEMORY_SWEEP_VERIFY_INVERT ? pattern : ~pattern;
             if ( ptr_chunk[ index ] != expected )
             {
                 result.ok = false;

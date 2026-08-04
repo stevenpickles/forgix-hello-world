@@ -119,8 +119,7 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void );
 
 /* One chunk of one sweep pass. Chunk state lives with the caller, so the BSP
    holds nothing that can go stale if a run is aborted between chunks. */
-bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op,
-                                                     uint32_t chunk_index );
+bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uint32_t chunk_index );
 
 #ifdef __cplusplus
 }
