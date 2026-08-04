@@ -1,15 +1,22 @@
-# Formatting for the BSP package. The full rules, including everything
-# clang-format cannot express, live in docs/bsp-style-rubric.md; this file is
-# the subset a formatter can apply. scripts/check_bsp_style.py scores the rest.
+# Formatting for the whole firmware tree (src and tests). The full rules,
+# including everything clang-format cannot express, live in
+# docs/bsp-style-rubric.md; this file is the subset a formatter can apply.
+# scripts/check_bsp_style.py scores the rest.
 #
-# Scoped to this directory on purpose. clang-format reads the nearest config
-# walking up from each file, and the application layer above us is still K&R,
-# so a repo-root version of this file would quietly reformat code nobody asked
-# to change. firmware/tests/support/ carries an identical copy for the fakes.
+# Lives at firmware/ on purpose. clang-format reads the nearest config walking
+# up from each file, so this single file governs every source below it.
+# firmware/build/ holds generated and vendored code, but it is never passed to
+# the formatter, so it needs no exclusion here.
 #
 # Run it with scripts/format_bsp.sh, which locates clang-format even when the
 # Windows LLVM installer leaves it off PATH. `--check` verifies without writing.
-# Verified against clang-format 22.1.7; the BSP is a fixed point under it.
+# Verified against clang-format 22.1.7; the formatted tree is a fixed point
+# under it.
+#
+# Previously this was two identical directory-scoped copies, at
+# firmware/src/bsp/ and firmware/tests/support/, while the application layer
+# above them was still K&R. Now that the whole tree is formatted, one copy
+# removes the risk of the copies drifting apart.
 #
 # Two rules gave way to the formatter, because a rule a machine cannot reproduce
 # is not a rule -- it is a habit that survives until someone runs a tool.
