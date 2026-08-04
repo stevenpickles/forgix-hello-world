@@ -56,10 +56,16 @@ which one is the actual fault.
 | 12 | FPGA register bus | A walking pattern `5A A5 3C C3` written to the LED registers reads back byte for byte | The three-wire runtime link. `0x00` and `0xFF` are deliberately not used: they are what a bus stuck low or high returns |
 | 13 | RGB LED | Red, green, blue, white and off each read back from the FPGA | A colour channel, or the register path to it |
 | 14 | Button SW1 | The debounced level **and** the press counter both change within 15 s | Either alone could be a stuck event line or a pin held low; requiring both separates a real press from a fault that resembles one |
+| 15 | FPGA 32 MHz clock | Two latched samples of the FPGA's free-running counter, 500 ms apart, advance at 32 MHz within 1% | The oscillator is off frequency, or it stalled and recovered inside the window — which every ping would have survived |
 
-Step 11 is also the only proof that the 32 MHz oscillator and its GPIO 19 gate are
-working. A design with no clock does not answer a ping at all, so a correct design
-ID has already cleared both.
+Step 11 proves the 32 MHz oscillator and its GPIO 19 gate are *alive*: a design
+with no clock does not answer a ping at all, so a correct design ID has already
+cleared both. Step 15 is what proves the clock's *rate*, judged against the MCU's
+own timebase — a ratio, so it cannot say which side is wrong on its own; step 3
+is the one that ties the MCU clocks down. What only step 15 can see is the
+counter falling short: an oscillator that stalled for part of the window and
+recovered answers every ping and still fails here, which is what makes it worth
+having in the soak.
 
 ## What it reports but does not judge
 
@@ -99,7 +105,7 @@ in a state a power cycle is needed to escape.
   and runs-with-a-failure, until a key stops it. This is the burn-in: a fault that
   appears once an hour will not show up in a single 20-second pass.
 - **`3` One test at a time** — re-run a single step without sitting through the
-  thirteen that already passed.
+  fourteen that already passed.
 - **`4` Board report** — the same facts, printed without verdicts, for when the
   question is what the board *is* rather than whether it is well.
 - **`5` Blinker** — red, green, blue at 1 Hz, forever. A blink that keeps time
