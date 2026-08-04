@@ -111,6 +111,13 @@ static void process_character( int16_t character );
 ***************************************************************************************/
 
 
+/// <summary>
+///     Reassigns the whole state, which is what makes a second call the way the
+///     UI hands the terminal back after a menu: the half-typed line, the quiet
+///     flag and the released flag all go with it. The clock is sampled here
+///     rather than carried over, so the first idle status falls one timeout
+///     after the handover and not one timeout after boot.
+/// </summary>
 void application_console_start( void )
 {
     console = (console_state_t) {
@@ -123,6 +130,13 @@ void application_console_start( void )
 }
 
 
+/// <summary>
+///     The shell's only input path: one character, already read by the UI, with
+///     no lookahead and no way to push a byte back. Every terminal behaviour
+///     below -- editing, cancelling, submitting -- is therefore decided one
+///     character at a time, and the clock is restamped first so that time in
+///     this layer advances only when the UI reports something arrived.
+/// </summary>
 void application_console_feed( int16_t character )
 {
     console.current_time_ms = BSP_TimeNowMs();
@@ -130,6 +144,13 @@ void application_console_feed( int16_t character )
 }
 
 
+/// <summary>
+///     The one place unsolicited output is produced, and it declines far more
+///     often than it prints: a partially typed line, quiet mode, an unarmed
+///     timer or a host that has not opened the port each suppress it. The next
+///     deadline is measured from the print, so a late poll delays the following
+///     line instead of bunching two of them together.
+/// </summary>
 void application_console_idle( void )
 {
     console.current_time_ms = BSP_TimeNowMs();
@@ -152,6 +173,12 @@ void application_console_idle( void )
 }
 
 
+/// <summary>
+///     One-way: nothing here clears the flag again, so application_console_start
+///     is the only route back to owning the terminal. The buffered line and the
+///     echo and quiet settings are left standing -- releasing silences the
+///     shell, it does not reset it.
+/// </summary>
 void application_console_release( void )
 {
     console.released = true;
@@ -159,12 +186,25 @@ void application_console_release( void )
 }
 
 
+/// <summary>
+///     Local rendering only: with echo off a command still runs, it just leaves
+///     no trace of itself on the screen. Not an independent setting either --
+///     set_quiet writes this same flag, so an explicit `echo on` lasts only
+///     until the next quiet or interactive switch.
+/// </summary>
 void application_console_set_echo( bool enabled )
 {
     console.echo_enabled = enabled;
 }
 
 
+/// <summary>
+///     The composite switch a script wants: echo and automatic status are both
+///     derived from this one flag, so nothing but command output reaches the
+///     port. Either direction disarms the running timer, which means leaving
+///     quiet mode does not resume status until the next completed line
+///     reschedules it.
+/// </summary>
 void application_console_set_quiet( bool enabled )
 {
     console.quiet = enabled;
@@ -174,6 +214,13 @@ void application_console_set_quiet( bool enabled )
 }
 
 
+/// <summary>
+///     Outranks both quiet and the idle timer: it clears quiet rather than
+///     obeying it, since a watch that printed nothing would read as a hang, and
+///     the mode then survives a completed command line where idle status would
+///     be rescheduled from scratch. The first line falls a whole period from
+///     now, not immediately.
+/// </summary>
 void application_console_set_watch( uint32_t period_seconds )
 {
     console.quiet = false;
@@ -184,6 +231,12 @@ void application_console_set_watch( uint32_t period_seconds )
 }
 
 
+/// <summary>
+///     Wider than its name: it clears the automatic-status flag, so the idle
+///     timer stops along with the watch and `watch off` leaves the port silent
+///     until something sets the flag again. `interactive` is what does, on its
+///     way through set_quiet.
+/// </summary>
 void application_console_disable_watch( void )
 {
     console.auto_status_enabled = false;
@@ -200,6 +253,15 @@ void application_console_disable_watch( void )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Compares by signed difference rather than by magnitude, which is what
+///     makes the millisecond clock's 49-day rollover a non-event: a plain
+///     now >= deadline would answer "not yet" for half the counter's range once
+///     it has wrapped, stalling every timer in the shell at once.
+/// </summary>
+/// <returns>
+///     True once now is at or past the deadline, wrap included.
+/// </returns>
 static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 {
     return (int32_t) ( now_ms - deadline_ms ) >= 0;
@@ -209,12 +271,24 @@ static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 /* Every console write reaches the untimed Pico SDK stdio flush loop, so the
    marker is set immediately before the call. After a watchdog reset the
    retained marker names the path the foreground was blocked in. */
+/// <summary>
+///     Deliberately has no matching clear. The next foreground iteration
+///     overwrites the marker, so finding this one still in place after a reset
+///     means the write never came back. It precedes every console write in this
+///     file, prompt and echo included, which is why it stays a single store.
+/// </summary>
 static void mark_write( void )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
 }
 
 
+/// <summary>
+///     Emits no newline of its own, so every caller has to have left the cursor
+///     at the start of a line first. Silent once released, which is what keeps a
+///     dismissed shell from claiming the screen back underneath the menu that
+///     replaced it.
+/// </summary>
 static void print_prompt( void )
 {
     if ( !console.quiet && !console.released )
@@ -225,6 +299,13 @@ static void print_prompt( void )
 }
 
 
+/// <summary>
+///     Arms the first line at the idle timeout but sets the repeat to the status
+///     period -- two constants that are equal today and are not the same knob.
+///     Refuses to arm at all when the shell is quiet, released, or has had
+///     automatic status switched off, leaving the mode disabled rather than
+///     quietly deferring to a deadline nothing will honour.
+/// </summary>
 static void schedule_idle_status( void )
 {
     if ( console.quiet || console.released || !console.auto_status_enabled )
@@ -239,12 +320,24 @@ static void schedule_idle_status( void )
 }
 
 
+/// <summary>
+///     Disarms without touching the automatic-status flag, which is the
+///     difference between "not right now" and "not at all": a keystroke uses
+///     this so the completed line can rearm the timer, whereas `watch off`
+///     clears the flag and nothing rearms until the mode is switched.
+/// </summary>
 static void stop_active_status( void )
 {
     console.status_mode = STATUS_DISABLED;
 }
 
 
+/// <summary>
+///     Also the bell path: a rejected keystroke is reported by passing '\a'
+///     through here, so with echo off or quiet set the rejection is silent
+///     rather than merely unmirrored. That is intended -- a port being driven by
+///     a script has nobody there to hear it.
+/// </summary>
 static void echo_character( int16_t character )
 {
     if ( !console.quiet && console.echo_enabled )
@@ -255,6 +348,12 @@ static void echo_character( int16_t character )
 }
 
 
+/// <summary>
+///     Backspace, space, backspace: a lone backspace moves the cursor without
+///     removing the glyph under it. Display only -- the caller has already
+///     shortened the buffer, so the two have to stay paired or the screen and
+///     the line stop agreeing about what was typed.
+/// </summary>
 static void erase_character( void )
 {
     if ( !console.quiet && console.echo_enabled )
@@ -265,6 +364,13 @@ static void erase_character( void )
 }
 
 
+/// <summary>
+///     Dispatch carries its own progress marker and happens before the next
+///     prompt, so a command's output lands above that prompt and a hang inside
+///     one is attributed to the command rather than to the write before it. An
+///     empty line is not an error, just a fresh prompt, and a running watch is
+///     left alone where idle status would be rescheduled.
+/// </summary>
 static void complete_line( void )
 {
     if ( !console.quiet && console.echo_enabled )
@@ -289,6 +395,12 @@ static void complete_line( void )
 }
 
 
+/// <summary>
+///     Drops the buffer without dispatching it and prints ^C, so an abandoned
+///     line is visibly abandoned rather than just gone. Unlike a completed line
+///     this always falls back to idle status, which means Ctrl-C also ends a
+///     running watch as a side effect of cancelling whatever was typed.
+/// </summary>
 static void cancel_line( void )
 {
     console.used = 0;
@@ -302,6 +414,12 @@ static void cancel_line( void )
 }
 
 
+/// <summary>
+///     Repaints onto a new line instead of clearing the screen: the job is to
+///     recover a line that unsolicited output has scrolled through, not to hide
+///     what that output said. Printed with an explicit length because the buffer
+///     only gains its terminator when the line completes.
+/// </summary>
 static void redraw_line( void )
 {
     if ( !console.quiet )
@@ -312,6 +430,14 @@ static void redraw_line( void )
 }
 
 
+/// <summary>
+///     One Enter is one line: the swallow flag eats the LF of a CRLF pair, and
+///     any other character clears it so a late LF cannot swallow the next
+///     command's newline instead. Status is disarmed before anything else is
+///     decided, and the buffer always holds a byte back for the terminator, so a
+///     full line rings rather than truncating. Unhandled control codes are
+///     dropped in silence.
+/// </summary>
 static void process_character( int16_t character )
 {
     if ( character == '\n' && console.swallow_lf )

@@ -157,6 +157,12 @@ static void blink_boot_report( void );
 ***************************************************************************************/
 
 
+/// <summary>
+///     Copies the retained scratch registers out and zeroes the snapshot slots
+///     in the same pass, so the loop below cannot mix this run's samples into
+///     the previous boot's evidence. The watchdog is armed last on purpose:
+///     everything above that line, the blink code included, is free to block.
+/// </summary>
 void application_diagnostics_start( void )
 {
     diagnostics = (diagnostics_state_t) { 0 };
@@ -191,6 +197,12 @@ void application_diagnostics_start( void )
     BSP_WatchdogStart( APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS );
 }
 
+/// <summary>
+///     Feeds the watchdog and re-stamps the loop marker on every pass; the rest
+///     waits on its own deadline, so the ordinary pass is two register writes.
+///     While the LED is released nothing is written to the FPGA, but the blink
+///     phase and the recovery countdown keep advancing underneath.
+/// </summary>
 void application_diagnostics_poll( void )
 {
     BSP_WatchdogFeed();
@@ -237,6 +249,12 @@ void application_diagnostics_poll( void )
     }
 }
 
+/// <summary>
+///     Replays the boot line from what start captured rather than re-reading the
+///     hardware, which by now describes this run, then adds the live counters at
+///     their full width -- the retained slots only carry them modulo the bit
+///     fields they were packed into.
+/// </summary>
 void application_diagnostics_print_report( void )
 {
     print_boot_report();
@@ -250,11 +268,23 @@ void application_diagnostics_print_report( void )
         (unsigned long) diagnostics.fpga_reconfigures );
 }
 
+/// <summary>
+///     Stands down the heartbeat write and the readback comparison together, and
+///     deliberately leaves the LED showing whatever it last commanded: the new
+///     owner inherits a lit board rather than a dark one, and inherits it before
+///     it has painted anything of its own.
+/// </summary>
 void application_diagnostics_release_led( void )
 {
     diagnostics.led_released = true;
 }
 
+/// <summary>
+///     Resumes the heartbeat at whatever phase it would have reached, not at the
+///     start of a period, so a short light show does not visibly reset the blink.
+///     Harmless without a matching release, which is what lets an aborted
+///     activity's stop path call it unconditionally.
+/// </summary>
 void application_diagnostics_reclaim_led( void )
 {
     diagnostics.led_released = false;
@@ -266,6 +296,15 @@ void application_diagnostics_reclaim_led( void )
     apply_led( BSP_TimeNowMs() );
 }
 
+/// <summary>
+///     Hands back the value latched once at start-up, which never changes for the
+///     life of the run. Before start has run it reads BSP_BOOT_POWER_ON, because
+///     that is what a zeroed state block spells -- an answer indistinguishable
+///     from a real clean boot, so nothing may consult this before start.
+/// </summary>
+/// <returns>
+///     The boot cause as it was at start, not as the hardware reports it now.
+/// </returns>
 bsp_boot_reason application_diagnostics_boot_reason( void )
 {
     return diagnostics.boot_reason;
@@ -281,11 +320,28 @@ bsp_boot_reason application_diagnostics_boot_reason( void )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Subtracts and tests the sign rather than comparing the two values, so a
+///     deadline that straddles the 32-bit millisecond wrap still fires instead of
+///     parking the heartbeat for the next 49 days. A deadline exactly reached
+///     counts as due.
+/// </summary>
+/// <returns>
+///     True once now_ms has caught up with deadline_ms.
+/// </returns>
 static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 {
     return (int32_t) ( now_ms - deadline_ms ) >= 0;
 }
 
+/// <summary>
+///     Elapsed-time test in the same wrap-safe signed form. The threshold is cast
+///     to signed as well, so it has to stay well under 2^31 ms; the two stall
+///     limits this serves are seconds, not days.
+/// </summary>
+/// <returns>
+///     True once threshold_ms has passed since since_ms.
+/// </returns>
 static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms )
 {
     return (int32_t) ( now_ms - since_ms ) >= (int32_t) threshold_ms;
@@ -295,6 +351,12 @@ static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshol
    the last boot reason instead. The blink code plays once and cannot be replayed
    without destroying the evidence, so this keeps the verdict readable for the
    whole run: blue is nominal, any other resting color means something happened. */
+/// <summary>
+///     Writes all three channels on every path, so the caller never has to clear
+///     them first and no reason can leak a channel from the previous call. A
+///     reason with no case of its own falls through to the blue a clean power-on
+///     gets, so an unrecognised code reads as nominal rather than as a fault.
+/// </summary>
 static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue )
 {
     *red = 0;
@@ -320,6 +382,12 @@ static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue )
     }
 }
 
+/// <summary>
+///     The branch order is a severity ladder rather than a set of independent
+///     tests: the recovery signature outranks any live verdict, and a link that
+///     is both suspended and starved of transfers shows only the first colour
+///     that matches. One LED cannot say two things at once.
+/// </summary>
 static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue )
 {
     if ( diagnostics.recovery_toggles )
@@ -365,6 +433,13 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
     }
 }
 
+/// <summary>
+///     The only place the heartbeat touches the LED, and it records what it asked
+///     for in the same step -- the FPGA readback check has nothing else to
+///     compare against, so a write that bypassed this would be reported as a bus
+///     fault. The dark half clears only the enable flag, matching BSP_LedOff,
+///     which leaves the recorded colour still describing the registers.
+/// </summary>
 static void apply_led( uint32_t now_ms )
 {
     if ( diagnostics.led_on )
@@ -389,6 +464,15 @@ static void apply_led( uint32_t now_ms )
     }
 }
 
+/// <summary>
+///     Compares every field, brightness and enable included, so a write that
+///     latched only some of the registers fails here rather than passing on
+///     colour alone. Meaningful only while the heartbeat still owns the LED, and
+///     only immediately after apply_led has run in this pass.
+/// </summary>
+/// <returns>
+///     True when the FPGA holds exactly what apply_led last commanded.
+/// </returns>
 static bool led_readback_matches( void )
 {
     bsp_led_state_t led = BSP_LedGet();
@@ -400,6 +484,12 @@ static bool led_readback_matches( void )
 
 /* Runs immediately after the heartbeat LED write, so the readback measures the
    FPGA bus rather than whatever a `color` command left behind between polls. */
+/// <summary>
+///     Charges at most one failure per sample however many of the three checks
+///     went wrong, so fpga_failures counts seconds spent in fault rather than
+///     tallying symptoms. Leaves its own marker standing on return, so a hang
+///     inside the bus access is attributed here and not to the caller.
+/// </summary>
 static void check_fpga( uint32_t now_ms )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_FPGA_CHECK );
@@ -434,6 +524,12 @@ static void check_fpga( uint32_t now_ms )
     }
 }
 
+/// <summary>
+///     The two timestamps move only when their counter actually changed, which is
+///     what makes the stall thresholds measure a counter standing still rather
+///     than the time since the last sample. Nothing here judges health; it only
+///     records when progress was last seen.
+/// </summary>
 static void sample_usb( uint32_t now_ms )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT );
@@ -451,6 +547,15 @@ static void sample_usb( uint32_t now_ms )
     }
 }
 
+/// <summary>
+///     Squeezes six values into one retained word, and the counters wrap inside
+///     their masks rather than saturating: a failure field reading zero means
+///     none, or an exact multiple of 128. Only the flags are safe to read
+///     literally, which is why the full-width counters stay on the live report.
+/// </summary>
+/// <returns>
+///     The frame number, health flags and fault counters packed for slot 2.
+/// </returns>
 static uint32_t packed_health( void )
 {
     uint32_t packed = diagnostics.health.frame_number & HEALTH_FRAME_MASK;
@@ -463,6 +568,12 @@ static uint32_t packed_health( void )
     return packed;
 }
 
+/// <summary>
+///     Rewrites all three slots every sample, so a set recovered after a reset
+///     never mixes fields captured a second apart. It also overwrites what the
+///     previous boot left behind, which is why start copies those values into RAM
+///     before the loop is allowed to run.
+/// </summary>
 static void store_snapshots( void )
 {
     BSP_WatchdogSnapshotSet( 0, diagnostics.uptime_seconds );
@@ -470,6 +581,15 @@ static void store_snapshots( void )
     BSP_WatchdogSnapshotSet( 2, packed_health() );
 }
 
+/// <summary>
+///     Names the latched reason for the boot line. Anything the BSP did not
+///     classify shares the "other" text with BSP_BOOT_OTHER, so the report cannot
+///     tell the two apart -- deliberate, because neither is actionable and a
+///     numeric fallback would invite someone to look one up.
+/// </summary>
+/// <returns>
+///     A string literal, so it outlives every caller.
+/// </returns>
 static const char *boot_reason_name( void )
 {
     switch ( diagnostics.boot_reason )
@@ -485,6 +605,12 @@ static const char *boot_reason_name( void )
     }
 }
 
+/// <summary>
+///     Prints entirely from the copy start took, so the line reads identically
+///     the first time and hours later when `diag` asks for it again. Nothing here
+///     goes near the scratch registers, which by now hold the running loop's own
+///     snapshots rather than the ones being reported.
+/// </summary>
 static void print_boot_report( void )
 {
     BSP_ConsolePrintf( "diag: boot=%s marker=%lu loop=%lu usb=%lu health=%08lX\n",
@@ -494,6 +620,12 @@ static void print_boot_report( void )
                        (unsigned long) diagnostics.boot_snapshot[ 2 ] );
 }
 
+/// <summary>
+///     Every field but one comes from RAM; the marker is read back out of the
+///     scratch register, so the line doubles as evidence that the retained-value
+///     path still works. A marker that stops tracking the loop here means the
+///     post-reset report is worthless, and this is where that shows up first.
+/// </summary>
 static void print_live_report( void )
 {
     BSP_ConsolePrintf( "diag: t=%lus led=%u fpga_fail=%lu fpga_reconfig=%lu marker=%lu\n",
@@ -503,6 +635,15 @@ static void print_live_report( void )
                        (unsigned long) BSP_WatchdogMarkerGet() );
 }
 
+/// <summary>
+///     A zero marker becomes one blink rather than none, because a code with
+///     nothing to see cannot be told apart from a dead LED or a dead board. Above
+///     the maximum the count saturates, so a long code reads as "eight or more"
+///     rather than as an exact number somebody is expected to count.
+/// </summary>
+/// <returns>
+///     A blink count between one and BOOT_BLINK_MAX inclusive.
+/// </returns>
 static uint32_t clamp_blinks( uint32_t marker )
 {
     if ( marker == 0 )
@@ -516,6 +657,15 @@ static uint32_t clamp_blinks( uint32_t marker )
     return marker;
 }
 
+/// <summary>
+///     Colour and count both carry the verdict, so a code stays readable when one
+///     of them is hard to judge: the fixed counts separate the reasons an
+///     onlooker cannot tell apart by hue. Only the watchdog case spends its count
+///     on the retained marker, which is the one reason with more to say.
+/// </summary>
+/// <returns>
+///     The colour and blink count standing for the latched boot reason.
+/// </returns>
 static boot_signature_t boot_signature( void )
 {
     boot_signature_t signature = { 255, 255, 255, 1 }; /* power-on: one white blink */
@@ -540,6 +690,12 @@ static boot_signature_t boot_signature( void )
 
 /* The USB-free image has no console, so the same boot report is emitted as an
    LED blink code. This runs before the watchdog is armed, so blocking is safe. */
+/// <summary>
+///     Blocks for several seconds -- three passes of up to eight blinks -- which
+///     only the unarmed watchdog makes safe. It repeats because there is no way
+///     to ask for it again, and finishes with the LED off, so the heartbeat's
+///     first write is what decides what shows next rather than a leftover colour.
+/// </summary>
 static void blink_boot_report( void )
 {
     boot_signature_t signature = boot_signature();

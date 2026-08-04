@@ -248,30 +248,71 @@ static const application_activity_t SINGLE = {
 ***************************************************************************************/
 
 
+/// <summary>
+///     How many steps the sequence has, taken from the STEPS table itself so the
+///     menu, the single-step selector and the "n of m" counter on every result
+///     line cannot drift from what actually runs.
+/// </summary>
+/// <returns>
+///     The step count; valid indices run from zero to one less than this.
+/// </returns>
 uint32_t application_ibit_step_count( void )
 {
     return (uint32_t) ( sizeof STEPS / sizeof STEPS[ 0 ] );
 }
 
 
+/// <summary>
+///     Publishes a step's label so the menu can offer the steps without keeping a
+///     second copy of the list. The index is not range-checked -- callers are
+///     expected to have taken it from application_ibit_step_count.
+/// </summary>
+/// <returns>
+///     The name, pointing into the constant table, so it outlives any caller.
+/// </returns>
 const char *application_ibit_step_name( uint32_t index )
 {
     return STEPS[ index ].name;
 }
 
 
+/// <summary>
+///     Hands the sequence out without starting it; the UI owns the start/poll/stop
+///     lifecycle from here. There is one instance and one set of counters behind
+///     all three activities, so only one of them may be running at a time.
+/// </summary>
+/// <returns>
+///     The activity for one pass over every step, a constant with static lifetime.
+/// </returns>
 const application_activity_t *application_ibit_sequence( void )
 {
     return &SEQUENCE;
 }
 
 
+/// <summary>
+///     Hands out the variant whose poll restarts the run instead of finishing it,
+///     so it never reports completion and an abort through the UI is the only way
+///     it ends.
+/// </summary>
+/// <returns>
+///     The soak activity, sharing the same module state as the other two.
+/// </returns>
 const application_activity_t *application_ibit_soak( void )
 {
     return &SOAK;
 }
 
 
+/// <summary>
+///     Latches which step to run as a side effect of handing the activity out,
+///     because the activity struct carries no argument of its own. The index is
+///     read when start() runs, so a second call before starting replaces the first
+///     choice rather than queueing behind it.
+/// </summary>
+/// <returns>
+///     The single-step activity, shared with every other caller.
+/// </returns>
 const application_activity_t *application_ibit_single( uint32_t index )
 {
     ibit.index = index;
@@ -282,6 +323,12 @@ const application_activity_t *application_ibit_single( uint32_t index )
 /* The same facts the sequence checks, printed without judging them. Useful when
    a board is behaving and the question is what it actually is, rather than
    whether it is well. */
+/// <summary>
+///     Prints the whole report inside one foreground pass rather than as an
+///     activity, so it cannot be aborted and the watchdog marker is reclaimed
+///     before every line: the SDK's stdio flush is untimed, and the marker is what
+///     names the individual write a stalled host froze on.
+/// </summary>
 void application_ibit_print_board_report( void )
 {
     const bsp_mcu_info_t info = BSP_McuInfo();
@@ -330,18 +377,40 @@ void application_ibit_print_board_report( void )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Re-points the retained watchdog marker at the console write about to
+///     happen. Repeated before every line rather than once per function, because
+///     the marker is the only witness to which write was in progress if the
+///     untimed stdio flush never returns.
+/// </summary>
 static void mark_write( void )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
 }
 
 
+/// <summary>
+///     Compares two millisecond stamps through a signed difference so the answer
+///     survives the 32-bit rollover, which a plain now >= deadline would get wrong
+///     for the whole wrap after it.
+/// </summary>
+/// <returns>
+///     True once now_ms has reached deadline_ms, for deadlines under about 24 days.
+/// </returns>
 static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 {
     return (int32_t) ( now_ms - deadline_ms ) >= 0;
 }
 
 
+/// <summary>
+///     Time in the current step, measured from begin_step and against the stamp
+///     advance() cached at the top of this pass -- so every deadline a step tests
+///     within one pass is judged from the same instant, however long the pass took.
+/// </summary>
+/// <returns>
+///     Milliseconds since the current step began.
+/// </returns>
 static uint32_t step_elapsed_ms( void )
 {
     return ibit.current_time_ms - ibit.step_started_ms;
@@ -350,6 +419,14 @@ static uint32_t step_elapsed_ms( void )
 
 /* Samples both QSPI devices at most once per run. They share SCLK and SD0..SD3,
    so one report covers both and a second pass would only add bus traffic. */
+/// <summary>
+///     Returns the run's single memory sample, taking it on first use. begin_run
+///     clears the flag, so boot flash and PSRAM always see identical numbers
+///     within one run and the next run measures the devices again.
+/// </summary>
+/// <returns>
+///     This run's report, freshly measured only on the first call after begin_run.
+/// </returns>
 static bsp_memory_report_t memory_report( void )
 {
     if ( !ibit.memory_sampled )
@@ -361,6 +438,15 @@ static bsp_memory_report_t memory_report( void )
 }
 
 
+/// <summary>
+///     Whether a measurement sits inside one percent of what was expected. The
+///     band is a fraction of expected rather than of measured, so it stays the
+///     same width whichever way the error runs, and the difference is taken in
+///     whichever order keeps it unsigned.
+/// </summary>
+/// <returns>
+///     True when measured is within expected / CLOCK_TOLERANCE_DIVISOR of expected.
+/// </returns>
 static bool within_tolerance( uint32_t measured, uint32_t expected )
 {
     const uint32_t allowed = expected / CLOCK_TOLERANCE_DIVISOR;
@@ -369,6 +455,14 @@ static bool within_tolerance( uint32_t measured, uint32_t expected )
 }
 
 
+/// <summary>
+///     Narrows a boolean to the pass/fail pair and nothing else. A step with any
+///     other answer to give -- SKIP, INFO, TIMEOUT, PENDING -- returns it directly,
+///     so a call to this is itself the sign that the step is a plain yes-or-no.
+/// </summary>
+/// <returns>
+///     APPLICATION_IBIT_PASS or APPLICATION_IBIT_FAIL.
+/// </returns>
 static application_ibit_outcome_t verdict( bool ok )
 {
     return ok ? APPLICATION_IBIT_PASS : APPLICATION_IBIT_FAIL;
@@ -381,12 +475,29 @@ static application_ibit_outcome_t verdict( bool ok )
    steps that sit behind it would run and produce failures of their own instead
    of standing down. Three extra pings across a sequence is a cheap price for a
    skip decision made on this run's evidence. */
+/// <summary>
+///     Requires both the configuration pin and a correct design ID before it will
+///     call the FPGA reachable: the pin alone would pass a part that is configured
+///     but whose register bus has stopped answering, which is the fault the
+///     dependent steps most need standing down for.
+/// </summary>
+/// <returns>
+///     True when this run's own evidence says the FPGA can still be talked to.
+/// </returns>
 static bool fpga_reachable( void )
 {
     return BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID;
 }
 
 
+/// <summary>
+///     Passes only on Raspberry Pi's manufacturer code together with the RP2350
+///     part number. Revision, architecture and core count are printed but not
+///     judged -- an Arm image and a RISC-V image of the same part are both right.
+/// </summary>
+/// <returns>
+///     PASS when the part identifies itself as an RP2350, FAIL otherwise.
+/// </returns>
 static application_ibit_outcome_t step_chip_identity( char *detail, size_t capacity )
 {
     const bsp_mcu_info_t info = BSP_McuInfo();
@@ -402,6 +513,14 @@ static application_ibit_outcome_t step_chip_identity( char *detail, size_t capac
 
 /* All-zero and all-ones are what a bus that answered with nothing looks like, so
    both are rejected even though either is a legal-looking number. */
+/// <summary>
+///     Checks that a unique ID exists rather than that it is any particular value.
+///     Nothing on the board says what the ID ought to be, so "the bus answered
+///     with something" is the whole of what this can prove.
+/// </summary>
+/// <returns>
+///     PASS unless every byte came back identical at 0x00 or at 0xFF.
+/// </returns>
 static application_ibit_outcome_t step_board_identity( char *detail, size_t capacity )
 {
     const bsp_mcu_info_t info = BSP_McuInfo();
@@ -423,6 +542,14 @@ static application_ibit_outcome_t step_board_identity( char *detail, size_t capa
 
 /* Measured, not configured. clock_get_hz reports what the SDK asked for, so a
    PLL that never locked still reads correct there and only shows up here. */
+/// <summary>
+///     Fails as soon as either measured clock leaves its one-percent band; both
+///     must be in tolerance. The sys/usb ratio is reported and not tested, and a
+///     dead USB clock prints a zero ratio rather than being divided by.
+/// </summary>
+/// <returns>
+///     PASS when both measured frequencies are in band, FAIL if either is not.
+/// </returns>
 static application_ibit_outcome_t step_clocks( char *detail, size_t capacity )
 {
     const bsp_clocks_report_t clocks = BSP_ClocksReport();
@@ -456,6 +583,14 @@ static application_ibit_outcome_t step_clocks( char *detail, size_t capacity )
 }
 
 
+/// <summary>
+///     Compares flash and SRAM against exact constants rather than a band, because
+///     both are fixed properties of the part: any other figure means this image is
+///     running on hardware it was not linked for.
+/// </summary>
+/// <returns>
+///     PASS only on an exact match with both expected sizes.
+/// </returns>
 static application_ibit_outcome_t step_memory_sizing( char *detail, size_t capacity )
 {
     const bsp_mcu_info_t info = BSP_McuInfo();
@@ -475,6 +610,14 @@ static application_ibit_outcome_t step_memory_sizing( char *detail, size_t capac
    alone -- which is exactly why this prints them and stops. Nothing in the
    firmware sizes a memory from here; flash comes from what the image was linked
    for and the DRAM from the SDK's own detection. */
+/// <summary>
+///     Always INFO, so it can never move the pass or fail counts. It is here for
+///     what the two size codes tell a reader after the fact, not for anything this
+///     run is entitled to decide from them.
+/// </summary>
+/// <returns>
+///     APPLICATION_IBIT_INFO, unconditionally.
+/// </returns>
 static application_ibit_outcome_t step_otp_devinfo( char *detail, size_t capacity )
 {
     const bsp_mcu_info_t info = BSP_McuInfo();
@@ -485,6 +628,14 @@ static application_ibit_outcome_t step_otp_devinfo( char *detail, size_t capacit
 }
 
 
+/// <summary>
+///     Rests entirely on the reset vector looking sane. The size is printed here
+///     but judged by the memory sizing step, so the two are not spending a verdict
+///     each on the same number.
+/// </summary>
+/// <returns>
+///     PASS when the memory report says the reset vector is plausible.
+/// </returns>
 static application_ibit_outcome_t step_boot_flash( char *detail, size_t capacity )
 {
     const bsp_memory_report_t memory = memory_report();
@@ -500,6 +651,15 @@ static application_ibit_outcome_t step_boot_flash( char *detail, size_t capacity
    calls itself KGD 0x0B EID 0x43 rather than AP Memory's 0x5D, so the fitted
    part is not the APS1604M-3SQR-SN on the schematic. Reading the package marking
    is what would settle it, and no test can. */
+/// <summary>
+///     The verdict is the pattern and nothing but the pattern; the identity bytes
+///     are appended to the detail whatever they say. A build that never brought
+///     the device up returns SKIP, so it is never counted against the board.
+/// </summary>
+/// <returns>
+///     SKIP when PSRAM is absent from this build, otherwise PASS or FAIL on whether
+///     the pattern survived.
+/// </returns>
 static application_ibit_outcome_t step_psram( char *detail, size_t capacity )
 {
     const bsp_memory_report_t memory = memory_report();
@@ -526,6 +686,15 @@ static application_ibit_outcome_t step_psram( char *detail, size_t capacity )
 /* Banded, not compared. The uncalibrated sensor is several degrees out on a good
    day, so an exact figure would be a lie; a reading pinned at either rail is the
    fault worth catching, and that a band finds. */
+/// <summary>
+///     Accepts anything from -20 C to +85 C inclusive, which is wide on purpose:
+///     the band exists to catch a sensor pinned at a rail, not to assess how warm
+///     the board is. The raw converter code is printed so a suspicious reading can
+///     still be traced.
+/// </summary>
+/// <returns>
+///     PASS while the reading is inside the plausible band, FAIL at either rail.
+/// </returns>
 static application_ibit_outcome_t step_temperature( char *detail, size_t capacity )
 {
     const bsp_adc_temperature_t sample = BSP_AdcTemperature();
@@ -549,6 +718,15 @@ static application_ibit_outcome_t step_temperature( char *detail, size_t capacit
 /* Two samples, because a single frame number proves nothing. The host's
    start-of-frame counter advancing is the only evidence available that the bus
    is live rather than merely enumerated. */
+/// <summary>
+///     Spans at least two passes: the first latches the frame number and yields,
+///     and no verdict is given until USB_SAMPLE_MS has elapsed. All four
+///     conditions must hold -- DTR asserted, not suspended, the frame counter
+///     moved, and room left in the write buffer.
+/// </summary>
+/// <returns>
+///     PENDING until the sample window closes, then PASS or FAIL.
+/// </returns>
 static application_ibit_outcome_t step_usb( char *detail, size_t capacity )
 {
     const bsp_usb_health_t health = BSP_UsbHealth();
@@ -582,6 +760,16 @@ static application_ibit_outcome_t step_usb( char *detail, size_t capacity )
    scratch word watchdog_enable_caused_reboot consults, so asking again once the
    foreground loop is running reports a watchdog reset on every board -- which is
    how this step first failed on hardware that had powered up perfectly. */
+/// <summary>
+///     Two independent things fail this one step: a marker register that will not
+///     round-trip a pattern, and a previous boot the watchdog forced. The marker is
+///     put back to the built-in test's own value before returning, so a reset later
+///     in the run still attributes itself here.
+/// </summary>
+/// <returns>
+///     PASS only when the readback matched and the last boot was not a watchdog
+///     reset.
+/// </returns>
 static application_ibit_outcome_t step_watchdog( char *detail, size_t capacity )
 {
     const bsp_boot_reason reason = application_diagnostics_boot_reason();
@@ -606,6 +794,14 @@ static application_ibit_outcome_t step_watchdog( char *detail, size_t capacity )
 /* Also the only proof the 32 MHz oscillator and its GPIO 19 gate are alive. A
    design with no clock does not answer a ping at all, so a correct design ID
    here has already cleared them both. */
+/// <summary>
+///     Requires CDONE high and an exact design ID; the status pin is printed but
+///     not judged. This is the step every FPGA-dependent skip is decided against,
+///     which is why it is deliberately not itself marked as needing the FPGA.
+/// </summary>
+/// <returns>
+///     PASS when the FPGA is configured and answering as the expected design.
+/// </returns>
 static application_ibit_outcome_t step_fpga_configuration( char *detail, size_t capacity )
 {
     const bool cdone = BSP_FpgaCdone();
@@ -617,6 +813,15 @@ static application_ibit_outcome_t step_fpga_configuration( char *detail, size_t 
 }
 
 
+/// <summary>
+///     Exercises the register bus through the LED registers, which are the only
+///     writable block reachable from here, so it saves and restores the colour
+///     around the test. All four registers must read back; the status byte is
+///     printed for the log and is no part of the verdict.
+/// </summary>
+/// <returns>
+///     PASS only when every one of the four written values came back unchanged.
+/// </returns>
 static application_ibit_outcome_t step_fpga_registers( char *detail, size_t capacity )
 {
     const uint8_t status = BSP_FpgaReadStatus();
@@ -638,6 +843,16 @@ static application_ibit_outcome_t step_fpga_registers( char *detail, size_t capa
 
 /* Drives each channel on its own so a user watching can see which one is dead,
    and reads every one back so an unattended run still produces a verdict. */
+/// <summary>
+///     One colour per LED_PHASE_MS across several passes, capturing whatever the
+///     user had showing on the first pass and putting it back on both exits. A
+///     channel that fails to read back ends the step there rather than walking the
+///     colours that remain.
+/// </summary>
+/// <returns>
+///     PENDING between phases, PASS once every colour has read back, or FAIL naming
+///     the phase that mismatched.
+/// </returns>
 static application_ibit_outcome_t step_led( char *detail, size_t capacity )
 {
     static const uint8_t COLOURS[][ 3 ] = {
@@ -686,6 +901,15 @@ static application_ibit_outcome_t step_led( char *detail, size_t capacity )
 /* Both halves have to move. The count alone could be a stuck event line and the
    level alone could be a pin held low, so requiring the pair is what separates a
    real press from a fault that looks like one. */
+/// <summary>
+///     Waits up to APPLICATION_IBIT_BUTTON_TIMEOUT_MS, sampling every
+///     BUTTON_POLL_MS, and ends in TIMEOUT rather than FAIL when nobody presses --
+///     an unattended run must not be a failing one. The count moving is what passes
+///     it; the level is watched and reported but never decides.
+/// </summary>
+/// <returns>
+///     PENDING while waiting, PASS on a press, TIMEOUT once the deadline passes.
+/// </returns>
 static application_ibit_outcome_t step_button( char *detail, size_t capacity )
 {
     if ( ibit.phase == 0 )
@@ -751,6 +975,11 @@ static application_ibit_outcome_t step_button( char *detail, size_t capacity )
    every way of drawing them needs a "name too long" branch that no step name can
    currently reach, and an unreachable branch is a hole in the coverage gate that
    would have to be argued away rather than tested. */
+/// <summary>
+///     Numbers the line one-based against the whole table even during a
+///     single-step run, so a lone result line still says which of the fourteen
+///     steps produced it.
+/// </summary>
 static void print_result( uint32_t index, application_ibit_outcome_t outcome, const char *detail )
 {
     mark_write();
@@ -760,6 +989,12 @@ static void print_result( uint32_t index, application_ibit_outcome_t outcome, co
 }
 
 
+/// <summary>
+///     Counts one outcome into one of five buckets. PENDING never arrives here --
+///     advance() returns before calling this -- and the final branch absorbs
+///     anything that is not one of the four named outcomes, so a new one lands in
+///     the INFO count rather than vanishing from the summary.
+/// </summary>
 static void tally( application_ibit_outcome_t outcome )
 {
     if ( outcome == APPLICATION_IBIT_PASS )
@@ -789,6 +1024,12 @@ static void tally( application_ibit_outcome_t outcome )
    span many passes, and asking per pass would put an FPGA transaction in the
    foreground loop once a millisecond to re-answer a question that cannot change
    while the step is running. */
+/// <summary>
+///     Clears the per-step scratch -- phase, the LED save flag and the step clock
+///     -- and settles the skip decision for the whole step. The clock comes from
+///     the stamp already in state rather than a fresh read, so the step's elapsed
+///     time starts from the same instant its first pass sees.
+/// </summary>
 static void begin_step( uint32_t index )
 {
     ibit.index = index;
@@ -799,6 +1040,12 @@ static void begin_step( uint32_t index )
 }
 
 
+/// <summary>
+///     Resets the tally, the memory sample and both clocks, then opens the first
+///     step. It deliberately leaves the three soak counters alone, which is what
+///     lets a soak start each new run through here without losing the tally it has
+///     been accumulating across them.
+/// </summary>
 static void begin_run( uint32_t first_index, uint32_t last_index )
 {
     ibit.current_time_ms = BSP_TimeNowMs();
@@ -815,6 +1062,11 @@ static void begin_run( uint32_t first_index, uint32_t last_index )
 }
 
 
+/// <summary>
+///     Prints all five counts even where they are zero, so successive iterations in
+///     a soak log line up column for column, and times the run from the stamp the
+///     last pass cached rather than reading the clock a second time.
+/// </summary>
 static void print_summary( void )
 {
     const uint32_t elapsed_ms = ibit.current_time_ms - ibit.sequence_started_ms;
@@ -830,6 +1082,16 @@ static void print_summary( void )
 
 /* One step per pass at most, so the foreground loop keeps feeding the watchdog
    whatever any individual step is waiting for. */
+/// <summary>
+///     One pass of the state machine: samples the clock once for everything that
+///     follows, and either runs the current step or, where it stands down behind an
+///     unreachable FPGA, produces the SKIP without calling its run function at all.
+///     A PENDING answer is neither tallied nor printed; the step simply gets
+///     another pass.
+/// </summary>
+/// <returns>
+///     True while there is more to do, false once the run's last step has reported.
+/// </returns>
 static bool advance( void )
 {
     char detail[ DETAIL_CAPACITY ] = { 0 };
@@ -865,6 +1127,11 @@ static bool advance( void )
 
 /* Anything left mid-run is put back here, because an abort is exactly when the
    LED is most likely to be sitting on a test colour. */
+/// <summary>
+///     Serves as stop() for all three activities, and is guarded by the saved flag,
+///     so calling it twice or on a run that never reached the LED step does
+///     nothing.
+/// </summary>
 static void restore( void )
 {
     if ( ibit.led_saved )
@@ -876,6 +1143,11 @@ static void restore( void )
 }
 
 
+/// <summary>
+///     Announces the run and arms every step in the table. begin_run resets
+///     everything a previous run left behind, so restarting after an abort begins
+///     from a clean tally rather than continuing the old one.
+/// </summary>
 static void sequence_start( void )
 {
     mark_write();
@@ -884,6 +1156,13 @@ static void sequence_start( void )
 }
 
 
+/// <summary>
+///     Prints the summary on the same pass that finds the last step finished, and
+///     only then, since returning false is what stops the UI calling back at all.
+/// </summary>
+/// <returns>
+///     True while steps remain, false once the summary has been printed.
+/// </returns>
 static bool sequence_poll( void )
 {
     if ( advance() )
@@ -895,6 +1174,11 @@ static bool sequence_poll( void )
 }
 
 
+/// <summary>
+///     Clears the three cross-run counters that begin_run deliberately leaves
+///     alone, so a soak started a second time does not inherit the totals of the
+///     first.
+/// </summary>
 static void soak_start( void )
 {
     ibit.soak_iterations = 0;
@@ -906,6 +1190,15 @@ static void soak_start( void )
 }
 
 
+/// <summary>
+///     Never reports completion: at the end of a run it prints, folds the result
+///     into the cross-run counters and immediately begins the next, so only an
+///     abort through the UI ends a soak. An iteration counts once however many
+///     steps failed within it, not once per failing step.
+/// </summary>
+/// <returns>
+///     True on every pass, because a soak has no end of its own to report.
+/// </returns>
 static bool soak_poll( void )
 {
     if ( advance() )
@@ -933,6 +1226,11 @@ static bool soak_poll( void )
 }
 
 
+/// <summary>
+///     Opens a run whose first and last step are both the index
+///     application_ibit_single latched, which is what makes advance() stop after
+///     one result instead of walking on to the next step.
+/// </summary>
 static void single_start( void )
 {
     mark_write();
@@ -941,6 +1239,14 @@ static void single_start( void )
 }
 
 
+/// <summary>
+///     Ends without a summary, unlike the sequence: for a single step the one
+///     result line advance() already printed is the whole report, and a tally of
+///     one would say nothing further.
+/// </summary>
+/// <returns>
+///     True until that step reports, false immediately afterwards.
+/// </returns>
 static bool single_poll( void )
 {
     return advance();

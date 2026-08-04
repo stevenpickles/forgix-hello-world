@@ -45,6 +45,12 @@ static void print_memory_report( void );
 ***************************************************************************************/
 
 
+/// <summary>
+///     One line carrying everything the board can be asked about at once: FPGA
+///     identity and status register, button level and edge count, and the raw
+///     status pin. An unready FPGA is answered in words instead, and no register
+///     is read in that case, so the watch timer never has to gate on readiness.
+/// </summary>
 void application_print_status( void )
 {
     if ( !BSP_FpgaIsReady() )
@@ -59,6 +65,13 @@ void application_print_status( void )
 }
 
 
+/// <summary>
+///     Splits the caller's buffer in place with strtok, keeping at most six
+///     tokens, and dispatches on the first. The line comes back tokenised and
+///     cannot be reused. Every outcome, including an unknown or malformed
+///     command, is reported on the console rather than returned to the caller,
+///     because the shell is the only place the user can see it.
+/// </summary>
 void application_process_command( char *line )
 {
     char *argv[ 6 ] = { 0 };
@@ -211,6 +224,13 @@ void application_process_command( char *line )
 }
 
 
+/// <summary>
+///     The boot report, ordered so that it is still worth reading when start-up
+///     went badly: memory first, then what configuration made of the FPGA, then
+///     help last so the screen ends on something the user can type. A failed
+///     FPGA is reported and then survived -- the shell still starts, because the
+///     commands that diagnose the failure live in it.
+/// </summary>
 void application_init( const bsp_init_result_t *bsp_result )
 {
     print_memory_report();
@@ -236,6 +256,15 @@ void application_init( const bsp_init_result_t *bsp_result )
 ***************************************************************************************/
 
 
+/// <summary>
+///     Takes a colour component in any base strtol recognises, so 0x40 and 64
+///     are the same value, but only when the token is consumed whole: "12abc"
+///     is a rejection rather than a 12. Out-of-range numbers are refused instead
+///     of clamped, and the output is left alone unless true comes back.
+/// </summary>
+/// <returns>
+///     True when the whole token parsed and lands inside 0..255.
+/// </returns>
 static bool parse_byte( const char *text, uint8_t *value )
 {
     char *end = NULL;
@@ -253,6 +282,16 @@ static bool parse_byte( const char *text, uint8_t *value )
 }
 
 
+/// <summary>
+///     Decimal only, unlike the colour parser above: a period is a count of
+///     seconds, so a base prefix in it is a typo and not a notation. The bounds
+///     are enforced here rather than at the scheduler, which is what keeps a
+///     zero or a week-long period out of the watch timer. "off" is the caller's
+///     case and never reaches this.
+/// </summary>
+/// <returns>
+///     True when the token is a whole decimal number within the watch bounds.
+/// </returns>
 static bool parse_watch_period( const char *text, uint32_t *seconds )
 {
     char *end = NULL;
@@ -267,6 +306,12 @@ static bool parse_watch_period( const char *text, uint32_t *seconds )
 }
 
 
+/// <summary>
+///     The whole command surface on one unbroken console line -- the two string
+///     literals are a source-width artefact, not a break the terminal sees. This
+///     is also the entirety of what "invalid command (try help)" points a user
+///     at, so anything missing from here is undiscoverable from the board.
+/// </summary>
 static void print_help( void )
 {
     BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset "
@@ -277,6 +322,12 @@ static void print_help( void )
 /* Both QSPI memories share the same data lines, so a fault on one shows up as
    the other misbehaving. Reported at boot and repeatable through `diag`, because
    a line that only appears once is a line nobody is listening for. */
+/// <summary>
+///     Sizes in KiB beside the raw PSRAM identity bytes and the forced-size
+///     flag, printed whether the check passed or not: a healthy board's numbers
+///     are what a suspect one is later held against, and the identity bytes are
+///     the part that says which of the two devices answered.
+/// </summary>
 static void print_memory_report( void )
 {
     bsp_memory_report_t memory = BSP_MemoryCheck();

@@ -30,6 +30,16 @@
 ***************************************************************************************/
 
 
+/// <summary>
+///     Entry point of the USB-free image, and deliberately the same shape as the
+///     shell image's: BSP bring-up, then diagnostics start, then a poll loop that
+///     never ends. It links no console and no UI, so the diagnostics poll is the
+///     only thing feeding the watchdog here -- which is the point, since it
+///     leaves the lockup nowhere to hide but that one path.
+/// </summary>
+/// <returns>
+///     Nothing, ever. The poll loop is unconditional and has no exit.
+/// </returns>
 int main( void )
 {
     /* Same board bring-up as the shell image: deselects the QSPI device on chip
