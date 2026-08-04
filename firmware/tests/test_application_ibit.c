@@ -321,6 +321,13 @@ void test_temperature_passes_inside_the_band_and_formats_a_negative_reading(void
     sample.milli_celsius = -5500;
     BSP_AdcTemperature_ExpectAndReturn(sample);
     TEST_ASSERT_NOT_NULL(strstr(run_step(STEP_TEMPERATURE), "-5.5C"));
+
+    /* Truncation toward zero used to eat the sign here and print "0.5C" -- a
+       wrong reading, on the one part of the scale where which side of freezing
+       the board is on actually matters. */
+    sample.milli_celsius = -500;
+    BSP_AdcTemperature_ExpectAndReturn(sample);
+    TEST_ASSERT_NOT_NULL(strstr(run_step(STEP_TEMPERATURE), "-0.5C"));
 }
 
 /* A reading pinned at a rail is the fault a band catches; the absolute figure is

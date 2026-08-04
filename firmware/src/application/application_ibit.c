@@ -274,10 +274,16 @@ static application_ibit_outcome_t step_temperature(char *detail, size_t capacity
     const bool ok = sample.milli_celsius >= TEMPERATURE_MIN_MILLI_C &&
                     sample.milli_celsius <= TEMPERATURE_MAX_MILLI_C;
 
-    snprintf(detail, capacity, "%ld.%01ldC raw=%u", (long)(sample.milli_celsius / 1000),
-             (long)((sample.milli_celsius < 0 ? -sample.milli_celsius : sample.milli_celsius) /
-                    100 % 10),
-             sample.raw);
+    /* The sign is carried separately rather than left to the integer division.
+       Truncation toward zero loses it for anything between -1 C and 0 C, where
+       -0.5 would have printed as "0.5C" -- a wrong reading rather than an
+       imprecise one, and on the only part of the scale where the reader most
+       needs to know which side of freezing the board is on. */
+    const int32_t magnitude =
+        sample.milli_celsius < 0 ? -sample.milli_celsius : sample.milli_celsius;
+
+    snprintf(detail, capacity, "%s%ld.%01ldC raw=%u", sample.milli_celsius < 0 ? "-" : "",
+             (long)(magnitude / 1000), (long)((magnitude / 100) % 10), sample.raw);
     return verdict(ok);
 }
 
