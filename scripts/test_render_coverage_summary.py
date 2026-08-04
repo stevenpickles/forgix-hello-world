@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from render_coverage_summary import read_metrics, render_html
+from render_coverage_summary import failed_gates, read_metrics, render_html
 
 
 COBERTURA = """<?xml version="1.0"?>
@@ -51,6 +51,24 @@ class CoverageSummaryTests(unittest.TestCase):
 
         self.assertIn("&#x1F534; <strong>50.0%</strong>", summary)
         self.assertIn("&#x274C; Fail", summary)
+
+    def test_failed_gates_is_empty_when_every_threshold_is_met(self) -> None:
+        metrics = read_metrics_from_text(COBERTURA)
+        self.assertEqual(failed_gates(metrics), [])
+
+    def test_failed_gates_names_the_metric_below_its_threshold(self) -> None:
+        metrics = read_metrics_from_text(
+            COBERTURA.replace('branch-rate="1.0"', 'branch-rate="0.5"')
+        )
+        self.assertEqual(failed_gates(metrics), ["Branches"])
+
+    def test_threshold_free_rows_never_fail_a_gate(self) -> None:
+        # Functions carry no threshold, so even a zero function rate is
+        # informational -- the Gate column says "Reported", not "Fail".
+        metrics = read_metrics_from_text(
+            COBERTURA.replace('function-rate="1.0"', 'function-rate="0.0"')
+        )
+        self.assertEqual(failed_gates(metrics), [])
 
     def test_omits_functions_when_the_report_carries_none(self) -> None:
         # gcovr 8.x dropped the functions-* extension attributes that 7.x
