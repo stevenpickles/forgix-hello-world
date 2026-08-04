@@ -484,7 +484,7 @@ void test_fpga_configuration_passes_and_implies_the_oscillator( void )
     const char *output = run_step( STEP_FPGA_CONFIGURATION );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "cdone=1 id=B5" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "cdone=1 id=B6" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "32MHz oscillator implied" ) );
 }
 

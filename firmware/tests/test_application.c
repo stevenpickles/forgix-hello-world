@@ -286,7 +286,7 @@ void test_status_reports_fpga_and_button_state( void )
 
     process( "status" );
 
-    TEST_ASSERT_EQUAL_STRING( "id=B5 status=01 button=03 count=7 fpga_status=1\n",
+    TEST_ASSERT_EQUAL_STRING( "id=B6 status=01 button=03 count=7 fpga_status=1\n",
                               MOCK_BSP_ConsoleOutput() );
 }
 
