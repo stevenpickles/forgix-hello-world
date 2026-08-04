@@ -132,9 +132,13 @@ bsp_fpga_init_result_t BSP_FpgaInit( void )
     bsp_fpga_init_result_t result = { 0 };
     result.configured = _Configure();
 
-    sleep_ms( 1500 );
     if ( result.configured )
     {
+        /* Only a configured FPGA has anything to settle. A failed
+           configuration used to pay this too, and on a runtime reconfigure
+           that is 1.5 s of a 5 s watchdog window spent waiting on a dead
+           part, once per failing sample, forever. */
+        sleep_ms( 1500 );
         result.design_id = BSP_FpgaPing();
     }
     else
