@@ -400,6 +400,11 @@ static void _SendByte( const uint8_t value, const bool releaseAfterSample )
     for ( int32_t bit = 7; bit >= 0; --bit )
     {
         gpio_put( PIN_SDIO, ( value >> bit ) & 1u );
+        /* The FPGA samples SDIO on the rising SCK edge, so this gap is the
+           data's setup time. Back-to-back SIO stores would leave ~13 ns of
+           it -- every other edge in this routine buys a microsecond, and the
+           sampling edge is the one that can least afford less. */
+        busy_wait_us_32( 1 );
         gpio_put( PIN_SCK, 1 );
         busy_wait_us_32( 1 );
         if ( releaseAfterSample && bit == 0 )
