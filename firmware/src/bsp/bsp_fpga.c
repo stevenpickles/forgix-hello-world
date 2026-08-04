@@ -336,9 +336,10 @@ static void _RuntimeBusIdle( void )
 }
 
 /// <summary>
-///     Clocks the bitstream in over hardware SPI, then waits up to 500 ms for
-///     CDONE. The 32 trailing zero bytes are required by the FPGA to finish
-///     internal startup after the last bitstream byte.
+///     Clocks the bitstream in over hardware SPI, then keeps clocking trailing
+///     zero bytes until CDONE rises or 500 ms passes. The trailing clocks are
+///     what the FPGA finishes its internal startup on -- CDONE advances on
+///     SCK, so a wait that stopped clocking could only ever time out.
 /// </summary>
 /// <returns>
 ///     True if CDONE rose before the deadline.
@@ -368,19 +369,19 @@ static bool _Configure( void )
     sleep_ms( 5 );
     spi_write_blocking( spi0, fpga_image, fpga_image_size );
 
+    /* The wait is not a sleep beside the bus but more zero bytes on it: the
+       configuration state machine advances on SCK, so once the clock parks,
+       CDONE can never rise. Each 32-byte burst is ~32 us at 8 MHz, which
+       paces the polling, and the deadline bounds a part that will never
+       finish. */
     const uint8_t trailing[ 32 ] = { 0 };
-    spi_write_blocking( spi0, trailing, sizeof trailing );
-
     const absolute_time_t deadline = make_timeout_time_ms( 500 );
-    bool done = false;
-    while ( !time_reached( deadline ) )
+    spi_write_blocking( spi0, trailing, sizeof trailing );
+    bool done = gpio_get( PIN_CDONE );
+    while ( !done && !time_reached( deadline ) )
     {
-        if ( gpio_get( PIN_CDONE ) )
-        {
-            done = true;
-            break;
-        }
-        sleep_ms( 1 );
+        spi_write_blocking( spi0, trailing, sizeof trailing );
+        done = gpio_get( PIN_CDONE );
     }
 
     gpio_put( PIN_CS, 1 );
