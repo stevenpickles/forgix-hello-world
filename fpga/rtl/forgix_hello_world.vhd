@@ -54,16 +54,18 @@ architecture rtl of forgix_hello_world is
   -- register_file below, because a CMD_RESET has to reproduce the power-up look without
   -- reconfiguring the FPGA. tb_spi_regs checks the pair agree by resetting and reading
   -- back x"20" and x"40", which is the only thing keeping the two copies in step.
-  signal red          : byte_t     := x"00";
-  signal green        : byte_t     := x"00";
-  signal blue         : byte_t     := x"20";
-  signal brightness   : byte_t     := x"40";
-  signal led_enable   : std_ulogic := '1';
-  signal raw_button   : std_ulogic := '0';
-  signal button       : std_ulogic := '0';
-  signal button_press : std_ulogic := '0';
-  signal button_event : std_ulogic := '0';
-  signal button_count : byte_t     := x"00";
+  signal red          : byte_t                := x"00";
+  signal green        : byte_t                := x"00";
+  signal blue         : byte_t                := x"20";
+  signal brightness   : byte_t                := x"40";
+  signal led_enable   : std_ulogic            := '1';
+  signal raw_button   : std_ulogic            := '0';
+  signal button       : std_ulogic            := '0';
+  signal button_press : std_ulogic            := '0';
+  signal button_event : std_ulogic            := '0';
+  signal button_count : byte_t                := x"00";
+  signal tick_count   : unsigned(31 downto 0) := (others => '0');
+  signal tick_snap    : unsigned(31 downto 0) := (others => '0');
 
 begin
 
@@ -230,6 +232,30 @@ begin
 
   end process register_file;
 
+  -- Free-running timebase for the MCU's clock check. tick_count increments on every
+  -- clk_32m edge and wraps (every ~134 s at 32 MHz); only por-time rst clears it,
+  -- deliberately not reset_regs, because CMD_RESET restores register defaults and a
+  -- timebase has none. A write of any value to REG_TICK_CAPTURE latches the count
+  -- into tick_snap, so the four byte-wide reads that follow all describe one instant
+  -- however many SPI transactions they take. That latch is what makes a 32-bit value
+  -- readable over a bus that moves one byte per transaction.
+  tick_counter : process (clk_32m) is
+  begin
+
+    if rising_edge(clk_32m) then
+      if rst = '1' then
+        tick_count <= (others => '0');
+        tick_snap  <= (others => '0');
+      else
+        tick_count <= tick_count + 1;
+        if wr = '1' and addr = REG_TICK_CAPTURE then
+          tick_snap <= tick_count;
+        end if;
+      end if;
+    end if;
+
+  end process tick_counter;
+
   -- Read side of the register file: combinational, process (all), and holding no state
   -- of its own. Reads therefore have no side effects and cost the SPI engine a single
   -- cycle in read_wait_s.
@@ -294,6 +320,22 @@ begin
       when REG_BUTTON_COUNT =>
 
         rdata <= button_count;
+
+      when REG_TICK_0 =>
+
+        rdata <= tick_snap(7 downto 0);
+
+      when REG_TICK_1 =>
+
+        rdata <= tick_snap(15 downto 8);
+
+      when REG_TICK_2 =>
+
+        rdata <= tick_snap(23 downto 16);
+
+      when REG_TICK_3 =>
+
+        rdata <= tick_snap(31 downto 24);
 
       when others =>
 

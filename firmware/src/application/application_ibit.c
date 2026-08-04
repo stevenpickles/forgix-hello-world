@@ -44,6 +44,12 @@ enum
     CLOCK_TOLERANCE_DIVISOR = 100,
     EXPECTED_FLASH_BYTES = 2 * 1024 * 1024,
     EXPECTED_SRAM_BYTES = 520 * 1024,
+    EXPECTED_FPGA_HZ = 32000000,
+    /* Wide enough that the millisecond stamps cannot matter: half a second of
+       ticks judged at one percent leaves +/-5 ms of room, and the stamps carry
+       about +/-1 ms of quantisation each. A shorter window would need a finer
+       clock than the application layer has. */
+    FPGA_CLOCK_SAMPLE_MS = 500,
 };
 
 
@@ -87,6 +93,11 @@ typedef struct
     bool led_saved;
     bsp_led_state_t led_before;
     uint32_t usb_frame_before;
+    uint32_t fpga_tick_before;
+    /* The clock step's own t0, stamped in the same pass as the first capture.
+       begin_step's stamp is one poll older, and that offset would sit inside
+       the measurement for no reason. */
+    uint32_t fpga_tick_t0_ms;
     uint8_t button_count_before;
     uint8_t button_level_before;
     bool button_level_moved;
@@ -163,6 +174,8 @@ static application_ibit_outcome_t step_led( char *detail, size_t capacity );
 
 static application_ibit_outcome_t step_button( char *detail, size_t capacity );
 
+static application_ibit_outcome_t step_fpga_clock( char *detail, size_t capacity );
+
 static void print_result( uint32_t index, application_ibit_outcome_t outcome, const char *detail );
 
 static void tally( application_ibit_outcome_t outcome );
@@ -211,6 +224,7 @@ static const ibit_step_t STEPS[] = {
     { "FPGA register bus", true, step_fpga_registers },
     { "RGB LED", true, step_led },
     { "Button SW1", true, step_button },
+    { "FPGA 32MHz clock", true, step_fpga_clock },
 };
 
 /* Each of SEQUENCE, SOAK and SINGLE takes the address of its own start/poll
@@ -971,13 +985,59 @@ static application_ibit_outcome_t step_button( char *detail, size_t capacity )
 }
 
 
+/* This measures the ratio of the FPGA's oscillator to the MCU's clock, not a
+   frequency against an absolute reference, so it cannot say which side is wrong
+   on its own -- the MCU's clocks have their own step. What only this step can
+   see is the counter falling short: an oscillator that stalled and recovered
+   inside the window answers every ping and still fails here, which is what
+   makes this worth running on soak. */
+/// <summary>
+///     Latches the FPGA's free-running counter twice, FPGA_CLOCK_SAMPLE_MS
+///     apart, and requires the tick delta to match 32 MHz within one percent.
+///     The delta is unsigned 32-bit subtraction, so a counter wrap mid-window --
+///     every 134 seconds -- still measures correctly.
+/// </summary>
+/// <returns>
+///     PENDING until the window closes, then PASS or FAIL.
+/// </returns>
+static application_ibit_outcome_t step_fpga_clock( char *detail, size_t capacity )
+{
+    if ( ibit.phase == 0 )
+    {
+        ibit.fpga_tick_before = BSP_FpgaTickSample();
+        ibit.fpga_tick_t0_ms = ibit.current_time_ms;
+        ibit.phase = 1;
+        return APPLICATION_IBIT_PENDING;
+    }
+    if ( !deadline_reached( ibit.current_time_ms, ibit.fpga_tick_t0_ms + FPGA_CLOCK_SAMPLE_MS ) )
+    {
+        return APPLICATION_IBIT_PENDING;
+    }
+
+    const uint32_t elapsed_ms = ibit.current_time_ms - ibit.fpga_tick_t0_ms;
+    const uint32_t ticks = BSP_FpgaTickSample() - ibit.fpga_tick_before;
+    /* Both products outgrow 32 bits before their divides -- 32e6 ticks/s over
+       500 ms is 1.6e10, and ticks * 1000 peaks near 4.3e12 -- so each is taken
+       in 64 and only the quotient comes back down. elapsed_ms is at least
+       FPGA_CLOCK_SAMPLE_MS here, so neither divide can see zero. */
+    const uint32_t expected = (uint32_t) ( ( (uint64_t) EXPECTED_FPGA_HZ * elapsed_ms ) / 1000u );
+    const uint32_t measured_hz = (uint32_t) ( ( (uint64_t) ticks * 1000u ) / elapsed_ms );
+
+    snprintf( detail, capacity, "fpga=%lu.%03luMHz over %lums, %lu ticks",
+              (unsigned long) ( measured_hz / 1000000u ),
+              (unsigned long) ( ( measured_hz / 1000u ) % 1000u ), (unsigned long) elapsed_ms,
+              (unsigned long) ticks );
+    return verdict( within_tolerance( ticks, expected ) );
+}
+
+
 /* Left-aligned to a fixed column rather than dot-leadered. Dots read better, but
    every way of drawing them needs a "name too long" branch that no step name can
    currently reach, and an unreachable branch is a hole in the coverage gate that
    would have to be argued away rather than tested. */
 /// <summary>
 ///     Numbers the line one-based against the whole table even during a
-///     single-step run, so a lone result line still says which of the fourteen
+///     single-step run, so a lone result line still says which of the fifteen
 ///     steps produced it.
 /// </summary>
 static void print_result( uint32_t index, application_ibit_outcome_t outcome, const char *detail )

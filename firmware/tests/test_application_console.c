@@ -82,8 +82,8 @@ void test_console_starts_with_a_prompt_and_reports_idle_status_after_the_timeout
     poll_at( 20500 );
 
     TEST_ASSERT_EQUAL_STRING(
-        "forgix> \r\nid=B5 status=01 button=03 count=7 fpga_status=1\n"
-        "forgix> \r\nid=B5 status=01 button=03 count=8 fpga_status=1\nforgix> ",
+        "forgix> \r\nid=B6 status=01 button=03 count=7 fpga_status=1\n"
+        "forgix> \r\nid=B6 status=01 button=03 count=8 fpga_status=1\nforgix> ",
         MOCK_BSP_ConsoleOutput() );
 }
 
@@ -196,8 +196,8 @@ void test_completed_command_resumes_periodic_status_after_the_idle_timeout( void
     poll_at( 20100 );
 
     TEST_ASSERT_EQUAL_STRING(
-        "\r\nid=B5 status=01 button=03 count=9 fpga_status=1\n"
-        "forgix> \r\nid=B5 status=01 button=03 count=10 fpga_status=1\nforgix> ",
+        "\r\nid=B6 status=01 button=03 count=9 fpga_status=1\n"
+        "forgix> \r\nid=B6 status=01 button=03 count=10 fpga_status=1\nforgix> ",
         MOCK_BSP_ConsoleOutput() );
 }
 
@@ -216,7 +216,7 @@ void test_watch_uses_the_requested_period_and_stops_before_echoing_a_key( void )
     poll_at( 4100 );
     poll_at( 20000 );
 
-    TEST_ASSERT_EQUAL_STRING( "\r\nid=B5 status=01 button=03 count=11 fpga_status=1\nforgix> h",
+    TEST_ASSERT_EQUAL_STRING( "\r\nid=B6 status=01 button=03 count=11 fpga_status=1\nforgix> h",
                               MOCK_BSP_ConsoleOutput() );
 }
 

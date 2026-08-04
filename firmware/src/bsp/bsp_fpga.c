@@ -28,6 +28,16 @@
    as seen from inside the design rather than off the CDONE pin. */
 #define REG_STATUS ( (uint8_t) 0x01 )
 
+/* The FPGA's free-running 32 MHz tick counter. A write to the capture address
+   latches all 32 bits into a snapshot read back one byte per transaction at
+   TICK_0..TICK_3; the latch is what keeps the four reads describing one
+   instant over a bus that moves a single byte at a time. */
+#define REG_TICK_CAPTURE ( (uint8_t) 0x30 )
+#define REG_TICK_0 ( (uint8_t) 0x30 )
+#define REG_TICK_1 ( (uint8_t) 0x31 )
+#define REG_TICK_2 ( (uint8_t) 0x32 )
+#define REG_TICK_3 ( (uint8_t) 0x33 )
+
 
 
 
@@ -270,6 +280,26 @@ void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
 {
     const uint8_t tx[] = { CMD_WRITE, address, value };
     _Transaction( tx, 3, false );
+}
+
+/// <summary>
+///     Latches the FPGA's free-running 32 MHz counter and reads the snapshot
+///     back. The capture write is the sampling instant; the four byte reads
+///     that follow can take as long as they like without tearing the value.
+///     Five transactions of bit-banged bus, so a few hundred microseconds.
+/// </summary>
+/// <returns>
+///     The latched counter value, which wraps about every 134 seconds -- or
+///     junk if the FPGA is not answering, which no in-band check can tell
+///     apart from a real count.
+/// </returns>
+uint32_t BSP_FpgaTickSample( void )
+{
+    BSP_FpgaWriteRegister( REG_TICK_CAPTURE, 0u );
+    return (uint32_t) BSP_FpgaReadRegister( REG_TICK_0 ) |
+           ( (uint32_t) BSP_FpgaReadRegister( REG_TICK_1 ) << 8u ) |
+           ( (uint32_t) BSP_FpgaReadRegister( REG_TICK_2 ) << 16u ) |
+           ( (uint32_t) BSP_FpgaReadRegister( REG_TICK_3 ) << 24u );
 }
 
 
