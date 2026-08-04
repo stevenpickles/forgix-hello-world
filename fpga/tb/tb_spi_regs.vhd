@@ -186,7 +186,12 @@ begin
 
   stimulus : process is
 
-    variable result : byte_t;
+    variable result       : byte_t;
+    variable tick_a       : unsigned(31 downto 0);
+    variable tick_b       : unsigned(31 downto 0);
+    variable tick_c       : unsigned(31 downto 0);
+    variable capture_a_at : time;
+    variable capture_b_at : time;
 
     procedure ping (
       variable value : out byte_t
@@ -226,6 +231,29 @@ begin
       end_transaction(spi_cs_n);
 
     end procedure read_register;
+
+    -- Assembles the 32-bit snapshot from its four byte registers. Deliberately no
+    -- capture inside: keeping the latch a separate write is what lets the stability
+    -- check below read twice and demand the same answer both times.
+
+    procedure read_tick (
+      variable value : out unsigned(31 downto 0)
+    ) is
+
+      variable tick_byte : byte_t;
+
+    begin
+
+      read_register(REG_TICK_0, tick_byte);
+      value(7 downto 0)   := tick_byte;
+      read_register(REG_TICK_1, tick_byte);
+      value(15 downto 8)  := tick_byte;
+      read_register(REG_TICK_2, tick_byte);
+      value(23 downto 16) := tick_byte;
+      read_register(REG_TICK_3, tick_byte);
+      value(31 downto 24) := tick_byte;
+
+    end procedure read_tick;
 
   begin
 
@@ -291,6 +319,35 @@ begin
       report "button count clear failed"
       severity failure;
 
+    -- The tick counter's contract has three parts: a capture is atomic, reads do not
+    -- re-sample, and the count advances at exactly one tick per clk cycle. The two
+    -- captures below are byte-identical transactions, so the delay from each recorded
+    -- now to the latch inside the write cancels, and every wait in between is a
+    -- multiple of the bench's 10 ns clock period -- the delta assert can therefore
+    -- demand exact equality, and 10 us is a thousand cycles, enough low-byte carries
+    -- that a torn byte or a swapped lane cannot land on the right answer. The 134 s
+    -- wrap is not simulated; the MCU's modular subtraction owns it and Ceedling
+    -- covers that side.
+    capture_a_at := now;
+    write_register(REG_TICK_CAPTURE, x"00");
+    read_tick(tick_a);
+    write_register(REG_LED_R, x"77");
+    read_tick(tick_b);
+    assert tick_b = tick_a
+      report "snapshot changed without a capture"
+      severity failure;
+    wait for 10 us;
+    capture_b_at := now;
+    write_register(REG_TICK_CAPTURE, x"00");
+    read_tick(tick_b);
+    assert tick_b - tick_a = (capture_b_at - capture_a_at) / 10 ns
+      report "tick delta does not match elapsed clk cycles"
+      severity failure;
+    read_register(x"34", result);
+    assert result = x"EE"
+      report "address past the tick bytes should read as unmapped"
+      severity failure;
+
     begin_transaction(spi_cs_n);
     send_byte(spi_sck, spi_sdio_in, CMD_RESET);
     end_transaction(spi_cs_n);
@@ -305,6 +362,14 @@ begin
     read_register(REG_LED_ENABLE, result);
     assert result = x"01"
       report "reset did not enable LEDs"
+      severity failure;
+    -- CMD_RESET restored the register defaults above; the timebase must have kept
+    -- running through it. A counter that cleared here would be living in
+    -- register_file's reset arm, which is exactly the placement this assert forbids.
+    write_register(REG_TICK_CAPTURE, x"00");
+    read_tick(tick_c);
+    assert tick_c > tick_b
+      report "CMD_RESET cleared the free-running counter"
       severity failure;
 
     -- x"55" is not a command. The error bit it sets has to survive the end of this
