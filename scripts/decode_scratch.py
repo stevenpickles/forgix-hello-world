@@ -30,6 +30,10 @@ MARKERS = {
     7: "MENU - drawing or dispatching the front-panel menu",
     8: "IBIT - running a built-in test step",
     9: "EFFECT - painting the blinker or the advanced blinker",
+    # Not a code path: the built-in test writes this, reads it straight back to
+    # prove the register holds, and replaces it. Landing here means a reset
+    # caught a window a few microseconds wide.
+    0x5A5A5A5A: "SELF_TEST_PATTERN - inside the built-in test's marker round trip",
 }
 
 WATCHDOG_REASON_TIMER = 1 << 0

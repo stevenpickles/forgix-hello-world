@@ -319,8 +319,15 @@ static application_ibit_outcome_t step_watchdog(char *detail, size_t capacity) {
     const bsp_boot_reason reason = application_diagnostics_boot_reason();
     static const char *const REASON_TEXT[] = {"power-on", "brownout", "watchdog", "other"};
 
+    /* A pattern, not the marker the runner already wrote a few lines earlier. A
+       register stuck at APPLICATION_DIAGNOSTICS_MARKER_IBIT would have passed a
+       round trip that wrote the value it was already stuck at, which tests
+       nothing. Restored immediately afterwards so a reset during the rest of
+       this step still attributes itself to the built-in test. */
+    BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_SELF_TEST_PATTERN);
+    const bool marker_ok =
+        BSP_WatchdogMarkerGet() == APPLICATION_DIAGNOSTICS_MARKER_SELF_TEST_PATTERN;
     BSP_WatchdogMarkerSet(APPLICATION_DIAGNOSTICS_MARKER_IBIT);
-    const bool marker_ok = BSP_WatchdogMarkerGet() == APPLICATION_DIAGNOSTICS_MARKER_IBIT;
 
     snprintf(detail, capacity, "last boot %s, marker readback %s", REASON_TEXT[reason],
              marker_ok ? "ok" : "BAD");
