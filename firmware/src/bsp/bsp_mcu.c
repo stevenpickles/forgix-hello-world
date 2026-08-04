@@ -182,8 +182,7 @@ static void _ReadChipId( void )
     _mcuInfo.manufacturer =
         (uint16_t) ( ( chipId >> CHIP_ID_MANUFACTURER_SHIFT ) & CHIP_ID_MANUFACTURER_MASK );
     _mcuInfo.part = (uint16_t) ( ( chipId >> CHIP_ID_PART_SHIFT ) & CHIP_ID_PART_MASK );
-    _mcuInfo.revision =
-        (uint8_t) ( ( chipId >> CHIP_ID_REVISION_SHIFT ) & CHIP_ID_REVISION_MASK );
+    _mcuInfo.revision = (uint8_t) ( ( chipId >> CHIP_ID_REVISION_SHIFT ) & CHIP_ID_REVISION_MASK );
 }
 
 
