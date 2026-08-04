@@ -40,24 +40,15 @@ jobs:
     name: RP2354 firmware with embedded bitstream
     needs: bitstream
     runs-on: ubuntu-24.04
+    container:
+      image: ${{ vars.FORGIX_BUILD_IMAGE || 'ghcr.io/stevenpickles/forgix-build:20260804' }}
+      # A PAT, never GITHUB_TOKEN -- see .github/workflows/fpga-bitstream.yml.
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GHCR_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-
-      - name: Check out Pico SDK 2.3.0
-        uses: actions/checkout@v6
-        with:
-          repository: raspberrypi/pico-sdk
-          ref: 2.3.0
-          path: .ci/pico-sdk
-          submodules: recursive
-
-      - name: Install Arm build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
-            libstdc++-arm-none-eabi-newlib
 
       - name: Download the bitstream
         uses: actions/download-artifact@v7
@@ -69,12 +60,14 @@ jobs:
         run: |
           image="$GITHUB_WORKSPACE/dist/fpga/forgix_hello_world.bin"
           test -s "$image"
-          # No PICO_NO_PICOTOOL here, unlike ci.yml: the SDK fetches and builds
-          # picotool so pico_add_extra_outputs emits a flashable UF2.
+          # No PICO_NO_PICOTOOL here, unlike ci.yml: pico_add_extra_outputs
+          # must emit a flashable UF2. picotool_DIR points find_package at the
+          # image's prebuilt picotool 2.3.0 install, which replaces the SDK
+          # fetching and compiling picotool from git every release.
           cmake -S firmware -B build/firmware-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/.ci/pico-sdk" \
-            -DPICOTOOL_FETCH_FROM_GIT_PATH="$GITHUB_WORKSPACE/.ci/picotool" \
+            -DPICO_SDK_PATH="$PICO_SDK_PATH" \
+            -Dpicotool_DIR="$PICOTOOL_BIN_PATH" \
             -DFPGA_IMAGE="$image"
 
       - name: Compile and link

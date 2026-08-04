@@ -4,7 +4,7 @@ on:
   # A documentation-only change cannot alter what any check produces: nothing in
   # scripts/ or .github/ reads these files, they are only named in comments and
   # help text. Without this, fixing a typo in a README costs a full
-  # place-and-route and a 4.2 GB image pull.
+  # place-and-route and a multi-gigabyte image pull.
   #
   # Two things to know before touching this list. It skips the entire run rather
   # than only synthesis, because `paths-ignore` exists at workflow level and not
@@ -38,18 +38,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  application:
-    name: Ceedling application tests and coverage
+  # Every toolchain lives in the one private forgix-build image (see
+  # ci/forgix-build/Dockerfile), so the three short jobs that used to install
+  # their tools per run are one job paying one image pull. Per-check
+  # granularity survives as named steps.
+  verify:
+    name: Static checks, style gates, VHDL simulation, application tests
+    # Same guard as bitstream: fork pull requests hold no GHCR_TOKEN and
+    # cannot pull the private image. fork-verify below covers forks with the
+    # tools that are freely installable.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    container:
+      image: ${{ vars.FORGIX_BUILD_IMAGE || 'ghcr.io/stevenpickles/forgix-build:20260804' }}
+      # A PAT, never GITHUB_TOKEN: granting the package to this public
+      # repository would let fork pull requests pull it -- see docs/fpga-ci.md.
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GHCR_TOKEN }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Validate scripts and Efinity metadata
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
+          python -m compileall -q scripts
+          python scripts/check_repository.py
+          python scripts/test_efinity_tools.py
+
+      - name: Verify deterministic embedding
+        run: python scripts/test_embed_image.py
 
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
 
       - name: Enforce firmware style
         run: python scripts/check_firmware_style.py --strict
+
+      # Both formatters gate here for the same reason: their versions are
+      # pinned in the image, so option-spelling drift cannot fail the build
+      # over formatting that is locally correct. clang-format joining vsg
+      # closes the gap docs/firmware-style-rubric.md carried while the C
+      # formatter's version was unpinned. Style precedes simulation and tests
+      # because a violation needs no simulator to catch.
+      - name: Enforce firmware formatting
+        run: bash scripts/format_firmware.sh --check
+
+      - name: Enforce VHDL style
+        run: bash scripts/format_vhdl.sh --check
+
+      - name: Analyze, elaborate, and simulate
+        run: bash ./scripts/test.sh
 
       - name: Verify coverage summary rendering
         run: python scripts/test_render_coverage_summary.py
@@ -82,19 +125,38 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  vhdl:
-    name: VHDL 2008 simulation
+  # What a fork pull request gets: every check whose tools are freely
+  # installable, on a bare runner. Ceedling/coverage, clang-format, synthesis,
+  # and the firmware compile need the private image and run the moment a
+  # maintainer pushes the branch (push events carry secrets). Maintaining a
+  # second full toolchain definition here would recreate exactly the drift the
+  # unified image exists to eliminate.
+  fork-verify:
+    name: Open-tool checks (fork pull requests)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      # Unlike the firmware formatter's --check, which stays local-only because its
-      # clang-format version is not pinned, vsg is pip-pinned to 3.35.0 here and in
-      # fpga/vsg.yaml's header comment. Pinning removes the failure mode that kept the
-      # other gate out: option-spelling drift cannot fail the build over formatting that
-      # is locally correct, because every runner and every contributor resolves to the
-      # same vsg. Placed before GHDL since a style violation needs no simulator to catch.
+      - name: Validate scripts and Efinity metadata
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
+          python -m compileall -q scripts
+          python scripts/check_repository.py
+          python scripts/test_efinity_tools.py
+
+      - name: Verify deterministic embedding
+        run: python scripts/test_embed_image.py
+
+      - name: Enforce firmware layering
+        run: python scripts/check_firmware_layers.py
+
+      - name: Enforce firmware style
+        run: python scripts/check_firmware_style.py --strict
+
       - name: Enforce VHDL style
         run: |
           pip install vsg==3.35.0
@@ -109,37 +171,17 @@ jobs:
       - name: Analyze, elaborate, and simulate
         run: bash ./scripts/test.sh
 
-  image-embedding:
-    name: FPGA image embedding
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-
-      - name: Validate scripts and Efinity metadata
-        run: |
-          for script in scripts/*.sh; do
-            bash -n "$script"
-          done
-          python -m compileall -q scripts
-          python scripts/check_repository.py
-          python scripts/test_efinity_tools.py
-
-      - name: Verify deterministic embedding
-        run: python scripts/test_embed_image.py
+      - name: Verify coverage summary rendering
+        run: python scripts/test_render_coverage_summary.py
 
   bitstream:
     name: FPGA bitstream
     # Fork pull requests hold no secrets, so they cannot authenticate to the
-    # private Efinity image. Skipping keeps their runs green and readable; the
-    # thing that actually protects the tools is the missing GHCR_TOKEN, since a
-    # fork PR runs its own copy of the workflow files and could delete this line.
-    # Every other job still gives a fork's change a complete verification.
+    # private forgix-build image. Skipping keeps their runs green and readable;
+    # the thing that actually protects the tools is the missing GHCR_TOKEN,
+    # since a fork PR runs its own copy of the workflow files and could delete
+    # this line. fork-verify above still checks a fork's change with the tools
+    # that are freely installable.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
@@ -155,34 +197,22 @@ jobs:
     # produced, instead of the compile fixture -- otherwise the pair that CI
     # verifies is never the pair that ships.
     #
-    # The dependency is deliberately soft. A fork pull request skips the
-    # bitstream job, and a plain `needs:` would then skip this job too, quietly
-    # removing firmware coverage from exactly the changes that get the least
-    # trust. `!cancelled()` runs it regardless of what happened upstream, and
-    # the fixture is used when no bitstream was produced. A failed synthesis
-    # still fails the run; it just does not also hide whether the firmware
-    # compiles.
+    # The dependency is deliberately soft: `!cancelled()` runs this job even
+    # when synthesis failed, falling back to the fixture, so a broken bitstream
+    # does not also hide whether the firmware compiles. The fork clause exists
+    # because this job now runs inside the private image; forks used to get a
+    # fixture-based compile here and now get fork-verify instead.
     needs: bitstream
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-24.04
+    container:
+      image: ${{ vars.FORGIX_BUILD_IMAGE || 'ghcr.io/stevenpickles/forgix-build:20260804' }}
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GHCR_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-
-      - name: Check out Pico SDK 2.3.0
-        uses: actions/checkout@v6
-        with:
-          repository: raspberrypi/pico-sdk
-          ref: 2.3.0
-          path: .ci/pico-sdk
-          submodules: recursive
-
-      - name: Install Arm build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            cmake ninja-build gcc-arm-none-eabi libnewlib-arm-none-eabi \
-            libstdc++-arm-none-eabi-newlib
 
       - name: Download the bitstream this run produced
         if: needs.bitstream.result == 'success'
@@ -203,15 +233,17 @@ jobs:
             echo "path=$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" >> "$GITHUB_OUTPUT"
             echo "real=false" >> "$GITHUB_OUTPUT"
             echo "No bitstream from this run; embedding the compile fixture."
-            echo "Expected for a fork pull request, which cannot pull the tools."
           fi
 
       - name: Configure RP2354 firmware
         run: |
+          # PICO_SDK_PATH and the Arm toolchain come from the image; the flag
+          # is kept explicit so the SDK in use is visible in the log.
           # PICO_NO_PICOTOOL: CI only needs to know this compiles and links.
-          # release.yml omits it so the SDK builds picotool and emits a UF2.
+          # release.yml omits it so the SDK emits a UF2 via the image's
+          # prebuilt picotool.
           cmake -S firmware -B build/firmware-ci -G Ninja \
-            -DPICO_SDK_PATH="$GITHUB_WORKSPACE/.ci/pico-sdk" \
+            -DPICO_SDK_PATH="$PICO_SDK_PATH" \
             -DFPGA_IMAGE="${{ steps.image.outputs.path }}" \
             -DPICO_NO_PICOTOOL=1
 

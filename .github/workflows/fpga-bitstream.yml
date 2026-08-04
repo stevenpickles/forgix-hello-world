@@ -1,11 +1,13 @@
 name: FPGA bitstream
 
-# Place-and-route of the T8F49 design in the private Efinity container. The image
-# is registration-gated software that may not be redistributed, so the package is
+# Place-and-route of the T8F49 design in the private forgix-build container,
+# which carries Efinity alongside every other pinned toolchain. Efinity is
+# registration-gated software that may not be redistributed, so the package is
 # private and this workflow only runs for events that carry credentials: pushes
 # and pull requests from this repository, never from a fork.
 #
-# Build and publish the image with ./ci/efinity/build_image.sh; see docs/fpga-ci.md.
+# Build and publish the image with ./ci/forgix-build/build_image.sh; see
+# docs/fpga-ci.md.
 
 on:
   workflow_call:
@@ -34,9 +36,9 @@ jobs:
     name: Efinity T8F49 synthesis
     runs-on: ubuntu-24.04
     container:
-      # Override with the EFINITY_IMAGE repository variable to test a new release
-      # of the tools without editing the workflow.
-      image: ${{ vars.EFINITY_IMAGE || 'ghcr.io/stevenpickles/efinity:2026.1' }}
+      # Override with the FORGIX_BUILD_IMAGE repository variable to test a new
+      # image build without editing the workflow.
+      image: ${{ vars.FORGIX_BUILD_IMAGE || 'ghcr.io/stevenpickles/forgix-build:20260804' }}
       credentials:
         username: ${{ github.repository_owner }}
         # Deliberately a PAT and not GITHUB_TOKEN. Pulling with GITHUB_TOKEN
