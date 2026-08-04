@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Applies the firmware formatting rules with clang-format. The rules themselves live in
-# firmware/.clang-format; the parts a formatter cannot express are in docs/bsp-style-rubric.md
+# firmware/.clang-format; the parts a formatter cannot express are in docs/firmware-style-rubric.md
 # and scored by scripts/check_bsp_style.py.
 #
 # Pass --check to verify without writing, which is what CI should call.

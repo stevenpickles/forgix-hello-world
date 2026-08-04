@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score BSP sources against the formatting rubric in docs/bsp-style-rubric.md.
+"""Score BSP sources against the formatting rubric in docs/firmware-style-rubric.md.
 
 Advisory by default: prints a per-file report and exits 0 even when files do not conform, because
 the BSP has not been reformatted yet. Pass --strict to make any violation fail, which is how this
@@ -426,7 +426,7 @@ def main() -> int:
         f"\nBSP style: {len(files)} files, {passed_rules}/{total_rules} rule checks clean "
         f"({percent:.0f}%), {total_violations} violations"
     )
-    print("Rubric: docs/bsp-style-rubric.md. Rules marked review-only there are not checked here.")
+    print("Rubric: docs/firmware-style-rubric.md. Rules marked review-only there are not checked here.")
     if total_violations and arguments.strict:
         return 1
     return 0

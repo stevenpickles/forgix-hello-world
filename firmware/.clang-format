@@ -1,6 +1,6 @@
 # Formatting for the whole firmware tree (src and tests). The full rules,
 # including everything clang-format cannot express, live in
-# docs/bsp-style-rubric.md; this file is the subset a formatter can apply.
+# docs/firmware-style-rubric.md; this file is the subset a formatter can apply.
 # scripts/check_bsp_style.py scores the rest.
 #
 # Lives at firmware/ on purpose. clang-format reads the nearest config walking

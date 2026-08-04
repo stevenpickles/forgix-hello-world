@@ -1,24 +1,37 @@
-# BSP formatting rubric
+# Firmware formatting rubric
 
-Applies to `firmware/src/bsp/*.{h,c}` and the hand-written fakes in
-`firmware/tests/support/mock_bsp_*.{h,c}`, which have been kept in lockstep with the package they
-stand in for.
+Applies to the whole firmware tree, in three profiles:
 
-Derived from `../comms-v4-firmware/bsp/`, using `bsp_uarts.h` and `bsp_uarts.c` as the reference
+| Profile | Files |
+|---|---|
+| **bsp** | `firmware/src/bsp/*.{h,c}`, and the hand-written fakes in `firmware/tests/support/mock_bsp_*.{h,c}` that have been kept in lockstep with the package they stand in for |
+| **application** | `firmware/src/application/*.{h,c}`, `firmware/src/main.c`, `firmware/src/diagnostics/led_only_main.c` |
+| **tests** | `firmware/tests/test_*.c` |
+
+Sections A to D are the rules. They are stated throughout as the **bsp** profile has them, because
+that is the profile they were derived from; section E then lists, rule by rule, where the other two
+differ. A rule section E does not mention applies to all three unchanged, which is most of them —
+the layers differ in what they call things, not in how they are laid out.
+
+The rules are derived from `../comms-v4-firmware/bsp/`, using `bsp_uarts.h` and `bsp_uarts.c` as the reference
 pair. That repo carries the convention consistently across 19 files but has never written it down:
 no `.clang-format`, no `.editorconfig`, no style guide, and no C linter enabled in its
 `.trunk/trunk.yaml`. The convention survives there by copy-paste, which is why its newest files
 carry the most drift. This document is the written form.
 
-**Status: applied.** All 28 files score 100% on the automated rules. `scripts/check_bsp_style.py
---strict` runs in CI, so a regression fails the build. Reproduce the formatter half with
-`scripts/format_bsp.sh`, or `--check` to verify without writing.
+**Status: applied to the bsp profile.** All 34 files in it score 100% on the automated rules.
+`scripts/check_bsp_style.py --strict` runs in CI, so a regression fails the build. Reproduce the
+formatter half with `scripts/format_firmware.sh`, or `--check` to verify without writing. The
+application and test profiles are being brought in now; the status tables below still count the BSP
+only.
 
 That score is not a claim that the BSP is well documented — D2, the rule that a summary must add
 information, is the most important one here and no script can judge it. The checker confirms the
 blocks exist.
 
-Every rule has a stable ID. The checker cites these, so renumbering them breaks its output.
+Every rule has a stable ID. The checker cites these, so renumbering them breaks its output. That is
+also why section E is a table of deltas rather than a second set of rules: one vocabulary, three
+dialects.
 
 ---
 
@@ -357,7 +370,157 @@ meaning belongs in the summary prose or in the parameter name.
 
 ---
 
-## E. Deviations from the reference, and why
+## E. Layer profiles
+
+A profile is A–D with a short list of named deltas. None of the deltas below was invented for this
+document: each one records what its layer already does across every file in it. That is the whole
+argument for having profiles at all — the application layer is not sloppy, it is consistent with
+something other than the BSP, and a rename that made it consistent with the BSP would touch every
+call site to buy nothing. Where a layer was genuinely inconsistent with itself, the rubric takes
+the majority form and the reformat fixes the outlier.
+
+### E1 — Delta table
+
+| Rule | application | tests |
+|---|---|---|
+| A1 header skeleton | as written | n/a — no test headers |
+| A2 source skeleton | as written; `led_only_main.c` is the one file with a preamble to move (E7) | as written |
+| A3 banner form | as written | as written |
+| A4 / A5 sections | as written | as written, with the placement rule in E6 |
+| A6 / A7 | as written | as written |
+| A8 include grouping | own header, C standard, project (E5) | `"unity.h"`, C standard, project (E5) |
+| B1 public functions | `application_` + snake_case, plus `main` | `test_*`, `setUp`, `tearDown` (E2) |
+| B2 subsystem before verb | as written: `application_console_set_echo`, not `application_set_console_echo` | n/a |
+| B3 private functions | bare snake_case — `parse_byte`, `mark_write`, `step_psram` | bare snake_case — `poll_at`, `open_menu_at` |
+| B4 file-scope variables | bare snake_case when mutable, SCREAMING_SNAKE when `static const` (E3) | same |
+| B5 struct typedefs | `<name>_t`, **anonymous tag** (E4) | n/a — tests declare no types |
+| B6 enum typedefs | `<name>_t`, **anonymous tag** (E4) | n/a |
+| B7 enum constants in headers | `APPLICATION_` + SCREAMING_SNAKE | n/a |
+| B8 function-pointer typedefs | `<module>_<event>_fn` as written (`ibit_run_fn`); no `fn_` prefix on fields or parameters | n/a |
+| B9 `ptr_` prefix | not used | not used |
+| B10 locals | snake_case, not camelCase | snake_case |
+| B11 include guards | as written — already `FORGIX_<STEM>_H` throughout | n/a |
+| C1 – C10 | as written | as written |
+| D1 / D3 doc blocks | required, on definitions, including the two `main`s | **not required** (E8) |
+| D2 a summary must add information | as written, and it is still the rule that matters | n/a |
+| D4 why-prose in the body | as written | as written — this is what test files already have |
+| D5 no `///` in headers | as written, and headers carry `/* … */` contract prose (E9) | n/a |
+| D6 `<param>` tags | as written — not required | n/a |
+
+One outlier is known and is a fix rather than a delta: `channelIndex`, the loop variable in
+`application_effects.c`'s aurora blend, is the single camelCase local in the layer. It becomes
+`channel_index`.
+
+### E2 — Public names the layer does not own
+
+`application_*` is the application's namespace and it is already applied without exception, so B1
+needs only the prefix swapped. Two names sit outside it and cannot be renamed:
+
+- `main`, in both `firmware/src/main.c` and `firmware/src/diagnostics/led_only_main.c`. The linker
+  picks that name, not us.
+- `setUp`, `tearDown` and every `test_*` in the test profile. Ceedling's generated runner calls
+  them by name; `setUp`/`tearDown` are camelCase because Unity spells them that way.
+
+This is the same exemption A5's `Interrupt Handler Overrides` section exists to make visible for the
+BSP, arriving by a different route: there the vendor owns the name, here the toolchain does.
+
+### E3 — File-scope variables split on mutability
+
+The application writes its module state into one lower-case singleton per file — `console`, `ibit`,
+`ui`, `diagnostics`, `effects` — and its constant tables in SCREAMING_SNAKE: `MENU`, `STEPS`,
+`WHEEL`, `HEARTBEAT`, `AURORA`, `OUTCOME_TEXT`. The split is consistent across every file and it is
+useful: at a glance, upper case at file scope is a table you may read and lower case is state
+somebody mutates. B4 collapses both into `_camelCase`; the application profile keeps them apart.
+
+Test files do the same thing for the same reason — `activity_starts` counts, `FAKE_ACTIVITY` does
+not change.
+
+### E4 — Enum typedefs keep their `_t`, and tags are anonymous
+
+The BSP's B5/B6 asymmetry — structs end `_t`, enums do not — is inherited from the reference and is
+deliberate there. The application does not have it: `console_state_t`, `status_mode_t`,
+`ibit_step_t`, `application_ibit_outcome_t`, all `_t`, all with anonymous tags.
+
+This is a documented deviation rather than a rename, and the reason is asymmetric cost.
+`application_ibit_outcome_t` is a public type: it is the return type of every built-in test step,
+it appears in the tests, and dropping its `_t` would edit every consumer to make one identifier
+agree with a convention the reference itself calls an asymmetry. The tags are a separate matter —
+none of these types is ever named as `struct X` or `enum X`, so the `_t_tag` spelling would add
+fourteen identifiers that nothing refers to.
+
+### E5 — Include order is per layer
+
+B-side note, but it belongs here: A8 puts the C standard headers *last* for the BSP, after the
+vendor and SDK ones. The application has no vendor headers to place and orders its groups the other
+way:
+
+1. the header this file implements, alone
+2. C standard headers
+3. project headers
+
+Test files replace the first group with `"unity.h"` — a test implements no header, and Unity's is
+the one include that must come first. Within each group the entries are alphabetical, with the
+generated `mock_auto_*` fakes forming a run after the hand-written `mock_bsp_*` ones.
+
+Grouping is hand-maintained. The config sets `SortIncludes: Never` on purpose: clang-format sorts
+*within* a group and would happily merge two groups it cannot tell apart, and the group boundaries
+here carry meaning a blank line is the only record of.
+
+### E6 — Where test functions live
+
+`setUp`, `tearDown` and the `test_*` functions go under `Public Function Definitions`. They are not
+called from anywhere a reader can see, which makes this look wrong, and it is not: the generated
+runner is a separate translation unit that calls all three by name, so they are as public as
+anything in the BSP. The `static` helpers — `poll_at`, `open_menu_at`, the callbacks handed to
+CMock — go under `Private Function Declarations` and `Private Function Definitions` as usual.
+
+### E7 — `led_only_main.c`'s preamble
+
+A2 says a `.c` file opens on its first banner with no preamble. `led_only_main.c` opens with ten
+lines of file-header prose explaining what the image is for and why stdio is absent from it. The
+prose is worth keeping and A2 is worth keeping, so the prose moves below the first banner as a
+block comment, unchanged. No other source in the tree has a preamble.
+
+### E8 — Test files carry no `<summary>` blocks
+
+D1 requires a summary on every definition, D3 a `<returns>` on every non-void one, and the test
+profile is exempt from both. The exemption follows from D2 rather than working around it: a test's
+name is its summary. Given
+
+```c
+void test_menu_returns_to_the_ui_without_consulting_the_fpga( void )
+```
+
+there is no sentence a `<summary>` could add, and the sentence it would get is a restatement of the
+name — which is exactly the failure D2 names as a violation rather than a formality satisfied. The
+`static` helpers in a test file are exempt for the same reason: `poll_at` is not concealing
+anything.
+
+What test files do have, and keep, is D4. The `/* … */` blocks above the interesting tests explain
+why the case exists and what regression it is standing guard over, which is the one thing the
+function name cannot carry. Those are the comments the reformat must not disturb.
+
+### E9 — Application headers document the contract
+
+D5 says documentation lives on the definition, and the automated half of it — no `///` in a header
+— holds for every profile. The application reads the rest of D5 differently: its headers carry
+per-declaration `/* … */` prose, and a good deal of it. `application_diagnostics.h` spends eleven
+lines on why `release_led` and `reclaim_led` must be called in pairs, and eight on why nothing may
+call `BSP_WatchdogBootReason` again after start-up. `application_ui.h` spends seventeen on what an
+activity is allowed to do inside `poll`.
+
+That is contract prose, not documentation duplicated from the definition, and it is addressed to
+the caller reading the header — which is the only place it can be read from. It stays. D5's
+prohibition remains what the checker enforces: no `///` blocks in headers, so there is exactly one
+place a `<summary>` can live.
+
+---
+
+## F. Deviations from the reference, and why
+
+These are the bsp profile's departures from comms-v4, decided when A–D were written. Section E's
+deltas are a different kind of thing — those are departures from A–D, decided by code that already
+existed.
 
 | Deviation | Reason |
 |---|---|
@@ -382,9 +545,13 @@ under `#ifdef BSP_NASSERT`, `BSP_ASSERT` and `BSP_ASSERT_ID` compile out but `BS
 
 ---
 
-## F. Conformance table
+## G. Conformance table
 
 A green checker run does **not** mean a file conforms. Roughly a third of the rubric needs a human.
+
+The column says whether a rule is mechanically decidable, which is a property of the rule and not of
+the profile. Section E's deltas change what a rule matches, not whether a script can match it, so
+this table reads the same for all three profiles.
 
 | Rule | Automated | Notes |
 |---|---|---|
@@ -423,19 +590,21 @@ A green checker run does **not** mean a file conforms. Roughly a third of the ru
 
 ## Adoption
 
-The BSP does not conform today. Reformatting it is a separate, larger job than writing this down,
-and adopting B5/B6 in particular would rename the package's types — struct typedefs gain `_t_tag`
-tags, and **enum typedefs lose their `_t`**, so `bsp_boot_reason_t` becomes `bsp_boot_reason`. That
-reaches application code, the fakes and the tests, and it partly reverses the "functions only"
-scope of the earlier rename.
+The BSP did not conform when this was written. Reformatting it was a separate, larger job than
+writing it down, and adopting B5/B6 in particular renamed the package's types — struct typedefs gain `_t_tag`
+tags, and **enum typedefs lost their `_t`**, so `bsp_boot_reason_t` became `bsp_boot_reason`. That
+reached application code, the fakes and the tests, and it partly reversed the "functions only"
+scope of the earlier rename. It is also why the application profile does not adopt B6 (E4): the
+same argument that made the BSP rename worth doing makes a second one, on types the BSP does not
+own, worth skipping.
 
 Done, in this order:
 
-1. Everything a formatter can apply, via `scripts/format_bsp.sh`.
+1. Everything a formatter can apply, via `scripts/format_firmware.sh`.
 2. Naming and documentation by hand, in commits grouped by concern.
 3. `scripts/check_bsp_style.py --strict` in `.github/workflows/ci.yml`.
 
-**`scripts/format_bsp.sh --check` is deliberately not in CI.** The config uses options whose
+**`scripts/format_firmware.sh --check` is deliberately not in CI.** The config uses options whose
 spelling and behaviour changed across clang-format versions — `SpacesInParentheses` became
 `SpacesInParens` in 17, `Cpp11BracedListStyle` became an enum in 21 — and the runner's version is
 not pinned. A version mismatch would fail the build over formatting that is locally correct.
