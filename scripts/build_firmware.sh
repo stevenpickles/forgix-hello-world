@@ -3,15 +3,9 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/scripts/env.sh"
-# Separate build trees per platform: a CMake cache records absolute paths, so
-# the Windows tree and the forgix-build container cannot share one directory --
-# CMake refuses the mismatch outright when the same checkout is mounted into
-# the container.
-if command -v cygpath >/dev/null 2>&1; then
-  build_dir="$repo_root/build/firmware"
-else
-  build_dir="$repo_root/build/firmware-linux"
-fi
+# The per-platform build tree split lives in env.sh, shared with flash.sh so
+# the builder and the flasher cannot disagree about where the images are.
+build_dir="$FORGIX_FIRMWARE_BUILD_DIR"
 fpga_image="$repo_root/fpga/outflow/forgix_hello_world.bin"
 firmware_binary="$build_dir/forgix_hello_world.bin"
 uf2="$build_dir/forgix_hello_world.uf2"

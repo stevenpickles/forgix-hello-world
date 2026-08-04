@@ -10,6 +10,7 @@
 # installations are unaffected. Set any of these before sourcing to override:
 #
 #   EFINITY_HOME PICO_SDK_PATH GHDL_BIN_PATH PICOTOOL_BIN_PATH PICO_TINYUSB_PATH
+#   FORGIX_FIRMWARE_BUILD_DIR
 #
 # Inside the forgix-build container (FORGIX_BUILD_CONTAINER=1) every one of
 # them arrives pre-set from the image's ENV contract, so the Windows defaults
@@ -70,6 +71,21 @@ if [[ -z "${PICO_TINYUSB_PATH:-}" ]]; then
   done
   unset forgix_env_candidate forgix_env_sdk_posix
 fi
+
+# Separate firmware build trees per platform: a CMake cache records absolute
+# paths, so the Windows tree and the forgix-build container cannot share one
+# directory -- CMake refuses the mismatch outright when the same checkout is
+# mounted into the container. Decided here, once, so the script that builds
+# into the tree and the script that flashes out of it cannot disagree about
+# where it is. cygpath presence is the platform signal, as in build_fpga.sh.
+if [[ -z "${FORGIX_FIRMWARE_BUILD_DIR:-}" ]]; then
+  if command -v cygpath >/dev/null 2>&1; then
+    FORGIX_FIRMWARE_BUILD_DIR="$forgix_env_root/build/firmware"
+  else
+    FORGIX_FIRMWARE_BUILD_DIR="$forgix_env_root/build/firmware-linux"
+  fi
+fi
+export FORGIX_FIRMWARE_BUILD_DIR
 
 forgix_env_report() {
   local name value

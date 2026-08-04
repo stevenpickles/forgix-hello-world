@@ -4,13 +4,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/scripts/env.sh"
 
 # Optional image name, without the .uf2 suffix. The lockup investigation also
-# builds forgix_led_only_diagnostic.
+# builds forgix_led_only_diagnostic. The build tree comes from env.sh, the same
+# per-platform split build_firmware.sh writes into -- a hardcoded Windows path
+# here made this script look in an empty directory on every other host.
 image="${1:-forgix_hello_world}"
-uf2="$repo_root/build/firmware/$image.uf2"
+uf2="$FORGIX_FIRMWARE_BUILD_DIR/$image.uf2"
 if [[ ! -f "$uf2" ]]; then
   printf 'UF2 not found: %s\n' "$uf2" >&2
   printf 'Available images:\n' >&2
-  find "$repo_root/build/firmware" -maxdepth 1 -name '*.uf2' -exec basename {} .uf2 \; 2>/dev/null |
+  find "$FORGIX_FIRMWARE_BUILD_DIR" -maxdepth 1 -name '*.uf2' -exec basename {} .uf2 \; 2>/dev/null |
     sed 's/^/  /' >&2 || true
   printf 'Run ./scripts/build_firmware.sh first.\n' >&2
   exit 1
