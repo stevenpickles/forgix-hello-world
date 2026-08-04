@@ -410,19 +410,25 @@ bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uin
    it, so the useful check is that it still reads back coherently: a stack
    pointer in SRAM and a reset vector inside the flash window. Bus contention on
    the shared QSPI lines corrupts reads rather than stopping them, so a garbled
-   vector table is exactly what a CS1 problem looks like from here. */
+   vector table is exactly what a CS1 problem looks like from here -- which is
+   why the read goes through the no-allocate alias: the first line of flash is
+   essentially guaranteed cache-resident from boot, and a read served out of
+   SRAM cache verifies the cache, not the QSPI bus this check exists to accuse.
+   The values compared are unchanged; the reset vector's contents still name
+   the cached window, only the fetch path moves. */
 /// <summary>
 ///     Checks the vector table rather than whether flash reads at all, which is
-///     already proven by this code executing. Bus contention corrupts reads
-///     instead of stopping them, so a garbled vector table is what a chip-select
-///     fault looks like from here.
+///     already proven by this code executing, and reads it over the QSPI bus
+///     through the no-allocate alias rather than out of the XIP cache. Bus
+///     contention corrupts reads instead of stopping them, so a garbled vector
+///     table is what a chip-select fault looks like from here.
 /// </summary>
 /// <returns>
 ///     True if the stack pointer and reset vector are both plausible.
 /// </returns>
 static bool _FlashReadsCoherently( const uint32_t flashBytes )
 {
-    const uint32_t *ptr_vectors = (const uint32_t *) XIP_BASE;
+    const volatile uint32_t *ptr_vectors = (const volatile uint32_t *) XIP_NOCACHE_NOALLOC_BASE;
     const uint32_t stackPointer = ptr_vectors[ 0 ];
     const uint32_t resetVector = ptr_vectors[ 1 ];
 
