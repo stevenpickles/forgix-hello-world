@@ -460,7 +460,8 @@ void test_fpga_configuration_fails_on_a_wrong_design_id(void) {
 /* A walking pattern, because 0x00 and 0xFF are what a bus stuck low or high
    returns and either would pass a test that wrote them. */
 void test_fpga_register_bus_round_trips_a_walking_pattern_and_restores_the_colour(void) {
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_FpgaReadStatus_ExpectAndReturn(0x01u);
     BSP_LedGet_ExpectAndReturn(led_state(1, 2, 3, 4));
     BSP_LedSet_Expect(0x5au, 0xa5u, 0x3cu, 0xc3u);
@@ -484,7 +485,8 @@ void test_fpga_register_bus_fails_when_any_single_register_misreads(void) {
     };
 
     for (uint32_t index = 0; index < 4u; ++index) {
-        BSP_FpgaIsReady_ExpectAndReturn(true);
+        BSP_FpgaCdone_ExpectAndReturn(true);
+        BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
         BSP_FpgaReadStatus_ExpectAndReturn(0x01u);
         BSP_LedGet_ExpectAndReturn(led_state(1, 2, 3, 4));
         BSP_LedSet_Expect(0x5au, 0xa5u, 0x3cu, 0xc3u);
@@ -495,13 +497,26 @@ void test_fpga_register_bus_fails_when_any_single_register_misreads(void) {
     }
 }
 
+/* The skip decision is this run's evidence, not what bring-up recorded. An FPGA
+   that answers CDONE but returns the wrong design ID is not one the LED and
+   button tests can say anything about either. */
+void test_a_wrong_design_id_also_stands_the_dependent_steps_down(void) {
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(0x00u);
+
+    const char *output = run_step(STEP_LED);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "SKIP"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "FPGA not responding; this test sits behind it"));
+}
+
 /* Skipped rather than failed: the LED and the button are both behind the FPGA,
    so a verdict on either would describe the bus and not the part being named. */
 void test_steps_behind_the_fpga_are_skipped_when_it_is_unreachable(void) {
     const uint32_t behind[] = {STEP_FPGA_REGISTERS, STEP_LED, STEP_BUTTON};
 
     for (uint32_t index = 0; index < 3u; ++index) {
-        BSP_FpgaIsReady_ExpectAndReturn(false);
+        BSP_FpgaCdone_ExpectAndReturn(false);
         const char *output = run_step(behind[index]);
         TEST_ASSERT_NOT_NULL(strstr(output, "SKIP"));
         TEST_ASSERT_NOT_NULL(strstr(output, "FPGA not responding; this test sits behind it"));
@@ -514,7 +529,8 @@ static void expect_led_phase(uint8_t red, uint8_t green, uint8_t blue) {
 }
 
 void test_led_drives_each_channel_in_turn_and_restores_the_previous_colour(void) {
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_LedGet_ExpectAndReturn(led_state(9, 8, 7, 6));
     expect_led_phase(255, 0, 0);
     expect_led_phase(0, 255, 0);
@@ -553,7 +569,8 @@ void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back(
     };
 
     for (uint32_t index = 0; index < 3u; ++index) {
-        BSP_FpgaIsReady_ExpectAndReturn(true);
+        BSP_FpgaCdone_ExpectAndReturn(true);
+        BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
         BSP_LedGet_ExpectAndReturn(led_state(9, 8, 7, 6));
         BSP_LedSet_Expect(255, 0, 0, 128);
         BSP_LedGet_ExpectAndReturn(corrupted[index]);
@@ -572,7 +589,8 @@ void test_button_passes_when_the_count_and_the_level_both_change(void) {
     bsp_button_state_t before = {.level = 1, .count = 4};
     bsp_button_state_t pressed = {.level = 0, .count = 5};
 
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_ButtonGetState_ExpectAndReturn(before);
     BSP_ButtonGetState_ExpectAndReturn(pressed);
 
@@ -595,7 +613,8 @@ void test_button_ignores_a_count_that_moves_without_the_level(void) {
     bsp_button_state_t before = {.level = 1, .count = 4};
     bsp_button_state_t half = {.level = 1, .count = 5};
 
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_ButtonGetState_ExpectAndReturn(before);
     BSP_ButtonGetState_ExpectAndReturn(half);
     BSP_ButtonGetState_ExpectAndReturn(half);
@@ -618,7 +637,8 @@ void test_button_ignores_a_count_that_moves_without_the_level(void) {
 void test_button_times_out_without_failing_when_nobody_presses_it(void) {
     bsp_button_state_t idle = {.level = 1, .count = 4};
 
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_ButtonGetState_ExpectAndReturn(idle);
     BSP_ButtonGetState_ExpectAndReturn(idle);
     BSP_ButtonGetState_ExpectAndReturn(idle);
@@ -662,9 +682,9 @@ static void expect_sequence_without_the_fpga(void) {
     BSP_FpgaCdone_ExpectAndReturn(false);
     BSP_FpgaPing_ExpectAndReturn(0x00u);
     BSP_FpgaStatusPin_ExpectAndReturn(false);
-    BSP_FpgaIsReady_ExpectAndReturn(false);
-    BSP_FpgaIsReady_ExpectAndReturn(false);
-    BSP_FpgaIsReady_ExpectAndReturn(false);
+    BSP_FpgaCdone_ExpectAndReturn(false);
+    BSP_FpgaCdone_ExpectAndReturn(false);
+    BSP_FpgaCdone_ExpectAndReturn(false);
 }
 
 static void drive_to_completion(const application_activity_t *activity, uint32_t from_ms,
@@ -721,7 +741,8 @@ void test_the_soak_tallies_across_iterations_and_starts_the_next_run(void) {
 }
 
 void test_aborting_after_the_led_step_puts_the_previous_colour_back(void) {
-    BSP_FpgaIsReady_ExpectAndReturn(true);
+    BSP_FpgaCdone_ExpectAndReturn(true);
+    BSP_FpgaPing_ExpectAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_LedGet_ExpectAndReturn(led_state(9, 8, 7, 6));
     expect_led_phase(255, 0, 0);
 
@@ -772,7 +793,6 @@ static void ignore_a_healthy_board(void) {
     BSP_ClocksReport_IgnoreAndReturn(healthy_clocks());
     BSP_MemoryCheck_IgnoreAndReturn(healthy_memory());
     BSP_AdcTemperature_IgnoreAndReturn(temperature_sample(800, 24500));
-    BSP_FpgaIsReady_IgnoreAndReturn(true);
     BSP_FpgaCdone_IgnoreAndReturn(true);
     BSP_FpgaPing_IgnoreAndReturn(BSP_FPGA_DESIGN_ID);
     BSP_FpgaStatusPin_IgnoreAndReturn(true);

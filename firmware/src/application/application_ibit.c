@@ -144,6 +144,16 @@ static application_ibit_outcome_t verdict(bool ok) {
     return ok ? APPLICATION_IBIT_PASS : APPLICATION_IBIT_FAIL;
 }
 
+/* Asked of the FPGA itself, every time, rather than read from BSP_FpgaIsReady.
+   That flag records what bring-up found and is only rewritten by a
+   reconfiguration, so an FPGA that died after boot still reports ready and the
+   steps that sit behind it would run and produce failures of their own instead
+   of standing down. Three extra pings across a sequence is a cheap price for a
+   skip decision made on this run's evidence. */
+static bool fpga_reachable(void) {
+    return BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID;
+}
+
 
 
 
@@ -468,7 +478,7 @@ static void begin_step(uint32_t index) {
     ibit.phase = 0;
     ibit.led_saved = false;
     ibit.step_started_ms = ibit.current_time_ms;
-    ibit.skipping = STEPS[index].needs_fpga && !BSP_FpgaIsReady();
+    ibit.skipping = STEPS[index].needs_fpga && !fpga_reachable();
 }
 
 static void begin_run(uint32_t first_index, uint32_t last_index) {
