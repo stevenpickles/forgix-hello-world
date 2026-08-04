@@ -48,6 +48,12 @@ jobs:
         # the caller's fork guard and pull the tools. Secrets are never issued to
         # fork pull requests, so a PAT cannot be reached that way.
         password: ${{ secrets.GHCR_TOKEN }}
+    # sh is the container-job default and lacks [[ and (( )) -- these steps
+    # happen to be POSIX-clean, but one shell across every containerized job
+    # beats remembering which job is the exception (see ci.yml).
+    defaults:
+      run:
+        shell: bash
     outputs:
       image-sha256: ${{ steps.image.outputs.sha256 }}
     steps:

@@ -56,6 +56,12 @@ jobs:
       credentials:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GHCR_TOKEN }}
+    # Inside a container job the default step shell is sh (dash on this
+    # image), which has no [[ or (( )); on a bare runner GitHub defaults to
+    # bash. Pin bash so the same step syntax means the same thing in both.
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Check out repository
@@ -210,6 +216,10 @@ jobs:
       credentials:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GHCR_TOKEN }}
+    # sh is the container-job default and lacks [[ and (( )) -- see verify.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

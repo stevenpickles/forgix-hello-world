@@ -46,6 +46,10 @@ jobs:
       credentials:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GHCR_TOKEN }}
+    # sh is the container-job default and lacks [[ and (( )) -- see ci.yml.
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
