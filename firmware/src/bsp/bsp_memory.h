@@ -72,6 +72,35 @@ typedef struct bsp_memory_psram_identity_t_tag
 } bsp_memory_psram_identity_t;
 
 
+enum
+{
+    /* One sweep pass's worth of traffic: 64 KiB is a few milliseconds through
+       the uncached window, far inside the foreground poll contract and the
+       watchdog period. */
+    BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES = 64 * 1024,
+};
+
+
+/* The three passes of a moving-inversion sweep. Every chunk of a pass runs
+   before any chunk of the next, which is what catches address aliasing: a
+   smaller die answering a 2 MByte window puts an early chunk's pattern where a
+   later chunk's is expected, and only a verify that starts after every write
+   has landed can see that. */
+typedef enum bsp_memory_sweep_op_tag
+{
+    BSP_MEMORY_SWEEP_WRITE = 0,      /* write the address-derived pattern */
+    BSP_MEMORY_SWEEP_VERIFY_INVERT,  /* verify it, then write its inverse */
+    BSP_MEMORY_SWEEP_VERIFY_INVERSE, /* verify the inverse */
+} bsp_memory_sweep_op;
+
+
+typedef struct bsp_memory_sweep_result_t_tag
+{
+    bool ok;               /* write chunks always pass; verify chunks report the check */
+    uint32_t fail_address; /* uncached-alias address of the first mismatch, else 0 */
+} bsp_memory_sweep_result_t;
+
+
 
 
 /***************************************************************************************
@@ -87,6 +116,11 @@ bsp_memory_report_t BSP_MemoryCheck( void );
    so an abort can never leave the device reset but not re-initialised. Costs a
    few bus transactions with interrupts briefly off; safe to call every run. */
 bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void );
+
+/* One chunk of one sweep pass. Chunk state lives with the caller, so the BSP
+   holds nothing that can go stale if a run is aborted between chunks. */
+bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op,
+                                                     uint32_t chunk_index );
 
 #ifdef __cplusplus
 }

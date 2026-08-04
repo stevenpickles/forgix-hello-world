@@ -276,6 +276,66 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
 }
 
 
+/* The pattern is each word's own uncached-alias address, XORed with a constant
+   so word zero is not the all-zeroes a dead bus also returns. Address-derived
+   is the property that matters: a smaller die aliasing the window lands an
+   early chunk's pattern where a later chunk's belongs, and the value itself
+   says which address the data actually came from. */
+/// <summary>
+///     Runs one chunk of one moving-inversion sweep pass through the uncached
+///     window: plain word loops, interrupts on, the QMI arbitrating against
+///     chip-select-0 XIP in hardware. Write chunks always report ok; verify
+///     chunks report the first mismatch and its address.
+/// </summary>
+/// <returns>
+///     Whether the chunk held, and the failing address when it did not.
+/// </returns>
+bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op,
+                                                     uint32_t chunk_index )
+{
+    bsp_memory_sweep_result_t result = { 0 };
+
+#if FORGIX_QSPI_PSRAM
+    const uint32_t base =
+        (uint32_t) PSRAM_NOCACHE_BASE + chunk_index * (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
+    volatile uint32_t *const ptr_chunk = (volatile uint32_t *) base;
+    const uint32_t words = (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES / (uint32_t) sizeof( uint32_t );
+
+    result.ok = true;
+    for ( uint32_t index = 0; index < words; ++index )
+    {
+        const uint32_t address = base + index * (uint32_t) sizeof( uint32_t );
+        const uint32_t pattern = address ^ 0x5a5a5a5au;
+
+        if ( op == BSP_MEMORY_SWEEP_WRITE )
+        {
+            ptr_chunk[ index ] = pattern;
+        }
+        else
+        {
+            const uint32_t expected =
+                op == BSP_MEMORY_SWEEP_VERIFY_INVERT ? pattern : ~pattern;
+            if ( ptr_chunk[ index ] != expected )
+            {
+                result.ok = false;
+                result.fail_address = address;
+                return result;
+            }
+            if ( op == BSP_MEMORY_SWEEP_VERIFY_INVERT )
+            {
+                ptr_chunk[ index ] = ~pattern;
+            }
+        }
+    }
+#else
+    (void) op;
+    (void) chunk_index;
+#endif
+
+    return result;
+}
+
+
 
 
 /***************************************************************************************
