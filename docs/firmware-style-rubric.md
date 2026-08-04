@@ -20,7 +20,7 @@ no `.clang-format`, no `.editorconfig`, no style guide, and no C linter enabled 
 carry the most drift. This document is the written form.
 
 **Status: applied to the bsp profile.** All 34 files in it score 100% on the automated rules.
-`scripts/check_bsp_style.py --strict` runs in CI, so a regression fails the build. Reproduce the
+`scripts/check_firmware_style.py --strict` runs in CI, so a regression fails the build. Reproduce the
 formatter half with `scripts/format_firmware.sh`, or `--check` to verify without writing. The
 application and test profiles are being brought in now; the status tables below still count the BSP
 only.
@@ -602,7 +602,7 @@ Done, in this order:
 
 1. Everything a formatter can apply, via `scripts/format_firmware.sh`.
 2. Naming and documentation by hand, in commits grouped by concern.
-3. `scripts/check_bsp_style.py --strict` in `.github/workflows/ci.yml`.
+3. `scripts/check_firmware_style.py --strict` in `.github/workflows/ci.yml`.
 
 **`scripts/format_firmware.sh --check` is deliberately not in CI.** The config uses options whose
 spelling and behaviour changed across clang-format versions — `SpacesInParentheses` became
