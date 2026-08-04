@@ -30,7 +30,7 @@ extern "C" {
 /* Returned by BSP_ConsoleGetCharTimeoutUs in place of a received byte when the
    read window elapses with nothing on the wire. Negative so it can never be
    confused with a real byte value, which is always in 0..255. */
-#define BSP_CONSOLE_TIMEOUT ( (int16_t) -1 )
+#define BSP_CONSOLE_TIMEOUT ( ( int16_t ) - 1 )
 
 
 
