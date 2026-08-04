@@ -190,9 +190,13 @@ void application_ui_poll( void )
     int16_t character = BSP_ConsoleGetCharTimeoutUs( 1000 );
     ui.current_time_ms = BSP_TimeNowMs();
 
+    /* A real byte is 0..255; the timeout sentinel is merely the common
+       negative. Testing against the sentinel alone would let any other
+       negative SDK error code impersonate a keystroke -- and a phantom
+       keystroke aborts activities and dismisses banners. */
     if ( ui.mode == UI_MODE_SHELL )
     {
-        if ( character != BSP_CONSOLE_TIMEOUT )
+        if ( character >= 0 )
         {
             application_console_feed( character );
         }
@@ -207,7 +211,7 @@ void application_ui_poll( void )
     {
         /* Any key aborts. A user watching a test they no longer want should not
            have to remember which key means stop. */
-        if ( character != BSP_CONSOLE_TIMEOUT )
+        if ( character >= 0 )
         {
             ui.activity->stop();
             mark_write();
@@ -223,7 +227,7 @@ void application_ui_poll( void )
 
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_MENU );
 
-    if ( character != BSP_CONSOLE_TIMEOUT )
+    if ( character >= 0 )
     {
         if ( ui.mode == UI_MODE_BANNER )
         {

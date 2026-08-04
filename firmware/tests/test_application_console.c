@@ -488,7 +488,7 @@ static void poll_at( uint32_t now_ms )
 {
     MOCK_BSP_TimeSetMs( now_ms );
     int16_t character = BSP_ConsoleGetCharTimeoutUs( 1000 );
-    if ( character != BSP_CONSOLE_TIMEOUT )
+    if ( character >= 0 )
     {
         application_console_feed( character );
     }
