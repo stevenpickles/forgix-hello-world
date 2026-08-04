@@ -3,9 +3,9 @@
 
 #include "bsp.h"
 
-void application_init(const bsp_init_result_t *bsp_result);
-void application_print_status(void);
-void application_process_command(char *command);
-void application_run(void);
+void application_init( const bsp_init_result_t *bsp_result );
+void application_print_status( void );
+void application_process_command( char *command );
+void application_run( void );
 
 #endif

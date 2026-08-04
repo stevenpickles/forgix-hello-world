@@ -7,7 +7,8 @@
 
 /* Progress markers written to the watchdog marker register. After a watchdog
    reset the retained value names the code path that stopped making progress. */
-enum {
+enum
+{
     APPLICATION_DIAGNOSTICS_MARKER_LOOP = 1,
     APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ = 2,
     APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE = 3,
@@ -31,7 +32,8 @@ enum {
     APPLICATION_DIAGNOSTICS_MARKER_SELF_TEST_PATTERN = 0x5A5A5A5A,
 };
 
-enum {
+enum
+{
     APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS = 5000,
     APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS = 250,
     APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS = 1000,
@@ -47,14 +49,14 @@ enum {
 
 /* Reports the previous boot and arms the watchdog. Must run before the
    foreground loop starts, and before anything overwrites the retained scratch. */
-void application_diagnostics_start(void);
+void application_diagnostics_start( void );
 
 /* First call of every foreground iteration: feeds the watchdog, drives the
    heartbeat LED, and once per second samples USB and FPGA health. */
-void application_diagnostics_poll(void);
+void application_diagnostics_poll( void );
 
 /* Live counters plus the retained report from the previous boot. */
-void application_diagnostics_print_report(void);
+void application_diagnostics_print_report( void );
 
 /* Hands the LED to something else for as long as it needs it, and takes it back.
    The heartbeat rewrites the LED every 250 ms, which is faster than anything a
@@ -67,15 +69,15 @@ void application_diagnostics_print_report(void);
    no longer issues and counting an FPGA failure every second. Releasing stands
    both of them down together; reclaiming restores the heartbeat and refreshes
    what the check compares against, in that order. */
-void application_diagnostics_release_led(void);
+void application_diagnostics_release_led( void );
 
-void application_diagnostics_reclaim_led(void);
+void application_diagnostics_reclaim_led( void );
 
 /* The boot cause as it was latched by application_diagnostics_start, before the
    watchdog was armed. Anything asking later must come here rather than call
    BSP_WatchdogBootReason again: arming the watchdog writes the scratch word that
    watchdog_enable_caused_reboot consults, so a live query minutes into a session
    reports a watchdog reset on a board that powered up cleanly. */
-bsp_boot_reason application_diagnostics_boot_reason(void);
+bsp_boot_reason application_diagnostics_boot_reason( void );
 
 #endif
