@@ -25,9 +25,11 @@
 enum
 {
     HEARTBEAT_BRIGHTNESS = 64,
-    /* Six heartbeat toggles, so three white on-phases, mark a successful FPGA
-       reconfiguration. A frozen LED that resumes with this signature proves the
-       MCU stayed alive and the FPGA lost its configuration. */
+    /* Six heartbeat toggles mark a successful FPGA reconfiguration -- four
+       white on-phases in all, because the repaint at the reconfiguring sample
+       lands an extra one before the six countdown toggles begin. A frozen LED
+       that resumes with this signature proves the MCU stayed alive and the
+       FPGA lost its configuration. */
     RECOVERY_TOGGLES = 6,
     BOOT_BLINK_MAX = 8,
     /* The blink code is the USB-free image's only boot-evidence channel, and it
@@ -519,8 +521,14 @@ static void check_fpga( uint32_t now_ms )
         ++diagnostics.fpga_reconfigures;
         diagnostics.recovery_toggles = RECOVERY_TOGGLES;
         /* The fresh configuration comes up with its registers cleared, so the
-           commanded heartbeat state has to be written again. */
-        apply_led( now_ms );
+           commanded heartbeat state has to be written again -- but only while
+           the heartbeat owns the LED. Released, those registers are the new
+           owner's to fill, and reclaim repaints unconditionally when the
+           handover ends. */
+        if ( !diagnostics.led_released )
+        {
+            apply_led( now_ms );
+        }
     }
 }
 
