@@ -5,10 +5,11 @@
 --
 -- Two things here surprise people. The outputs are active low -- '0' is lit -- so the
 -- comparisons below read backwards from what the signal names suggest. And a channel
--- can never be lit for all 256 phases: the duty comes from the top byte of an 8x8
--- product, which reaches 255 at most, so full white is 255/256 rather than continuous.
--- That ceiling is invisible to the eye and is the reason the PWM bench expects 127 and
--- not 128 at half brightness.
+-- can never be lit for all 256 phases: the duty is the top byte of channel times
+-- (brightness + 1), so brightness 0xFF is exact unity gain -- the duty equals the
+-- channel -- and full white is 255/256 by the strict comparison rather than
+-- continuous. Half brightness (0x80) is a 129/256 scale, which is the reason the PWM
+-- bench expects 128 and not 127 for a full channel.
 --
 -- The phase counter free-runs off clk with no prescaler, so the refresh rate is the
 -- clock divided by 256 -- 125 kHz at the real 32 MHz, far above anything visible.
@@ -43,12 +44,16 @@ architecture rtl of forgix_rgb_pwm is
 
 begin
 
-  -- 8x8 unsigned, so these are 16 bits wide and only the top byte is ever used. Kept
-  -- as concurrent assignments rather than folded into the comparisons below so the
-  -- multiply is shared by all three comparisons instead of being inferred repeatedly.
-  r_scaled <= red * brightness;
-  g_scaled <= green * brightness;
-  b_scaled <= blue * brightness;
+  -- channel * (brightness + 1), written as the product plus the channel so the
+  -- operands stay 8x8 and the sum peaks at 0xFF00 -- still 16 bits, no overflow. A
+  -- plain channel * brightness tops out at 0xFE01, whose high byte is 254: full
+  -- white would quietly become 254/256 and 0xFF brightness would not be unity gain.
+  -- Kept as concurrent assignments rather than folded into the comparisons below so
+  -- the arithmetic is shared by all three comparisons instead of being inferred
+  -- repeatedly.
+  r_scaled <= red * brightness + red;
+  g_scaled <= green * brightness + green;
+  b_scaled <= blue * brightness + blue;
 
   phase_counter : process (clk) is
   begin
@@ -63,10 +68,11 @@ begin
 
   end process phase_counter;
 
-  -- Duty is the high byte of the product, which is the same as (channel * brightness)
-  -- / 256 -- the truncation is the divide, not a rounding error. Taking the low byte
-  -- instead would still light the LED and still respond to both inputs, which is
-  -- exactly why the PWM bench counts on-phases rather than eyeballing the result.
+  -- Duty is the high byte of channel * (brightness + 1), which is the same as
+  -- dividing by 256 -- the truncation is the divide, not a rounding error. Taking
+  -- the low byte instead would still light the LED and still respond to both
+  -- inputs, which is exactly why the PWM bench counts on-phases rather than
+  -- eyeballing the result.
   --
   -- The comparison is strict, so a scaled value of zero is off for all 256 phases and
   -- a channel written to zero goes truly dark rather than flickering once per period.

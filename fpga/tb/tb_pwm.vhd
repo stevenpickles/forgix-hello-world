@@ -1,15 +1,17 @@
--- Guards the PWM duty cycle against the 8x8 multiply being truncated at the wrong end.
--- Red at 0xFF with brightness 0x80 must be lit for exactly 127 of 256 phases: the
--- expected value is 127 and not 128 because the duty is the high byte of the product,
--- 255 * 128 / 256, and the comparison against phase is strict. An off-by-one in the
+-- Guards the PWM duty cycle against the scaling arithmetic being truncated at the
+-- wrong end. Red at 0xFF with brightness 0x80 must be lit for exactly 128 of 256
+-- phases: the duty is the high byte of channel * (brightness + 1), 255 * 129 / 256,
+-- and the comparison against phase is strict. An off-by-one in the
 -- r_scaled(15 downto 8) slice, or taking the low byte instead, still produces a lit
 -- LED that responds to both inputs -- it fails here rather than as a dim LED on the
 -- bench, which is the entire reason this counts phases instead of watching a pin.
 --
--- The green channel at half the intensity pins the ratio as well as the endpoint, so a
--- scaling bug that happens to land on 127 for red still has to explain 64 for green.
--- Blue at zero guards the other boundary: strict comparison means zero is off for all
--- 256 phases, and a <= would light it for one.
+-- The green channel at half the intensity pins the ratio as well as the midpoint, so a
+-- scaling bug that happens to land on 128 for red still has to explain 64 for green.
+-- Blue at zero guards one boundary: strict comparison means zero is off for all 256
+-- phases, and a <= would light it for one. The second round pins the other boundary,
+-- 0xFF at 0xFF: brightness full is unity gain, so a full channel must be lit 255 of
+-- 256 phases -- the plain channel * brightness arithmetic lands on 254 and fails it.
 --
 -- The last check is about the enable path only, and exists because an active-low
 -- output makes "off" the value a broken design is most likely to produce by accident.
@@ -96,7 +98,7 @@ begin
 
     end loop;
 
-    assert red_on = 127
+    assert red_on = 128
       report "red PWM duty cycle mismatch"
       severity failure;
     assert green_on = 64
@@ -104,6 +106,42 @@ begin
       severity failure;
     assert blue_on = 0
       report "zero blue intensity should remain off"
+      severity failure;
+
+    -- Full brightness is unity gain, so a full channel is lit for every phase but
+    -- the strict comparison's last, and half intensity passes through unscaled.
+    red_on     := 0;
+    green_on   := 0;
+    blue_on    := 0;
+    brightness <= x"FF";
+
+    for cycle in 0 to 255 loop
+
+      wait until rising_edge(clk);
+      wait for 1 ns;
+
+      if led_r_n = '0' then
+        red_on := red_on + 1;
+      end if;
+
+      if led_g_n = '0' then
+        green_on := green_on + 1;
+      end if;
+
+      if led_b_n = '0' then
+        blue_on := blue_on + 1;
+      end if;
+
+    end loop;
+
+    assert red_on = 255
+      report "full channel at full brightness must be lit 255 of 256 phases"
+      severity failure;
+    assert green_on = 128
+      report "full brightness must pass half intensity through unscaled"
+      severity failure;
+    assert blue_on = 0
+      report "zero blue intensity should remain off at full brightness"
       severity failure;
 
     enable <= '0';
