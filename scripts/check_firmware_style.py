@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Score BSP sources against the formatting rubric in docs/bsp-style-rubric.md.
+"""Score each firmware layer against its profile in docs/firmware-style-rubric.md.
 
-Advisory by default: prints a per-file report and exits 0 even when files do not conform, because
-the BSP has not been reformatted yet. Pass --strict to make any violation fail, which is how this
-should eventually run in CI.
+Section E splits the rubric into three profiles -- bsp, application, tests -- that share every
+layout rule and differ on naming and documentation. A profile here is those deltas as data; the
+checks themselves are written once.
+
+The default scope is every layer, because every layer conforms: a plain run is the whole firmware
+tree, and that plain run with --strict is the gate CI enforces. --layer narrows the scope to one
+profile, which is useful while working on it and says nothing the default does not.
 
 Only the mechanically decidable rules are implemented. The rubric's conformance table marks which
 those are; the rest need a reviewer, and the most important rule of all -- D2, that a summary must
@@ -20,7 +24,6 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ROOTS = (ROOT / "firmware" / "src" / "bsp", ROOT / "firmware" / "tests" / "support")
 
 BANNER_WIDTH = 88
 BANNER_OPEN = re.compile(r"^/\*{5,}$")
@@ -44,11 +47,6 @@ SOURCE_SECTIONS = (
     "Private Function Definitions",
 )
 
-PUBLIC_FUNCTION = re.compile(r"^(?:MOCK_)?BSP_[A-Z][A-Za-z0-9]*$")
-PRIVATE_FUNCTION = re.compile(r"^_[A-Z][A-Za-z0-9_]*$")
-PRIVATE_VARIABLE = re.compile(r"^_[a-z][A-Za-z0-9]*$")
-ENUM_CONSTANT = re.compile(r"^(?:MOCK_)?BSP_[A-Z0-9_]+$")
-
 # A definition is a line starting in column 0 that closes its parameter list, whose next
 # meaningful line is a lone opening brace. Allman makes this reliable without a real parser.
 SIGNATURE = re.compile(r"^([A-Za-z_][\w \t*]*?[\w*])\s*\(([^;]*)\)\s*$")
@@ -59,6 +57,12 @@ TYPEDEF_OPEN = re.compile(r"^typedef\s+(struct|enum)\b\s*(\w+)?\s*$")
 ATTRIBUTE = re.compile(r"^\s*(?:__attribute__|__weak\b|__used\b|__STATIC_INLINE\b)")
 # A line ending in a binary operator runs on, so the next line aligns rather than nests.
 CONTINUATION_TAIL = re.compile(r"(?:&&|\|\||[+\-*/%&|^<>=!]=?)$")
+# The other half of the same shape: an operand may close its parentheses and leave the operator to
+# start the next line, which the tail above cannot see. Such a line aligns under what it continues.
+CONTINUATION_HEAD = re.compile(r"^(?:&&|\|\||<<|>>|[+\-*/%&|^<>]=?|[=!]=)")
+# C6 exempts a multi-line initializer, and a compound literal is one: the cast's ')' is not a
+# parameter list. clang-format emits this shape, so asking for the brace below contradicts it.
+INITIALIZER_BRACE = re.compile(r"(?<![=!<>])=\s*(?:\([^()]*\)\s*)?\{$")
 
 # Functions here answer to a vendor's prototype, so BSP_PascalCase does not apply to them.
 VENDOR_SECTION = "Interrupt Handler Overrides"
@@ -71,12 +75,92 @@ class Violation:
     message: str
 
 
+@dataclass(frozen=True)
+class Rule:
+    """A name that must match, and the shape to name in the message when it does not."""
+
+    pattern: re.Pattern[str]
+    shape: str
+
+    def rejects(self, name: str) -> bool:
+        return not self.pattern.match(name)
+
+
+@dataclass(frozen=True)
+class Profile:
+    """Section E's per-layer deltas as data. Everything absent from here is shared by all layers."""
+
+    name: str
+    public_function: Rule
+    private_function: Rule
+    # E3 reads file scope as a split on mutability, so a static const table answers to its own
+    # rule. The bsp profile points both halves at the same one, which is B4 unchanged.
+    private_variable: Rule
+    constant_variable: Rule
+    enum_constant: Rule
+    struct_typedef: Rule
+    enum_typedef: Rule
+    # "named" wants B5/B6's <name>_tag; "anonymous" is E4, where nothing ever says struct X.
+    typedef_tag: str
+    # E8: a test's name is its summary, so D1 and D3 do not apply to the tests profile at all.
+    requires_docs: bool
+
+
+BSP_PROFILE = Profile(
+    name="bsp",
+    public_function=Rule(re.compile(r"^(?:MOCK_)?BSP_[A-Z][A-Za-z0-9]*$"), "BSP_PascalCase"),
+    private_function=Rule(re.compile(r"^_[A-Z][A-Za-z0-9_]*$"), "_PascalCase"),
+    private_variable=Rule(re.compile(r"^_[a-z][A-Za-z0-9]*$"), "_camelCase"),
+    constant_variable=Rule(re.compile(r"^_[a-z][A-Za-z0-9]*$"), "_camelCase"),
+    enum_constant=Rule(re.compile(r"^(?:MOCK_)?BSP_[A-Z0-9_]+$"), "BSP_SCREAMING_SNAKE"),
+    struct_typedef=Rule(re.compile(r"^\w+_t$"), "must end in _t"),
+    enum_typedef=Rule(re.compile(r"^(?!\w*_t$)\w+$"), "must not end in _t"),
+    typedef_tag="named",
+    requires_docs=True,
+)
+
+APPLICATION_PROFILE = Profile(
+    name="application",
+    # E2: main belongs to the linker, so the namespace rule cannot reach it.
+    public_function=Rule(re.compile(r"^(?:main|application[a-z0-9_]*)$"), "application_snake_case, or main"),
+    private_function=Rule(re.compile(r"^[a-z][a-z0-9_]*$"), "snake_case"),
+    private_variable=Rule(re.compile(r"^[a-z][a-z0-9_]*$"), "snake_case"),
+    constant_variable=Rule(re.compile(r"^[A-Z][A-Z0-9_]*$"), "SCREAMING_SNAKE"),
+    enum_constant=Rule(re.compile(r"^APPLICATION_[A-Z0-9_]+$"), "APPLICATION_SCREAMING_SNAKE"),
+    # E4: both kinds end _t here, and neither carries a tag.
+    struct_typedef=Rule(re.compile(r"^[a-z][a-z0-9_]*_t$"), "must be snake_case ending in _t"),
+    enum_typedef=Rule(re.compile(r"^[a-z][a-z0-9_]*_t$"), "must be snake_case ending in _t"),
+    typedef_tag="anonymous",
+    requires_docs=True,
+)
+
+TESTS_PROFILE = Profile(
+    name="tests",
+    # E2: Ceedling's generated runner calls these three by name, so the toolchain owns them the way
+    # a vendor owns what sits under Interrupt Handler Overrides.
+    public_function=Rule(
+        re.compile(r"^(?:test_[a-z0-9_]+|setUp|tearDown|main)$"), "test_snake_case, setUp or tearDown"
+    ),
+    private_function=Rule(re.compile(r"^[a-z][a-z0-9_]*$"), "snake_case"),
+    private_variable=Rule(re.compile(r"^[a-z][a-z0-9_]*$"), "snake_case"),
+    constant_variable=Rule(re.compile(r"^[A-Z][A-Z0-9_]*$"), "SCREAMING_SNAKE"),
+    enum_constant=Rule(re.compile(r"^[A-Z][A-Z0-9_]*$"), "SCREAMING_SNAKE"),
+    struct_typedef=Rule(re.compile(r"^[a-z][a-z0-9_]*_t$"), "must be snake_case ending in _t"),
+    enum_typedef=Rule(re.compile(r"^[a-z][a-z0-9_]*_t$"), "must be snake_case ending in _t"),
+    typedef_tag="anonymous",
+    requires_docs=False,
+)
+
+PROFILES = {profile.name: profile for profile in (BSP_PROFILE, APPLICATION_PROFILE, TESTS_PROFILE)}
+
+
 class Checker:
     """Accumulates violations for one file and remembers which rules were exercised."""
 
-    def __init__(self, path: Path, text: str) -> None:
+    def __init__(self, path: Path, text: str, profile: Profile) -> None:
         self.path = path
         self.text = text
+        self.profile = profile
         self.lines = text.split("\n")
         if self.lines and self.lines[-1] == "":
             self.lines.pop()
@@ -84,7 +168,7 @@ class Checker:
         self.violations: list[Violation] = []
         self.applied: set[str] = set()
         self.banners = self._find_banners()
-        self.comment_lines = self._block_comment_lines()
+        self.code_lines, self.comment_lines = self._scan()
 
     # -- helpers ---------------------------------------------------------------------------
 
@@ -108,28 +192,61 @@ class Checker:
             found.append((index, index + 4, title.group(1)))
         return found
 
-    def _block_comment_lines(self) -> set[int]:
-        """Line indices sitting inside a /* */ block, whose indentation is alignment not nesting."""
-        inside = set()
-        open_block = False
+    def _scan(self) -> tuple[list[str], set[int]]:
+        """One pass over the file yielding the two views the layout rules need.
+
+        The first is each line with the CONTENT of every string and character literal replaced by
+        spaces. A rule that reads code shape must not match text that is only data: a '[' inside a
+        help string is not a subscript, and a ')' inside one does not open a brace. Blanking is
+        length-preserving, so column-sensitive rules (C8) still see the columns they check.
+
+        The second is the set of lines sitting inside a /* */ block, whose indentation is alignment
+        rather than nesting. Both fall out of the same state machine because neither is decidable
+        alone: an apostrophe in a comment would open a literal that never closes, and a quoted '/*'
+        would open a comment that never ends.
+        """
+        blanked: list[str] = []
+        inside: set[int] = set()
+        in_block = False
         for index, line in enumerate(self.lines):
-            if open_block:
+            if in_block:
                 inside.add(index)
+            out: list[str] = []
             cursor = 0
-            while cursor < len(line):
-                if open_block:
-                    end = line.find("*/", cursor)
-                    if end < 0:
-                        break
-                    open_block = False
-                    cursor = end + 2
+            width = len(line)
+            while cursor < width:
+                if in_block:
+                    if line.startswith("*/", cursor):
+                        in_block = False
+                        out.append("*/")
+                        cursor += 2
+                    else:
+                        out.append(line[cursor])
+                        cursor += 1
+                elif line.startswith("/*", cursor):
+                    in_block = True
+                    out.append("/*")
+                    cursor += 2
+                elif line.startswith("//", cursor):
+                    out.append(line[cursor:])
+                    cursor = width
+                elif line[cursor] in "\"'":
+                    quote = line[cursor]
+                    out.append(quote)
+                    cursor += 1
+                    while cursor < width and line[cursor] != quote:
+                        # An escape hides its own quote, so it must be consumed as one unit.
+                        step = 2 if line[cursor] == "\\" and cursor + 1 < width else 1
+                        out.append(" " * step)
+                        cursor += step
+                    if cursor < width:
+                        out.append(quote)
+                        cursor += 1
                 else:
-                    start = line.find("/*", cursor)
-                    if start < 0:
-                        break
-                    open_block = True
-                    cursor = start + 2
-        return inside
+                    out.append(line[cursor])
+                    cursor += 1
+            blanked.append("".join(out))
+        return blanked, inside
 
     def _section_at(self, index: int) -> str | None:
         """Title of the banner section containing this line, if any."""
@@ -143,7 +260,7 @@ class Checker:
     def _definitions(self) -> list[tuple[int, str, str]]:
         """(index, return_type_and_name, name) for every Allman function definition."""
         found = []
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             match = SIGNATURE.match(line)
             if not match:
                 continue
@@ -175,26 +292,26 @@ class Checker:
         self.apply("C7-indent")
         depth = 0
         continued = False
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             stripped = line.strip()
             if not stripped or index in self.comment_lines:
                 continue
-            if not continued and line.startswith(" "):
+            code = stripped.split("/*")[0].split("//")[0].rstrip()
+            if not continued and not CONTINUATION_HEAD.match(code) and line.startswith(" "):
                 indent = len(line) - len(line.lstrip(" "))
                 if indent % 4 != 0:
                     self.fail("C7-indent", index, f"indent of {indent} is not a multiple of four")
-            code = stripped.split("/*")[0].split("//")[0].rstrip()
             depth = max(0, depth + code.count("(") - code.count(")"))
             # A run-on statement indents to align with what it continues, not to a nesting level.
             continued = depth > 0 or bool(CONTINUATION_TAIL.search(code))
 
     def check_allman(self) -> None:
         self.apply("C6-allman")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             if index in self.comment_lines:
                 continue
             code = line.split("/*")[0].split("//")[0].rstrip()
-            if re.search(r"\)\s*\{$", code):
+            if re.search(r"\)\s*\{$", code) and not INITIALIZER_BRACE.search(code):
                 self.fail("C6-allman", index, "opening brace shares the line; Allman puts it below")
             if re.search(r"\}\s*else\b", code) or re.search(r"\belse\s*\{$", code):
                 self.fail("C6-allman", index, "else must start its own line with its brace below")
@@ -262,7 +379,7 @@ class Checker:
 
     def check_spacing(self) -> None:
         self.apply("C1-paren", "C2-void", "C3-subscript", "C8-column")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             if index in self.comment_lines:
                 continue
             code = line.split("/*")[0].split("//")[0]
@@ -280,44 +397,56 @@ class Checker:
         self.apply("B1-public", "B3-private-fn", "B4-private-var")
         for index, head, name in self._definitions():
             if head.startswith("static "):
-                if not PRIVATE_FUNCTION.match(name):
-                    self.fail("B3-private-fn", index, f"static function '{name}' needs _PascalCase")
+                rule = self.profile.private_function
+                if rule.rejects(name):
+                    self.fail("B3-private-fn", index, f"static function '{name}' needs {rule.shape}")
             elif self._section_at(index) == VENDOR_SECTION:
                 continue  # the vendor owns these names; that is what the section is for
-            elif not PUBLIC_FUNCTION.match(name):
-                self.fail("B1-public", index, f"public function '{name}' needs BSP_PascalCase")
-        for index, line in enumerate(self.lines):
-            match = re.match(r"^static\s+(?:const\s+)?[\w ]+?[\w*]\s+(\w+)\s*(?:\[[^\]]*\])?\s*(?:=.*)?;", line)
-            if match and not PRIVATE_VARIABLE.match(match.group(1)):
-                self.fail("B4-private-var", index, f"file-scope '{match.group(1)}' needs _camelCase")
+            else:
+                rule = self.profile.public_function
+                if rule.rejects(name):
+                    self.fail("B1-public", index, f"public function '{name}' needs {rule.shape}")
+        for index, line in enumerate(self.code_lines):
+            match = re.match(r"^static\s+(const\s+)?[\w ]+?[\w*]\s+(\w+)\s*(?:\[[^\]]*\])?\s*(?:=.*)?;", line)
+            if not match:
+                continue
+            # E3 reads the const as the declaration's own statement about which half it is in.
+            rule = self.profile.constant_variable if match.group(1) else self.profile.private_variable
+            if rule.rejects(match.group(2)):
+                self.fail("B4-private-var", index, f"file-scope '{match.group(2)}' needs {rule.shape}")
 
     def check_typedefs(self) -> None:
         self.apply("B5-B6-typedef", "B7-enum-constant")
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             opening = TYPEDEF_OPEN.match(line)
             if not opening:
                 continue
             kind, tag = opening.group(1), opening.group(2)
             close = next(
-                (i for i in range(index, len(self.lines)) if TYPEDEF_CLOSE.match(self.lines[i])), None
+                (i for i in range(index, len(self.code_lines)) if TYPEDEF_CLOSE.match(self.code_lines[i])),
+                None,
             )
             if close is None:
                 continue
-            name = TYPEDEF_CLOSE.match(self.lines[close]).group(1)
-            if kind == "struct" and not name.endswith("_t"):
-                self.fail("B5-B6-typedef", close, f"struct typedef '{name}' must end in _t")
-            if kind == "enum" and name.endswith("_t"):
-                self.fail("B5-B6-typedef", close, f"enum typedef '{name}' must not end in _t")
-            if tag != f"{name}_tag":
-                self.fail("B5-B6-typedef", index, f"{kind} tag must be '{name}_tag', found '{tag or 'none'}'")
+            name = TYPEDEF_CLOSE.match(self.code_lines[close]).group(1)
+            rule = self.profile.struct_typedef if kind == "struct" else self.profile.enum_typedef
+            if rule.rejects(name):
+                self.fail("B5-B6-typedef", close, f"{kind} typedef '{name}' {rule.shape}")
+            if self.profile.typedef_tag == "named":
+                if tag != f"{name}_tag":
+                    found = tag or "none"
+                    self.fail("B5-B6-typedef", index, f"{kind} tag must be '{name}_tag', found '{found}'")
+            elif tag:
+                self.fail("B5-B6-typedef", index, f"{kind} tag must be anonymous, found '{tag}'")
             # B7 namespaces what escapes the translation unit. A file-local enum does not, and
             # the reference agrees -- its own file-local constants (PC4_PORT) carry no prefix.
             if kind != "enum" or not self.is_header:
                 continue
             for member in range(index, close):
-                constant = re.match(r"^\s{4}(\w+)\s*(?:=|,)", self.lines[member])
-                if constant and not ENUM_CONSTANT.match(constant.group(1)):
-                    self.fail("B7-enum-constant", member, f"'{constant.group(1)}' needs BSP_SCREAMING_SNAKE")
+                constant = re.match(r"^\s{4}(\w+)\s*(?:=|,)", self.code_lines[member])
+                rule = self.profile.enum_constant
+                if constant and rule.rejects(constant.group(1)):
+                    self.fail("B7-enum-constant", member, f"'{constant.group(1)}' needs {rule.shape}")
 
     def check_documentation(self) -> None:
         if self.is_header:
@@ -326,6 +455,8 @@ class Checker:
                 if line.lstrip().startswith("///"):
                     self.fail("D5-header-docs", index, "documentation belongs on the definition, not here")
             return
+        if not self.profile.requires_docs:
+            return  # E8: the name of a test is the only summary it could honestly carry
         self.apply("D1-summary", "D3-returns")
         for index, head, name in self._definitions():
             cursor = index - 1
@@ -348,7 +479,7 @@ class Checker:
             return
         self.apply("A7-declarations")
         previous = None
-        for index, line in enumerate(self.lines):
+        for index, line in enumerate(self.code_lines):
             if not DECLARATION.match(line):
                 continue
             if previous is not None:
@@ -377,34 +508,90 @@ class Checker:
         return len(self.applied - failed), len(self.applied)
 
 
-def discover(roots: list[Path]) -> list[Path]:
-    found: list[Path] = []
-    for root in roots:
-        if not root.exists():
+@dataclass(frozen=True)
+class Scope:
+    """One directory, the sources in it that belong to a layer, and the profile they answer to."""
+
+    root: Path
+    globs: tuple[str, ...]
+    profile: Profile
+
+
+FIRMWARE = ROOT / "firmware"
+BSP_GLOBS = ("bsp*.h", "bsp*.c", "mock_bsp*.h", "mock_bsp*.c")
+APPLICATION_GLOBS = ("application*.h", "application*.c", "main.c", "*_main.c")
+
+# What each layer is made of. All three are the default scope; every one of them conforms, so
+# there is no longer a layer the gate has to leave out.
+LAYERS = {
+    "bsp": (
+        Scope(FIRMWARE / "src" / "bsp", BSP_GLOBS, BSP_PROFILE),
+        Scope(FIRMWARE / "tests" / "support", BSP_GLOBS, BSP_PROFILE),
+    ),
+    "application": (
+        Scope(FIRMWARE / "src" / "application", ("application*.h", "application*.c"), APPLICATION_PROFILE),
+        Scope(FIRMWARE / "src", ("main.c",), APPLICATION_PROFILE),
+        Scope(FIRMWARE / "src" / "diagnostics", ("*_main.c",), APPLICATION_PROFILE),
+    ),
+    "tests": (Scope(FIRMWARE / "tests", ("test_*.c",), TESTS_PROFILE),),
+}
+
+# The globs --root scans, chosen by --profile, so a directory outside the table is still reachable.
+PROFILE_GLOBS = {"bsp": BSP_GLOBS, "application": APPLICATION_GLOBS, "tests": ("test_*.c",)}
+
+
+def discover(scopes: list[Scope]) -> list[tuple[Path, Profile]]:
+    """Every source a scope claims, one profile per file, first claim winning."""
+    found: dict[Path, Profile] = {}
+    for scope in scopes:
+        if not scope.root.exists():
             continue
-        for pattern in ("bsp*.h", "bsp*.c", "mock_bsp*.h", "mock_bsp*.c"):
-            found.extend(root.rglob(pattern))
-    return sorted(set(found))
+        for pattern in scope.globs:
+            for path in scope.root.rglob(pattern):
+                found.setdefault(path, scope.profile)
+    return sorted(found.items())
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--root", type=Path, action="append", help="directory to scan; repeatable")
+    parser.add_argument(
+        "--layer",
+        action="append",
+        choices=("bsp", "application", "tests", "all"),
+        help="layer to scan, repeatable; defaults to all of them, which all conform",
+    )
+    parser.add_argument(
+        "--root", type=Path, action="append", help="directory to scan instead of a layer; repeatable"
+    )
+    parser.add_argument(
+        "--profile",
+        choices=tuple(PROFILES),
+        default="bsp",
+        help="profile and file globs to apply to --root directories (default: bsp)",
+    )
     parser.add_argument("--strict", action="store_true", help="exit non-zero when a file violates a rule")
     parser.add_argument("--quiet", action="store_true", help="print only the summary line")
     arguments = parser.parse_args()
 
-    roots = arguments.root or list(DEFAULT_ROOTS)
-    files = discover(roots)
+    if arguments.root:
+        profile = PROFILES[arguments.profile]
+        scopes = [Scope(root, PROFILE_GLOBS[arguments.profile], profile) for root in arguments.root]
+    else:
+        names = arguments.layer or list(LAYERS)
+        if "all" in names:
+            names = list(LAYERS)
+        scopes = [scope for name in names for scope in LAYERS[name]]
+
+    files = discover(scopes)
     if not files:
-        print(f"No BSP sources found under {', '.join(str(root) for root in roots)}", file=sys.stderr)
+        print(f"No sources found under {', '.join(str(scope.root) for scope in scopes)}", file=sys.stderr)
         return 1
 
     total_violations = 0
     passed_rules = 0
     total_rules = 0
-    for path in files:
-        checker = Checker(path, path.read_text(encoding="utf-8"))
+    for path, profile in files:
+        checker = Checker(path, path.read_text(encoding="utf-8"), profile)
         checker.run()
         good, applicable = checker.score
         passed_rules += good
@@ -423,10 +610,10 @@ def main() -> int:
 
     percent = 100.0 * passed_rules / total_rules if total_rules else 100.0
     print(
-        f"\nBSP style: {len(files)} files, {passed_rules}/{total_rules} rule checks clean "
+        f"\nFirmware style: {len(files)} files, {passed_rules}/{total_rules} rule checks clean "
         f"({percent:.0f}%), {total_violations} violations"
     )
-    print("Rubric: docs/bsp-style-rubric.md. Rules marked review-only there are not checked here.")
+    print("Rubric: docs/firmware-style-rubric.md. Rules marked review-only there are not checked here.")
     if total_violations and arguments.strict:
         return 1
     return 0

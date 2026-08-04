@@ -1,12 +1,37 @@
 #ifndef FORGIX_APPLICATION_IBIT_H
 #define FORGIX_APPLICATION_IBIT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+
+
+/***************************************************************************************
+**
+** Compiler Include Directives
+**
+***************************************************************************************/
+
+
 #include <stdbool.h>
 #include <stdint.h>
 
 #include "application_ui.h"
 
-enum {
+
+
+
+/***************************************************************************************
+**
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
+enum
+{
     /* Long enough that a user who looked away still has time to react, short
        enough that an unattended board finishes the sequence on its own. */
     APPLICATION_IBIT_BUTTON_TIMEOUT_MS = 15000,
@@ -20,7 +45,8 @@ enum {
    same thing would turn every unattended run into a failing one. SKIP likewise
    -- once the FPGA is unreachable, the LED and button steps cannot mean
    anything, and calling them failures would bury the one fault that is real. */
-typedef enum {
+typedef enum
+{
     APPLICATION_IBIT_PENDING,
     APPLICATION_IBIT_PASS,
     APPLICATION_IBIT_FAIL,
@@ -29,20 +55,34 @@ typedef enum {
     APPLICATION_IBIT_INFO,
 } application_ibit_outcome_t;
 
-uint32_t application_ibit_step_count(void);
-const char *application_ibit_step_name(uint32_t index);
+
+
+
+/***************************************************************************************
+**
+** Public Function Declarations
+**
+***************************************************************************************/
+
+
+uint32_t application_ibit_step_count( void );
+const char *application_ibit_step_name( uint32_t index );
 
 /* The whole sequence, once. */
-const application_activity_t *application_ibit_sequence(void);
+const application_activity_t *application_ibit_sequence( void );
 
 /* The whole sequence on repeat, with a pass/fail tally across iterations, until
    a key stops it. */
-const application_activity_t *application_ibit_soak(void);
+const application_activity_t *application_ibit_soak( void );
 
 /* One step on its own, so a failure can be repeated without sitting through the
    thirteen steps that already passed. */
-const application_activity_t *application_ibit_single(uint32_t index);
+const application_activity_t *application_ibit_single( uint32_t index );
 
-void application_ibit_print_board_report(void);
+void application_ibit_print_board_report( void );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

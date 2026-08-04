@@ -83,10 +83,9 @@ bsp_adc_temperature_t BSP_AdcTemperature( void )
     const int32_t aboveOffset = microvolts - ADC_SENSOR_OFFSET_MICROVOLTS;
     const bsp_adc_temperature_t sample = {
         .raw = (uint16_t) raw,
-        .milli_celsius =
-            ADC_SENSOR_OFFSET_MILLI_CELSIUS -
-            (int32_t) ( ( (int64_t) aboveOffset * MILLI_PER_UNIT ) /
-                        ADC_SENSOR_SLOPE_MICROVOLTS_PER_DEGREE ),
+        .milli_celsius = ADC_SENSOR_OFFSET_MILLI_CELSIUS -
+                         (int32_t) ( ( (int64_t) aboveOffset * MILLI_PER_UNIT ) /
+                                     ADC_SENSOR_SLOPE_MICROVOLTS_PER_DEGREE ),
     };
     return sample;
 }
