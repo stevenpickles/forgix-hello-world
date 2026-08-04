@@ -1,9 +1,17 @@
-# Synthesizing the FPGA in CI
+# The build container, and synthesizing the FPGA in CI
 
-The Efinity software is registration-gated: there is no public URL a workflow can
-download it from. This is how the T8F49 bitstream is nonetheless built by GitHub
-Actions, and how a tag becomes a release containing that bitstream and the
-firmware that carries it.
+Every toolchain the build system needs — Efinity, GHDL, VSG, the Arm GNU
+toolchain, the Pico SDK with TinyUSB, picotool, Ceedling, gcovr, clang-format —
+lives pinned in one private image, `ghcr.io/stevenpickles/forgix-build`, built
+by `ci/forgix-build/Dockerfile` on Ubuntu 24.04 LTS. Its ENV block sets the
+known install paths, and `scripts/env.sh` defers to any variable already set,
+so the same scripts run unchanged inside the container and on a Windows host.
+
+The image is private for one reason: the Efinity software is registration-gated
+and its license forbids redistribution, and the image contains it. This
+document covers that licensing position, the image build, and how the T8F49
+bitstream is nonetheless built by GitHub Actions — including how a tag becomes
+a release containing that bitstream and the firmware that carries it.
 
 ## The licensing position
 
@@ -15,11 +23,15 @@ Three consequences drive every decision below.
 
 - The container image holding Efinity is **private, permanently**. It is not
   published to a public registry, not attached to a public package, and not
-  reachable by anyone who is not the licensee.
-- **Fork pull requests skip the synthesis job.** They receive no registry
-  credentials by design; skipping is the correct outcome, not a defect. Every
-  other CI job still runs for a fork, so an outside change is fully verified
-  against the open-source path.
+  reachable by anyone who is not the licensee. Collocating the freely
+  installable tools in the same image does not change that: the whole image
+  inherits Efinity's restriction.
+- **Fork pull requests skip every containerized job.** They receive no registry
+  credentials by design; skipping is the correct outcome, not a defect. The
+  `fork-verify` job in `ci.yml` still checks a fork's change with the tools
+  that are freely installable (the Python checks, VSG, GHDL); the Ceedling
+  suite, the clang-format gate, synthesis, and the firmware compile run the
+  moment a maintainer pushes the branch, because push events carry secrets.
 - The **bitstream is not the Licensed Software**. It is the output of this
   design, so publishing it in a release is unrestricted.
 
@@ -34,29 +46,41 @@ is the only obstacle.
    from <https://www.efinixinc.com/support/efinity.php> with your Efinix
    account. The Windows installer will not do: the image is a Linux one.
    Keep the download outside the repository, or if it does end up in
-   `ci/efinity/`, note that `.gitignore` is the only thing standing between it
-   and a public commit.
+   `ci/forgix-build/`, note that `.gitignore` is the only thing standing
+   between it and a public commit. Every other toolchain is fetched,
+   checksum-pinned, by the Dockerfile itself — the Efinity tarball is the only
+   input you supply.
 2. Build and push the private image:
 
    ```sh
    echo "$GHCR_PAT" | docker login ghcr.io -u stevenpickles --password-stdin
-   ./ci/efinity/build_image.sh ~/Downloads/efinity-2026.1.132-linux-x64.tar.bz2
+   ./ci/forgix-build/build_image.sh ~/Downloads/efinity-2026.1.132-linux-x64.tar.bz2
    ```
 
    The Dockerfile unpacks in a first stage and copies only the unpacked tree
-   forward, so the tarball is never a layer of the pushed image. It smoke-tests
-   `efx_run.py` and resolves the shared libraries of `efx_map`, `efx_pnr`,
-   `efx_pgm`, and `efx_sta` at build time, so a missing system library fails on
-   your machine rather than in a CI run weeks later.
+   forward, so the tarball is never a layer of the pushed image. Every
+   toolchain layer carries its own build-time gate (the Efinity one
+   smoke-tests `efx_run.py`, resolves the shared libraries of `efx_map`,
+   `efx_pnr`, `efx_pgm`, and `efx_sta`, and imports the Interface Designer
+   module), and the build finishes with `forgix-verify --full`, which compiles
+   a throwaway RP2350 project to UF2 — so a broken toolchain fails on your
+   machine rather than in a CI run weeks later. `docker run --rm <image>
+   forgix-verify` answers "what exactly is in this image" any time.
 
-3. Confirm the `efinity` package visibility is **Private**, and leave **Manage
-   Actions access** empty — see the next section for why that matters here.
+3. Confirm the `forgix-build` package visibility is **Private**, and leave
+   **Manage Actions access** empty — see the next section for why that matters
+   here.
 4. Create a PAT with `read:packages` only, and store it as the repository secret
    `GHCR_TOKEN`. This is how the workflows authenticate.
+5. Set the `FORGIX_BUILD_IMAGE` repository variable to the digest-pinned
+   reference the build script prints
+   (`ghcr.io/stevenpickles/forgix-build:<tag>@sha256:...`). The workflows fall
+   back to a tag if the variable is unset, but the digest is the pin.
 
-Nothing else is needed. To try a newer Efinity, push a second tag and set the
-`EFINITY_IMAGE` repository variable (for example
-`ghcr.io/stevenpickles/efinity:2026.2`) — no workflow edit.
+Tags are immutable CalVer (`YYYYMMDD`); there is no floating `latest`. To try
+new tool versions, edit the Dockerfile ARGs, build a new tag, and repoint
+`FORGIX_BUILD_IMAGE` — no workflow edit, and rolling back is repointing the
+variable at the previous digest.
 
 ## Why a PAT, in a public repository
 
@@ -98,10 +122,18 @@ may ever upload any part of the Efinity install as an artifact.
 ## What runs where
 
 `.github/workflows/fpga-bitstream.yml` is a reusable workflow. It checks out the
-repository inside the Efinity container and runs `scripts/build_fpga.sh`, the
-same script used locally: compile, verify the pinout, verify setup and hold
+repository inside the forgix-build container and runs `scripts/build_fpga.sh`,
+the same script used locally: compile, verify the pinout, verify setup and hold
 slack, then convert the passive-SPI hex to binary. It uploads the bitstream, both
 timing reports, the map report, resource usage, and the Efinity logs.
+
+The rest of `ci.yml` runs in the same image: a `verify` job (static checks,
+both format gates, GHDL simulation, the Ceedling suite with its 100%/100%
+coverage gate) and a `firmware` job (cross-compile against the bitstream the
+run produced). Nothing is installed at CI time — no apt, no pip, no SDK
+checkout — so a push pays three pulls of one image and every job sees the
+identical toolchain a contributor gets locally with
+`docker run ghcr.io/stevenpickles/forgix-build:<tag>`.
 
 Two workflows call it:
 
@@ -109,8 +141,8 @@ Two workflows call it:
   timing regression is caught with the change that caused it rather than at
   release time. Its firmware job then links against *that run's* bitstream and
   checks the image survives verbatim into the linked binary, so the pair CI
-  verifies is the pair that ships. A fork pull request, which cannot synthesize,
-  falls back to the compile fixture and still gets its firmware built.
+  verifies is the pair that ships. The compile fixture is only embedded when
+  synthesis failed; fork pull requests get `fork-verify` instead.
 - **`release.yml`** on a `v*` tag, feeding the firmware and publish jobs.
 
 A change touching only `docs/**`, `**.md`, or `LICENSE` skips CI entirely — a
@@ -138,8 +170,9 @@ That runs three jobs in order:
 2. **firmware** — build the RP2354 image against *that* bitstream (not the
    `tests/fixtures/fpga-test.bin` compile fixture that `ci.yml` uses), enforce the
    2 MB flash budget, and confirm the bitstream appears byte-for-byte in the
-   linked binary. Unlike `ci.yml` this build does not set `PICO_NO_PICOTOOL`, so
-   the SDK builds picotool and emits a flashable UF2.
+   linked binary. Unlike `ci.yml` this build does not set `PICO_NO_PICOTOOL`;
+   `picotool_DIR` points the SDK at the picotool 2.3.0 prebuilt in the image,
+   so a flashable UF2 is emitted without fetching and compiling picotool.
 3. **publish** — assemble `dist/`, write `SHA256SUMS`, and create the GitHub
    release.
 
@@ -152,11 +185,17 @@ artifacts without publishing anything.
 
 ## Notes
 
-- The Ubuntu base is 22.04 because `bin/setup.sh` checks two bounds at runtime
-  and 22.04 is inside both: glibc must be at least 2.28 (22.04 ships 2.35), and
-  the system `libstdc++.so.6` must not be newer than the 6.0.32 Efinity bundles
-  (22.04 ships 6.0.30) or setup.sh tells you to delete Efinity's own copy.
-  Re-check both before moving the image forward.
+- The Ubuntu base is 24.04, which sits outside one of the two bounds
+  `bin/setup.sh` checks at runtime. glibc must be at least 2.28, and 24.04's
+  2.39 is fine. But setup.sh also wants the system `libstdc++.so.6` no newer
+  than the 6.0.32 Efinity bundles, and 24.04 ships 6.0.33 — for which
+  setup.sh's own advice is to delete Efinity's bundled copy. The Dockerfile
+  does exactly that in its unpack stage (libgcc_s too, since Efinity's lib dir
+  leads `LD_LIBRARY_PATH` after the source), and everything then resolves to
+  the system copies, which are ABI-backward-compatible by GCC policy. The
+  Efinity build-time gate runs against that arrangement, so a bad deletion
+  fails the image build, and a full compile comparing `bin[256:]` against a
+  known-good bitstream is the final proof after any base move.
 - `setup.sh` exports `EFINITY_USER_DIR_INI=$HOME/.local/share/efinity/...`
   itself, so setting it in the image has no effect — the source overwrites it.
   `run_efinity.sh` pins it to a writable path *after* the source instead, so the
@@ -188,12 +227,15 @@ artifacts without publishing anything.
   The Interface Designer reaches `PyQt6.QtGui` via `qtpy`, so `libGL` and the
   rest are load-bearing; `QT_QPA_PLATFORM=offscreen` is what keeps Qt from
   looking for a display that a runner does not have.
-- The built image is 4.2 GB, which every run pays as pull time. `ipm/` (~451 MB)
-  and `debugger/` (~145 MB) are untouched by a compile and are the obvious
-  candidates if that becomes the bottleneck. `pgm/` is *not*: `bin/efx_pgm`
-  generates the bitstream. Neither is `pt/` — that is the Interface Designer,
-  without which the flow silently produces nothing. A prune is only proven by a
-  full compile afterwards, for exactly the reason described above: this flow
-  fails green.
+- The built image is roughly 6 GB (Efinity ~2.7 GB, the Arm toolchain ~1.4 GB,
+  the Pico SDK ~0.4 GB, plus the base and smaller tools), which each
+  containerized job pays as pull time — the price of replacing the old Efinity
+  pull, the Ceedling image pull, and every per-run apt/pip/SDK-checkout with
+  one pinned image. If pull time becomes the bottleneck, the candidates are
+  Efinity's `ipm/` (~451 MB) and `debugger/` (~145 MB), both untouched by a
+  compile. `pgm/` is *not*: `bin/efx_pgm` generates the bitstream. Neither is
+  `pt/` — that is the Interface Designer, without which the flow silently
+  produces nothing. A prune is only proven by a full compile afterwards, for
+  exactly the reason described above: this flow fails green.
 - Efinity output stays out of git; `fpga/outflow/` is ignored. The artifacts and
   releases are the only published copies.
