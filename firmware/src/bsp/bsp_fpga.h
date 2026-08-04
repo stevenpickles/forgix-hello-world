@@ -90,6 +90,11 @@ uint8_t BSP_FpgaReadRegister( const uint8_t address );
 
 void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value );
 
+/* Latches the FPGA's free-running 32 MHz counter and returns the snapshot.
+   The register addresses stay private to the BSP; callers get one coherent
+   32-bit sample per call and time it however they need to. */
+uint32_t BSP_FpgaTickSample( void );
+
 #ifdef __cplusplus
 }
 #endif
