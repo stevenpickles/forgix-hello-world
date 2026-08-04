@@ -87,6 +87,7 @@ static bsp_memory_report_t healthy_memory(void) {
         .psram_forced = false,
         .psram_kgd = 0x0bu,
         .psram_eid = 0x43u,
+        .psram_enabled = true,
     };
     return memory;
 }
@@ -294,6 +295,22 @@ void test_psram_stays_quiet_about_identity_when_the_expected_part_is_fitted(void
     BSP_MemoryCheck_ExpectAndReturn(memory);
 
     TEST_ASSERT_NULL(strstr(run_step(STEP_PSRAM), "schematic"));
+}
+
+/* A build with the device compiled out is not a board with a broken one, and the
+   report alone cannot tell them apart -- both read zero bytes and not ok. */
+void test_psram_is_skipped_when_the_build_never_brought_it_up(void) {
+    bsp_memory_report_t memory = healthy_memory();
+    memory.psram_enabled = false;
+    memory.psram_bytes = 0;
+    memory.psram_ok = false;
+    BSP_MemoryCheck_ExpectAndReturn(memory);
+
+    const char *output = run_step(STEP_PSRAM);
+
+    TEST_ASSERT_NOT_NULL(strstr(output, "SKIP"));
+    TEST_ASSERT_NOT_NULL(strstr(output, "FORGIX_QSPI_PSRAM off"));
+    TEST_ASSERT_NULL(strstr(output, "FAIL"));
 }
 
 void test_psram_fails_when_the_pattern_is_lost(void) {

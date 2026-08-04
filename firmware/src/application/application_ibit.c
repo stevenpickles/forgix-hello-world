@@ -272,6 +272,16 @@ static application_ibit_outcome_t step_boot_flash(char *detail, size_t capacity)
 static application_ibit_outcome_t step_psram(char *detail, size_t capacity) {
     const bsp_memory_report_t memory = memory_report();
 
+    /* FORGIX_QSPI_PSRAM is a supported way to build this firmware, and with it
+       off the device is never brought up. Reporting that as a failure would
+       accuse a board of a fault that is really a build decision -- and the two
+       are indistinguishable from the numbers, since a device that was never
+       enabled and one that failed detection both read zero bytes and not ok. */
+    if (!memory.psram_enabled) {
+        snprintf(detail, capacity, "not enabled in this build (FORGIX_QSPI_PSRAM off)");
+        return APPLICATION_IBIT_SKIP;
+    }
+
     snprintf(detail, capacity, "%luKiB pattern %s, kgd=%02X eid=%02X%s",
              (unsigned long)(memory.psram_bytes / 1024u), memory.psram_ok ? "held" : "LOST",
              memory.psram_kgd, memory.psram_eid,

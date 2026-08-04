@@ -160,6 +160,7 @@ bsp_memory_report_t BSP_MemoryCheck( void )
     report.flash_ok = _FlashReadsCoherently( report.flash_bytes );
 
 #if FORGIX_QSPI_PSRAM
+    report.psram_enabled = true;
     if ( psram_is_available() )
     {
         report.psram_bytes = (uint32_t) psram_get_size();
