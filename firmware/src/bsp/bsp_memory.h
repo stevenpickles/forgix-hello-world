@@ -100,7 +100,11 @@ typedef enum bsp_memory_sweep_op_tag
 
 typedef struct bsp_memory_sweep_result_t_tag
 {
-    bool ok;               /* write chunks always pass; verify chunks report the check */
+    /* Write chunks pass when the chunk exists; verify chunks report the
+       check. A chunk index past the device's size, or any chunk while the
+       PSRAM is unavailable, fails with fail_address 0 rather than touching
+       an unbacked window. */
+    bool ok;
     uint32_t fail_address; /* uncached-alias address of the first mismatch, else 0 */
 } bsp_memory_sweep_result_t;
 

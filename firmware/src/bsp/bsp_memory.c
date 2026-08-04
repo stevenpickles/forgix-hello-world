@@ -350,8 +350,9 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
 /// <summary>
 ///     Runs one chunk of one moving-inversion sweep pass through the uncached
 ///     window: plain word loops, interrupts on, the QMI arbitrating against
-///     chip-select-0 XIP in hardware. Write chunks always report ok; verify
-///     chunks report the first mismatch and its address.
+///     chip-select-0 XIP in hardware. Write chunks report ok when the chunk
+///     exists; verify chunks report the first mismatch and its address. A
+///     chunk beyond the device, or any chunk with the window down, is refused.
 /// </summary>
 /// <returns>
 ///     Whether the chunk held, and the failing address when it did not.
@@ -361,6 +362,18 @@ bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uin
     bsp_memory_sweep_result_t result = { 0 };
 
 #if FORGIX_QSPI_PSRAM
+    /* Chunk state lives with the caller, which is exactly why it is not
+       trusted here: a stale count, or a device reporting more than the 16 MB
+       window maps, would send the loop below writing into an unbacked alias
+       and reporting whatever it read back as a fault at a fabricated address.
+       A size of zero -- the window never came up -- refuses every chunk. */
+    const uint32_t available_chunks =
+        (uint32_t) psram_get_size() / (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
+    if ( chunk_index >= available_chunks )
+    {
+        return result;
+    }
+
     const uint32_t base =
         (uint32_t) PSRAM_NOCACHE_BASE + chunk_index * (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
     volatile uint32_t *const ptr_chunk = (volatile uint32_t *) base;
