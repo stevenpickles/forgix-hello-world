@@ -195,7 +195,7 @@ try {
     Write-Host "    $initialStatus" -ForegroundColor Green
 
     $hello = Invoke-ForgixCommand $serial "hello"
-    Assert-Response $hello '^Hello from RP2354 -> FPGA B5$' "Hello readback"
+    Assert-Response $hello '^Hello from RP2354 -> FPGA B6$' "Hello readback"
     Write-Host "    $hello" -ForegroundColor Green
 
     if (-not $NoDazzle) {

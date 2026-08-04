@@ -221,7 +221,7 @@ void test_hello_programs_and_verifies_the_expected_led_state( void )
 
     process( "hello" );
 
-    TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B5\n", MOCK_BSP_ConsoleOutput() );
+    TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B6\n", MOCK_BSP_ConsoleOutput() );
 }
 
 
