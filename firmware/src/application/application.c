@@ -33,6 +33,8 @@ static bool parse_watch_period( const char *text, uint32_t *seconds );
 
 static void print_help( void );
 
+static void print_identity_dump( void );
+
 static void print_memory_report( void );
 
 
@@ -178,6 +180,21 @@ void application_process_command( char *line )
         {
             print_memory_report();
             application_diagnostics_print_report();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
+        return;
+    }
+    /* Gate-free like diag: the memories share nothing with the FPGA, and the
+       identity investigation is most needed exactly when the board is being
+       distrusted. */
+    if ( !strcmp( argv[ 0 ], "memid" ) )
+    {
+        if ( argc == 1 )
+        {
+            print_identity_dump();
         }
         else
         {
@@ -346,8 +363,48 @@ static bool parse_watch_period( const char *text, uint32_t *seconds )
 /// </summary>
 static void print_help( void )
 {
-    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset "
-                     "| echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
+    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu "
+                     "| reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
+}
+
+
+/* One line per transaction, every byte shown, because the absent bytes are the
+   investigation: the flash line is the sampling control, the manufacturer byte
+   sits at offset 4 of the psram lines, and a byte-alignment difference between
+   vendors shows up as the expected values standing one column off. */
+/// <summary>
+///     Prints the raw Read-ID responses BSP_MemoryIdentityDump captured: the
+///     boot flash control first, then one line per PSRAM probe rate, then
+///     whether the memory window survived the investigation.
+/// </summary>
+static void print_identity_dump( void )
+{
+    const bsp_memory_identity_dump_t dump = BSP_MemoryIdentityDump();
+
+    BSP_ConsolePrintf( "cs0 flash 9F: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                       dump.flash_response[ 0 ], dump.flash_response[ 1 ], dump.flash_response[ 2 ],
+                       dump.flash_response[ 3 ], dump.flash_response[ 4 ], dump.flash_response[ 5 ],
+                       dump.flash_response[ 6 ], dump.flash_response[ 7 ] );
+
+    if ( !dump.psram_probed )
+    {
+        BSP_ConsolePuts( "cs1 psram: not probed; this image was built without PSRAM support" );
+        return;
+    }
+
+    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
+    {
+        BSP_ConsolePrintf( "cs1 psram 9F @%lukHz: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                           (unsigned long) ( dump.probe_hz[ rate ] / 1000u ),
+                           dump.psram_response[ rate ][ 0 ], dump.psram_response[ rate ][ 1 ],
+                           dump.psram_response[ rate ][ 2 ], dump.psram_response[ rate ][ 3 ],
+                           dump.psram_response[ rate ][ 4 ], dump.psram_response[ rate ][ 5 ],
+                           dump.psram_response[ rate ][ 6 ], dump.psram_response[ rate ][ 7 ] );
+    }
+
+    BSP_ConsolePuts( dump.restored
+                         ? "qpi re-entry: ok"
+                         : "error: qpi re-entry failed; psram is down until the next check" );
 }
 
 

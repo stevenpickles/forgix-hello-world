@@ -41,6 +41,8 @@ static void expect_memory_report( void );
 
 static bsp_memory_report_t memory_report( void );
 
+static bsp_memory_identity_dump_t identity_dump( void );
+
 static bsp_led_state_t expected_hello_led( void );
 
 static void expect_hello_readback( uint8_t design_id, bsp_led_state_t led );
@@ -352,6 +354,62 @@ void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access( v
 }
 
 
+/* No BSP_FpgaIsReady expectation is queued: a consult would fail through
+   CMock, which is the FPGA-down guarantee for the one command that exists to
+   interrogate a distrusted board. */
+void test_memid_dumps_every_response_byte_without_consulting_the_fpga( void )
+{
+    bsp_memory_identity_dump_t dump = identity_dump();
+
+    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: EF 40 15 00 00 00 00 00" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F @25000kHz: 00 00 00 00 0D 0B 43 FF" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F @5000kHz: 00 00 00 00 0D 0B 43 FE" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F @1000kHz: 00 00 00 00 0D 0B 43 FD" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok" ) );
+}
+
+
+void test_memid_reports_a_failed_qpi_reentry( void )
+{
+    bsp_memory_identity_dump_t dump = identity_dump();
+    dump.restored = false;
+
+    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "error: qpi re-entry failed; psram is down until the next check" ) );
+}
+
+
+void test_memid_says_when_the_image_has_no_psram_support( void )
+{
+    bsp_memory_identity_dump_t dump = identity_dump();
+    dump.psram_probed = false;
+
+    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: EF 40 15" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(),
+                                  "cs1 psram: not probed; this image was built without PSRAM" ) );
+    /* the probe lines and the re-entry verdict describe reads that never ran */
+    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F" ) );
+    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry" ) );
+}
+
+
 void test_reset_reaches_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -382,7 +440,9 @@ void test_unknown_command_is_rejected( void )
 void test_known_commands_with_extra_arguments_are_rejected( void )
 {
     const char *gated_commands[] = { "hello extra", "off extra", "reset extra" };
-    const char *gate_free_commands[] = { "help extra", "status extra", "diag extra", "menu extra" };
+    const char *gate_free_commands[] = {
+        "help extra", "status extra", "diag extra", "memid extra", "menu extra",
+    };
 
     for ( uint32_t index = 0;
           index < (uint32_t) ( sizeof gated_commands / sizeof gated_commands[ 0 ] ); ++index )
@@ -449,6 +509,28 @@ static bsp_memory_report_t memory_report( void )
         .psram_ok = true,
     };
     return report;
+}
+
+
+/* Bytes chosen to look like the real investigation: a plausible Winbond flash
+   ID on the control line, the observed unexpected PSRAM identity on all three
+   rates, and a trailing byte that differs per rate so a test could never pass
+   by printing one response three times. */
+static bsp_memory_identity_dump_t identity_dump( void )
+{
+    bsp_memory_identity_dump_t dump = {
+        .flash_response = { 0xEF, 0x40, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        .psram_probed = true,
+        .probe_hz = { 25000000u, 5000000u, 1000000u },
+        .psram_response =
+            {
+                { 0x00, 0x00, 0x00, 0x00, 0x0D, 0x0B, 0x43, 0xFF },
+                { 0x00, 0x00, 0x00, 0x00, 0x0D, 0x0B, 0x43, 0xFE },
+                { 0x00, 0x00, 0x00, 0x00, 0x0D, 0x0B, 0x43, 0xFD },
+            },
+        .restored = true,
+    };
+    return dump;
 }
 
 

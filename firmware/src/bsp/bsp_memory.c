@@ -73,6 +73,17 @@ _Static_assert( ( 64ull * CS1_PROBE_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000
    XIP-down window, where the flash-resident busy_wait_us_32 cannot run. */
 #define CS1_TRST_WAIT_CYCLES ( (uint32_t) 1500u )
 
+/* Confirmation rates for the identity investigation: 5 MHz and 1 MHz beside
+   the production 25 MHz. At these rates the 64-clock Read-ID holds chip select
+   for 12.8 us and 64 us -- far past tCEM, and deliberately so: the ID register
+   is static logic with no refresh dependency, the array contents are
+   expendable during an investigation (the identify path resets the device and
+   the next sweep rewrites it), and an identity that is bit-identical across a
+   25x clock spread cannot be a marginal-sampling artefact. Only the
+   production divisor above is bound to the datasheet by the asserts. */
+#define CS1_SLOW_PROBE_CLKDIV ( (uint32_t) 30u )
+#define CS1_SLOWEST_PROBE_CLKDIV ( (uint32_t) 150u )
+
 
 
 
@@ -84,20 +95,21 @@ _Static_assert( ( 64ull * CS1_PROBE_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000
 
 
 #if FORGIX_QSPI_PSRAM
-/* One entry of a chip-select-1 direct-mode sequence. Serial entries pump the
-   TX/RX FIFOs full duplex; quad entries send a lone opcode four bits wide
-   with the response discarded, reaching a device whose command decoder is in
-   QPI mode. Each entry gets its own chip-select assertion, and the optional
-   delay elapses after deassertion -- still inside the shared XIP-down window,
-   so a tRST spent there is one no ROM traffic can interrupt. */
-typedef struct cs1_operation_t_tag
+/* One entry of a direct-mode sequence against either chip select. Serial
+   entries pump the TX/RX FIFOs full duplex; quad entries send a lone opcode
+   four bits wide with the response discarded, reaching a device whose command
+   decoder is in QPI mode. Each entry gets its own chip-select assertion, and
+   the optional delay elapses after deassertion -- still inside the shared
+   XIP-down window, so a tRST spent there is one no ROM traffic can
+   interrupt. */
+typedef struct cs_operation_t_tag
 {
     const uint8_t *ptr_transmit;
     uint8_t *ptr_receive;
     size_t count;
     bool quad;
     uint32_t delay_cycles_after;
-} cs1_operation_t;
+} cs_operation_t;
 #endif
 
 
@@ -141,8 +153,9 @@ static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
 /* The attributes ride the prototype so the definition reads plainly. The
    function must run from RAM: it suspends chip-select-0 XIP to use the bus,
    and flash-resident code cannot execute while it is down. */
-static void _Cs1OperationSequence( const cs1_operation_t *ptr_operations, size_t operationCount )
-    __attribute__( ( noinline, section( ".time_critical._Cs1OperationSequence" ) ) );
+static void _CsOperationSequence( const cs_operation_t *ptr_operations, size_t operationCount,
+                                  uint32_t clkdiv, uint32_t csAssertBits )
+    __attribute__( ( noinline, section( ".time_critical._CsOperationSequence" ) ) );
 #endif
 
 
@@ -304,19 +317,20 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
     uint8_t discard[ 1 ] = { 0 };
     uint8_t response[ 8 ] = { 0 };
 
-    const cs1_operation_t operations[] = {
+    const cs_operation_t operations[] = {
         { reset_enable, NULL, 1u, true, 0u },
         { reset, NULL, 1u, true, CS1_TRST_WAIT_CYCLES },
         { reset_enable, discard, 1u, false, 0u },
         { reset, discard, 1u, false, CS1_TRST_WAIT_CYCLES },
         { read_id, response, sizeof read_id, false, 0u },
     };
-    _Cs1OperationSequence( operations, sizeof operations / sizeof operations[ 0 ] );
+    _CsOperationSequence( operations, sizeof operations / sizeof operations[ 0 ], CS1_PROBE_CLKDIV,
+                          QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
 
     identity.kgd = response[ 5 ];
     identity.eid = response[ 6 ];
 
-    /* _Cs1OperationSequence leaves XIP in the ROM's plain command mode. One
+    /* _CsOperationSequence leaves XIP in the ROM's plain command mode. One
        ordinary SDK call restores the faster boot2 configuration, since it does
        that copyout internally. */
     const uint8_t restore_tx[ 1 ] = { 0x9fu };
@@ -339,6 +353,96 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
 #endif
 
     return identity;
+}
+
+
+/* The chip-select-0 read runs through the same engine at the same divisor as
+   the first PSRAM probe, so the two transactions differ in nothing but which
+   select fell: a correct flash ID is positive proof the controller's launch
+   and sample edges read a known device faithfully at these exact settings.
+   The reported bytes are left alone on purpose -- this call is a witness, not
+   a detector, and diag should keep showing what the production path read. */
+/// <summary>
+///     Captures the full Read-ID response from the boot flash as a sampling
+///     control and from the PSRAM at three clock rates, resetting the PSRAM
+///     first each time exactly as the production probe does, then re-enters
+///     QPI. Each slow read knowingly overstays tCEM; see the header note.
+/// </summary>
+/// <returns>
+///     Every response byte, the rate of each probe, and whether the QPI
+///     re-entry brought the memory window back.
+/// </returns>
+bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void )
+{
+    bsp_memory_identity_dump_t dump = { 0 };
+
+#if FORGIX_QSPI_PSRAM
+    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = { 0x9fu, 0xffu, 0xffu, 0xffu,
+                                                                    0xffu, 0xffu, 0xffu, 0xffu };
+    const uint8_t reset_enable[ 1 ] = { 0x66u };
+    const uint8_t reset[ 1 ] = { 0x99u };
+    uint8_t discard[ 1 ] = { 0 };
+
+    xip_cache_clean_all();
+
+    const cs_operation_t control[] = {
+        { read_id, dump.flash_response, sizeof read_id, false, 0u },
+    };
+    _CsOperationSequence( control, sizeof control / sizeof control[ 0 ], CS1_PROBE_CLKDIV,
+                          QMI_DIRECT_CSR_ASSERT_CS0N_BITS );
+
+    /* Non-zero size so the ROM's exit sequence reaches chip select 1 in each
+       window; restored afterwards so nothing else sees the change. */
+    const flash_devinfo_size_t previous = flash_devinfo_get_cs_size( 1 );
+    flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_8K );
+
+    const uint32_t divisors[ BSP_MEMORY_IDENTITY_PROBE_RATES ] = {
+        CS1_PROBE_CLKDIV,
+        CS1_SLOW_PROBE_CLKDIV,
+        CS1_SLOWEST_PROBE_CLKDIV,
+    };
+    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
+    {
+        /* The full reset precedes every read: Read-ID is only legal straight
+           after one, at any clock. */
+        const cs_operation_t operations[] = {
+            { reset_enable, NULL, 1u, true, 0u },
+            { reset, NULL, 1u, true, CS1_TRST_WAIT_CYCLES },
+            { reset_enable, discard, 1u, false, 0u },
+            { reset, discard, 1u, false, CS1_TRST_WAIT_CYCLES },
+            { read_id, dump.psram_response[ rate ], sizeof read_id, false, 0u },
+        };
+        _CsOperationSequence( operations, sizeof operations / sizeof operations[ 0 ],
+                              divisors[ rate ], QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
+        dump.probe_hz[ rate ] = SYS_CLK_HZ / divisors[ rate ];
+    }
+
+    /* Same restore pair as the identify path: one ordinary SDK call brings
+       back the faster boot2 XIP configuration, then QPI re-entry brings the
+       memory window back. */
+    const uint8_t restore_tx[ 1 ] = { 0x9fu };
+    uint8_t restore_rx[ 1 ] = { 0 };
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_do_cmd_cs( restore_tx, restore_rx, sizeof restore_tx, 0 );
+    restore_interrupts( interrupts );
+
+    flash_devinfo_set_cs_size( 1, previous );
+
+    dump.psram_probed = true;
+    dump.restored = _ForcePsramFromDatasheet();
+#else
+    /* No PSRAM support means no direct-mode engine, but the flash control
+       read still has value; the SDK's helper performs the identical transfer
+       at the QMI's reset-default clocking. Interrupts off because handlers
+       live in flash and the helper takes XIP down. */
+    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = { 0x9fu, 0xffu, 0xffu, 0xffu,
+                                                                    0xffu, 0xffu, 0xffu, 0xffu };
+    const uint32_t interrupts = save_and_disable_interrupts();
+    flash_do_cmd_cs( read_id, dump.flash_response, sizeof read_id, 0 );
+    restore_interrupts( interrupts );
+#endif
+
+    return dump;
 }
 
 
@@ -562,12 +666,14 @@ static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
    rebuilds the chip-select-1 QMI window), so a save/restore would duplicate
    what the re-entry path rebuilds anyway. */
 /// <summary>
-///     Runs a list of chip-select-1 direct-mode transfers at the probe clock
-///     inside a single XIP-down window, each with its own chip-select
-///     assertion, serial ones full duplex and quad ones response-discarded,
-///     with optional post-deselect delays spent inside the window.
+///     Runs a list of direct-mode transfers against the given chip select at
+///     the given clock divisor inside a single XIP-down window, each with its
+///     own chip-select assertion, serial ones full duplex and quad ones
+///     response-discarded, with optional post-deselect delays spent inside
+///     the window.
 /// </summary>
-static void _Cs1OperationSequence( const cs1_operation_t *ptr_operations, size_t operationCount )
+static void _CsOperationSequence( const cs_operation_t *ptr_operations, size_t operationCount,
+                                  uint32_t clkdiv, uint32_t csAssertBits )
 {
     rom_connect_internal_flash_fn connect_internal_flash =
         (rom_connect_internal_flash_fn) rom_func_lookup_inline( ROM_FUNC_CONNECT_INTERNAL_FLASH );
@@ -583,15 +689,15 @@ static void _Cs1OperationSequence( const cs1_operation_t *ptr_operations, size_t
     flash_exit_xip();
 
     /* Now that the ROM has stopped touching QMI, impose the divisor. */
-    hw_write_masked( &qmi_hw->direct_csr, CS1_PROBE_CLKDIV << QMI_DIRECT_CSR_CLKDIV_LSB,
+    hw_write_masked( &qmi_hw->direct_csr, clkdiv << QMI_DIRECT_CSR_CLKDIV_LSB,
                      QMI_DIRECT_CSR_CLKDIV_BITS );
     hw_set_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_EN_BITS );
 
     for ( size_t operation = 0; operation < operationCount; ++operation )
     {
-        const cs1_operation_t *ptr_op = &ptr_operations[ operation ];
+        const cs_operation_t *ptr_op = &ptr_operations[ operation ];
 
-        hw_set_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
+        hw_set_bits( &qmi_hw->direct_csr, csAssertBits );
         if ( ptr_op->quad )
         {
             qmi_hw->direct_tx = QMI_DIRECT_TX_OE_BITS | QMI_DIRECT_TX_NOPUSH_BITS |
@@ -623,7 +729,7 @@ static void _Cs1OperationSequence( const cs1_operation_t *ptr_operations, size_t
         {
             tight_loop_contents();
         }
-        hw_clear_bits( &qmi_hw->direct_csr, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
+        hw_clear_bits( &qmi_hw->direct_csr, csAssertBits );
 
         if ( ptr_op->delay_cycles_after != 0u )
         {

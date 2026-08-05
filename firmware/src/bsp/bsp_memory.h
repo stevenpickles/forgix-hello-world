@@ -85,6 +85,38 @@ enum
 };
 
 
+enum
+{
+    /* Read-ID as one 64-clock transfer: opcode, three address bytes the
+       datasheet ignores, then the four bytes the device answers with. */
+    BSP_MEMORY_IDENTITY_RESPONSE_BYTES = 8,
+    /* The production rate plus two slower confirmations. */
+    BSP_MEMORY_IDENTITY_PROBE_RATES = 3,
+};
+
+
+/* Raw material for the identity investigation: every byte of the Read-ID
+   response, from both chip selects, at several bus clocks. The flash on chip
+   select 0 is the control -- a known device read through the same direct-mode
+   engine at the same clock and sample settings, so a correct flash ID
+   exonerates the controller's sampling. Identical PSRAM bytes across a 25x
+   clock spread then rule out marginal timing on the device side. Reading the
+   PSRAM identity resets the device, so the call re-enters QPI before
+   returning. */
+typedef struct bsp_memory_identity_dump_t_tag
+{
+    uint8_t flash_response[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ];
+    /* False when the image was built without PSRAM support: the chip-select-1
+       probes did not run and the bytes and rates below are meaningless. */
+    bool psram_probed;
+    uint32_t probe_hz[ BSP_MEMORY_IDENTITY_PROBE_RATES ];
+    uint8_t psram_response[ BSP_MEMORY_IDENTITY_PROBE_RATES ][ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ];
+    /* False means the memory window is down until the next successful
+       identify, exactly as bsp_memory_psram_identity_t reports it. */
+    bool restored;
+} bsp_memory_identity_dump_t;
+
+
 /* The three passes of a moving-inversion sweep. Every chunk of a pass runs
    before any chunk of the next, which is what catches address aliasing: a
    smaller die answering a 2 MByte window puts an early chunk's pattern where a
@@ -128,6 +160,14 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void );
 /* One chunk of one sweep pass. Chunk state lives with the caller, so the BSP
    holds nothing that can go stale if a run is aborted between chunks. */
 bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uint32_t chunk_index );
+
+/* The identity investigation behind the `memid` command: the full Read-ID
+   response from the boot flash as a sampling control, then from the PSRAM at
+   the production clock and two slower ones. The slow reads deliberately hold
+   chip select past tCEM -- the ID register is static logic with no refresh
+   dependency, and the array contents are rewritten by the next sweep -- so
+   their only cost is to the DRAM data nobody is keeping. */
+bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void );
 
 #ifdef __cplusplus
 }
