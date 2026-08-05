@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -36,6 +37,8 @@ static void print_help( void );
 static void print_identity_dump( void );
 
 static void print_memory_report( void );
+
+static void print_response_line( const char *label, const uint8_t *ptr_response );
 
 
 
@@ -381,10 +384,7 @@ static void print_identity_dump( void )
 {
     const bsp_memory_identity_dump_t dump = BSP_MemoryIdentityDump();
 
-    BSP_ConsolePrintf( "cs0 flash 9F: %02X %02X %02X %02X %02X %02X %02X %02X\n",
-                       dump.flash_response[ 0 ], dump.flash_response[ 1 ], dump.flash_response[ 2 ],
-                       dump.flash_response[ 3 ], dump.flash_response[ 4 ], dump.flash_response[ 5 ],
-                       dump.flash_response[ 6 ], dump.flash_response[ 7 ] );
+    print_response_line( "cs0 flash 9F", dump.flash_response );
 
     if ( !dump.psram_probed )
     {
@@ -394,17 +394,36 @@ static void print_identity_dump( void )
 
     for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
     {
-        BSP_ConsolePrintf( "cs1 psram 9F @%lukHz: %02X %02X %02X %02X %02X %02X %02X %02X\n",
-                           (unsigned long) ( dump.probe_hz[ rate ] / 1000u ),
-                           dump.psram_response[ rate ][ 0 ], dump.psram_response[ rate ][ 1 ],
-                           dump.psram_response[ rate ][ 2 ], dump.psram_response[ rate ][ 3 ],
-                           dump.psram_response[ rate ][ 4 ], dump.psram_response[ rate ][ 5 ],
-                           dump.psram_response[ rate ][ 6 ], dump.psram_response[ rate ][ 7 ] );
+        char label[ 32 ];
+        snprintf( label, sizeof label, "cs1 psram 9F @%lukHz",
+                  (unsigned long) ( dump.probe_hz[ rate ] / 1000u ) );
+        print_response_line( label, dump.psram_response[ rate ] );
     }
 
     BSP_ConsolePuts( dump.restored
                          ? "qpi re-entry: ok"
                          : "error: qpi re-entry failed; psram is down until the next check" );
+}
+
+
+/* One write per line rather than one per byte: every console write walks the
+   untimed stdio flush loop, and sixteen byte-sized trips per line is traffic
+   the single formatted buffer avoids. */
+/// <summary>
+///     Prints one labelled Read-ID response as space-separated hex, however
+///     many bytes the dump carries.
+/// </summary>
+static void print_response_line( const char *label, const uint8_t *ptr_response )
+{
+    /* Sized for the longest label plus three characters per byte. */
+    char line[ 80 ];
+    int written = snprintf( line, sizeof line, "%s:", label );
+    for ( uint32_t index = 0; index < (uint32_t) BSP_MEMORY_IDENTITY_RESPONSE_BYTES; ++index )
+    {
+        written += snprintf( line + written, sizeof line - (size_t) written, " %02X",
+                             ptr_response[ index ] );
+    }
+    BSP_ConsolePuts( line );
 }
 
 

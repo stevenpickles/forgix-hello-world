@@ -74,13 +74,14 @@ _Static_assert( ( 64ull * CS1_PROBE_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000
 #define CS1_TRST_WAIT_CYCLES ( (uint32_t) 1500u )
 
 /* Confirmation rates for the identity investigation: 5 MHz and 1 MHz beside
-   the production 25 MHz. At these rates the 64-clock Read-ID holds chip select
-   for 12.8 us and 64 us -- far past tCEM, and deliberately so: the ID register
-   is static logic with no refresh dependency, the array contents are
-   expendable during an investigation (the identify path resets the device and
-   the next sweep rewrites it), and an identity that is bit-identical across a
-   25x clock spread cannot be a marginal-sampling artefact. Only the
-   production divisor above is bound to the datasheet by the asserts. */
+   the production 25 MHz. The investigation's extended 128-clock Read-ID holds
+   chip select for 5.1 us, 25.6 us and 128 us at the three rates -- all past
+   tCEM, and deliberately so: the ID register is static logic with no refresh
+   dependency, the array contents are expendable during an investigation (the
+   identify path resets the device and the next sweep rewrites it), and an
+   identity that is bit-identical across a 25x clock spread cannot be a
+   marginal-sampling artefact. Only the production probe, whose short transfer
+   the asserts above measure, stays bound to the datasheet limits. */
 #define CS1_SLOW_PROBE_CLKDIV ( (uint32_t) 30u )
 #define CS1_SLOWEST_PROBE_CLKDIV ( (uint32_t) 150u )
 
@@ -366,7 +367,7 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
 ///     Captures the full Read-ID response from the boot flash as a sampling
 ///     control and from the PSRAM at three clock rates, resetting the PSRAM
 ///     first each time exactly as the production probe does, then re-enters
-///     QPI. Each slow read knowingly overstays tCEM; see the header note.
+///     QPI. Every extended read knowingly overstays tCEM; see the header note.
 /// </summary>
 /// <returns>
 ///     Every response byte, the rate of each probe, and whether the QPI
@@ -377,8 +378,10 @@ bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void )
     bsp_memory_identity_dump_t dump = { 0 };
 
 #if FORGIX_QSPI_PSRAM
-    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = { 0x9fu, 0xffu, 0xffu, 0xffu,
-                                                                    0xffu, 0xffu, 0xffu, 0xffu };
+    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
+        0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+        0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+    };
     const uint8_t reset_enable[ 1 ] = { 0x66u };
     const uint8_t reset[ 1 ] = { 0x99u };
     uint8_t discard[ 1 ] = { 0 };
@@ -435,8 +438,10 @@ bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void )
        read still has value; the SDK's helper performs the identical transfer
        at the QMI's reset-default clocking. Interrupts off because handlers
        live in flash and the helper takes XIP down. */
-    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = { 0x9fu, 0xffu, 0xffu, 0xffu,
-                                                                    0xffu, 0xffu, 0xffu, 0xffu };
+    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
+        0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+        0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
+    };
     const uint32_t interrupts = save_and_disable_interrupts();
     flash_do_cmd_cs( read_id, dump.flash_response, sizeof read_id, 0 );
     restore_interrupts( interrupts );

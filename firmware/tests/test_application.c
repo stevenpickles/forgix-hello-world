@@ -366,13 +366,17 @@ void test_memid_dumps_every_response_byte_without_consulting_the_fpga( void )
     process( "memid" );
 
     TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: EF 40 15 00 00 00 00 00" ) );
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs0 flash 9F: 00 EF 40 15 EF 40 15 EF 40 15 EF 40 15 EF 40 15" ) );
     TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F @25000kHz: 00 00 00 00 0D 0B 43 FF" ) );
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs1 psram 9F @25000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FD" ) );
     TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F @5000kHz: 00 00 00 00 0D 0B 43 FE" ) );
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs1 psram 9F @5000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FE" ) );
     TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F @1000kHz: 00 00 00 00 0D 0B 43 FD" ) );
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs1 psram 9F @1000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FF" ) );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok" ) );
 }
 
@@ -401,7 +405,7 @@ void test_memid_says_when_the_image_has_no_psram_support( void )
 
     process( "memid" );
 
-    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: EF 40 15" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: 00 EF 40 15" ) );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(),
                                   "cs1 psram: not probed; this image was built without PSRAM" ) );
     /* the probe lines and the re-entry verdict describe reads that never ran */
@@ -512,24 +516,33 @@ static bsp_memory_report_t memory_report( void )
 }
 
 
-/* Bytes chosen to look like the real investigation: a plausible Winbond flash
-   ID on the control line, the observed unexpected PSRAM identity on all three
-   rates, and a trailing byte that differs per rate so a test could never pass
-   by printing one response three times. */
+/* Bytes chosen to look like the real investigation: a Winbond flash ID
+   cycling on the control line the way a real NOR repeats it under continued
+   clocking, the observed unexpected PSRAM identity on all three rates, and a
+   trailing byte that differs per rate so a test could never pass by printing
+   one response three times. */
 static bsp_memory_identity_dump_t identity_dump( void )
 {
     bsp_memory_identity_dump_t dump = {
-        .flash_response = { 0xEF, 0x40, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00 },
         .psram_probed = true,
         .probe_hz = { 25000000u, 5000000u, 1000000u },
-        .psram_response =
-            {
-                { 0x00, 0x00, 0x00, 0x00, 0x0D, 0x0B, 0x43, 0xFF },
-                { 0x00, 0x00, 0x00, 0x00, 0x0D, 0x0B, 0x43, 0xFE },
-                { 0x00, 0x00, 0x00, 0x00, 0x0D, 0x0B, 0x43, 0xFD },
-            },
         .restored = true,
     };
+    const uint8_t flash[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
+        0x00, 0xEF, 0x40, 0x15, 0xEF, 0x40, 0x15, 0xEF,
+        0x40, 0x15, 0xEF, 0x40, 0x15, 0xEF, 0x40, 0x15,
+    };
+    const uint8_t psram[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
+        0x00, 0x00, 0x00, 0x00, 0x66, 0x0B, 0x43, 0x57,
+        0x66, 0x0B, 0x43, 0x57, 0x66, 0x0B, 0x43, 0x00,
+    };
+    memcpy( dump.flash_response, flash, sizeof flash );
+    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
+    {
+        memcpy( dump.psram_response[ rate ], psram, sizeof psram );
+        dump.psram_response[ rate ][ BSP_MEMORY_IDENTITY_RESPONSE_BYTES - 1u ] =
+            (uint8_t) ( 0xFDu + rate );
+    }
     return dump;
 }
 

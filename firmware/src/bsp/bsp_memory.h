@@ -87,9 +87,13 @@ enum
 
 enum
 {
-    /* Read-ID as one 64-clock transfer: opcode, three address bytes the
-       datasheet ignores, then the four bytes the device answers with. */
-    BSP_MEMORY_IDENTITY_RESPONSE_BYTES = 8,
+    /* Read-ID as one 128-clock transfer: opcode, three address bytes the
+       datasheet ignores, then twelve response bytes -- four past the full
+       MF + KGD + 45-bit EID, so the capture shows whether the device keeps
+       driving, repeats its ID, or goes quiet once the documented bytes are
+       out. The production probe in BSP_MemoryPsramIdentify keeps its own
+       shorter, tCEM-compliant transfer. */
+    BSP_MEMORY_IDENTITY_RESPONSE_BYTES = 16,
     /* The production rate plus two slower confirmations. */
     BSP_MEMORY_IDENTITY_PROBE_RATES = 3,
 };
@@ -163,10 +167,10 @@ bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uin
 
 /* The identity investigation behind the `memid` command: the full Read-ID
    response from the boot flash as a sampling control, then from the PSRAM at
-   the production clock and two slower ones. The slow reads deliberately hold
-   chip select past tCEM -- the ID register is static logic with no refresh
-   dependency, and the array contents are rewritten by the next sweep -- so
-   their only cost is to the DRAM data nobody is keeping. */
+   the production clock and two slower ones. Every extended read deliberately
+   holds chip select past tCEM -- the ID register is static logic with no
+   refresh dependency, and the array contents are rewritten by the next sweep
+   -- so their only cost is to the DRAM data nobody is keeping. */
 bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void );
 
 #ifdef __cplusplus
