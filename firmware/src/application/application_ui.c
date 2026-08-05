@@ -131,7 +131,7 @@ static void select_step( int16_t character );
 static const menu_entry_t MENU[] = {
     { '1', "Built-in test", "the whole sequence, once", action_ibit },
     { '2', "Built-in test soak", "repeat with a tally until a key is pressed", action_soak },
-    { '3', "One test at a time", "re-run a single step without the other thirteen", action_steps },
+    { '3', "One test at a time", "re-run a single step without the other fourteen", action_steps },
     { '4', "Board report", "what this board is, without judging it", action_report },
     { '5', "Blinker", "red, green, blue at 1 Hz until a key is pressed", action_blinker },
     { '6', "Advanced blinker", "heartbeat, colour wheel, aurora", action_advanced },
@@ -190,9 +190,13 @@ void application_ui_poll( void )
     int16_t character = BSP_ConsoleGetCharTimeoutUs( 1000 );
     ui.current_time_ms = BSP_TimeNowMs();
 
+    /* A real byte is 0..255; the timeout sentinel is merely the common
+       negative. Testing against the sentinel alone would let any other
+       negative SDK error code impersonate a keystroke -- and a phantom
+       keystroke aborts activities and dismisses banners. */
     if ( ui.mode == UI_MODE_SHELL )
     {
-        if ( character != BSP_CONSOLE_TIMEOUT )
+        if ( character >= 0 )
         {
             application_console_feed( character );
         }
@@ -207,7 +211,7 @@ void application_ui_poll( void )
     {
         /* Any key aborts. A user watching a test they no longer want should not
            have to remember which key means stop. */
-        if ( character != BSP_CONSOLE_TIMEOUT )
+        if ( character >= 0 )
         {
             ui.activity->stop();
             mark_write();
@@ -223,7 +227,7 @@ void application_ui_poll( void )
 
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_MENU );
 
-    if ( character != BSP_CONSOLE_TIMEOUT )
+    if ( character >= 0 )
     {
         if ( ui.mode == UI_MODE_BANNER )
         {
@@ -346,8 +350,8 @@ static void print_menu( void )
 }
 
 
-/* Steps are offered as 1..9 then a..e, because a single keypress is the whole
-   input method and fourteen of them will not fit in the digits. */
+/* Steps are offered as 1..9 then a..f, because a single keypress is the whole
+   input method and fifteen of them will not fit in the digits. */
 /// <summary>
 ///     Maps a step index onto the single key that selects it. Nothing bounds the
 ///     index: one past the table yields the next letter, which select_step then

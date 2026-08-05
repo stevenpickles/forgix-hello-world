@@ -4,13 +4,15 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/scripts/env.sh"
 
 # Optional image name, without the .uf2 suffix. The lockup investigation also
-# builds forgix_led_only_diagnostic.
+# builds forgix_led_only_diagnostic. The build tree comes from env.sh, the same
+# per-platform split build_firmware.sh writes into -- a hardcoded Windows path
+# here made this script look in an empty directory on every other host.
 image="${1:-forgix_hello_world}"
-uf2="$repo_root/build/firmware/$image.uf2"
+uf2="$FORGIX_FIRMWARE_BUILD_DIR/$image.uf2"
 if [[ ! -f "$uf2" ]]; then
   printf 'UF2 not found: %s\n' "$uf2" >&2
   printf 'Available images:\n' >&2
-  find "$repo_root/build/firmware" -maxdepth 1 -name '*.uf2' -exec basename {} .uf2 \; 2>/dev/null |
+  find "$FORGIX_FIRMWARE_BUILD_DIR" -maxdepth 1 -name '*.uf2' -exec basename {} .uf2 \; 2>/dev/null |
     sed 's/^/  /' >&2 || true
   printf 'Run ./scripts/build_firmware.sh first.\n' >&2
   exit 1
@@ -58,10 +60,25 @@ fi
 
 # Confirm what is actually in flash now. A silently failed load leaves the old
 # image running, and the two images are indistinguishable from the LED alone.
-flashed_name="$(picotool info 2>/dev/null | sed -n 's/^ *name: *//p' | head -1)"
-if [[ -n "$flashed_name" && -n "$image_name" && "$flashed_name" != "$image_name" ]]; then
+# Windows can take a few seconds to re-enumerate the device after the load, so
+# poll rather than trusting the first empty answer -- and an answer that never
+# comes is a verification that never ran, which must fail loudly rather than
+# echo the requested name back as if it had been read out of the part.
+flashed_name=""
+for (( attempt = 0; attempt < 10; attempt++ )); do
+  flashed_name="$(picotool info 2>/dev/null | sed -n 's/^ *name: *//p' | head -1)"
+  [[ -n "$flashed_name" ]] && break
+  sleep 1
+done
+if [[ -z "$flashed_name" ]]; then
+  printf '\npicotool could not read back an image name, so verification did not run.\n' >&2
+  printf 'The load may still have succeeded, but nothing here confirms it. Re-seat\n' >&2
+  printf 'USB if needed and check with `picotool info` before trusting this flash.\n' >&2
+  exit 1
+fi
+if [[ -n "$image_name" && "$flashed_name" != "$image_name" ]]; then
   printf '\nFlash reports %s but %s was requested.\n' "$flashed_name" "$image_name" >&2
   exit 1
 fi
-printf 'Verified in flash: %s\n' "${flashed_name:-$image_name}"
+printf 'Verified in flash: %s\n' "$flashed_name"
 picotool reboot

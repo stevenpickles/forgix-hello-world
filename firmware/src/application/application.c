@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,7 +34,11 @@ static bool parse_watch_period( const char *text, uint32_t *seconds );
 
 static void print_help( void );
 
+static void print_identity_dump( void );
+
 static void print_memory_report( void );
+
+static void print_response_line( const char *label, const uint8_t *ptr_response );
 
 
 
@@ -85,9 +90,20 @@ void application_process_command( char *line )
     {
         return;
     }
-    if ( !strcmp( argv[ 0 ], "help" ) && argc == 1 )
+    /* The gate-free commands answer their own malformed forms. Matching only
+       the exact arity and falling through would hand "help me" to the FPGA
+       gate, which on a dead FPGA blames the hardware for a typo -- on the very
+       commands kept alive so a dead FPGA can be diagnosed. */
+    if ( !strcmp( argv[ 0 ], "help" ) )
     {
-        print_help();
+        if ( argc == 1 )
+        {
+            print_help();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
     if ( !strcmp( argv[ 0 ], "quiet" ) )
@@ -149,23 +165,59 @@ void application_process_command( char *line )
         }
         return;
     }
-    if ( !strcmp( argv[ 0 ], "status" ) && argc == 1 )
+    if ( !strcmp( argv[ 0 ], "status" ) )
     {
-        application_print_status();
+        if ( argc == 1 )
+        {
+            application_print_status();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
-    if ( !strcmp( argv[ 0 ], "diag" ) && argc == 1 )
+    if ( !strcmp( argv[ 0 ], "diag" ) )
     {
-        print_memory_report();
-        application_diagnostics_print_report();
+        if ( argc == 1 )
+        {
+            print_memory_report();
+            application_diagnostics_print_report();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
+        return;
+    }
+    /* Gate-free like diag: the memories share nothing with the FPGA, and the
+       identity investigation is most needed exactly when the board is being
+       distrusted. */
+    if ( !strcmp( argv[ 0 ], "memid" ) )
+    {
+        if ( argc == 1 )
+        {
+            print_identity_dump();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
     /* Above the FPGA gate: getting back to the menu is how a user reaches the
        tests that diagnose a dead FPGA, so it cannot be one of the things a dead
        FPGA takes away. */
-    if ( !strcmp( argv[ 0 ], "menu" ) && argc == 1 )
+    if ( !strcmp( argv[ 0 ], "menu" ) )
     {
-        application_ui_enter_menu();
+        if ( argc == 1 )
+        {
+            application_ui_enter_menu();
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
         return;
     }
     if ( !BSP_FpgaIsReady() )
@@ -314,8 +366,64 @@ static bool parse_watch_period( const char *text, uint32_t *seconds )
 /// </summary>
 static void print_help( void )
 {
-    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset "
-                     "| echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
+    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu "
+                     "| reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
+}
+
+
+/* One line per transaction, every byte shown, because the absent bytes are the
+   investigation: the flash line is the sampling control, the manufacturer byte
+   sits at offset 4 of the psram lines, and a byte-alignment difference between
+   vendors shows up as the expected values standing one column off. */
+/// <summary>
+///     Prints the raw Read-ID responses BSP_MemoryIdentityDump captured: the
+///     boot flash control first, then one line per PSRAM probe rate, then
+///     whether the memory window survived the investigation.
+/// </summary>
+static void print_identity_dump( void )
+{
+    const bsp_memory_identity_dump_t dump = BSP_MemoryIdentityDump();
+
+    print_response_line( "cs0 flash 9F", dump.flash_response );
+
+    if ( !dump.psram_probed )
+    {
+        BSP_ConsolePuts( "cs1 psram: not probed; this image was built without PSRAM support" );
+        return;
+    }
+
+    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
+    {
+        char label[ 32 ];
+        snprintf( label, sizeof label, "cs1 psram 9F @%lukHz",
+                  (unsigned long) ( dump.probe_hz[ rate ] / 1000u ) );
+        print_response_line( label, dump.psram_response[ rate ] );
+    }
+
+    BSP_ConsolePuts( dump.restored
+                         ? "qpi re-entry: ok"
+                         : "error: qpi re-entry failed; psram is down until the next check" );
+}
+
+
+/* One write per line rather than one per byte: every console write walks the
+   untimed stdio flush loop, and sixteen byte-sized trips per line is traffic
+   the single formatted buffer avoids. */
+/// <summary>
+///     Prints one labelled Read-ID response as space-separated hex, however
+///     many bytes the dump carries.
+/// </summary>
+static void print_response_line( const char *label, const uint8_t *ptr_response )
+{
+    /* Sized for the longest label plus three characters per byte. */
+    char line[ 80 ];
+    int written = snprintf( line, sizeof line, "%s:", label );
+    for ( uint32_t index = 0; index < (uint32_t) BSP_MEMORY_IDENTITY_RESPONSE_BYTES; ++index )
+    {
+        written += snprintf( line + written, sizeof line - (size_t) written, " %02X",
+                             ptr_response[ index ] );
+    }
+    BSP_ConsolePuts( line );
 }
 
 

@@ -43,9 +43,10 @@ extern "C" {
 ***************************************************************************************/
 
 
-/* Why the last boot ended, as reported by the reset controller. Read once at
-   startup so the diagnostics layer can tell a clean power-up apart from a
-   watchdog-forced reboot. */
+/* Why the last boot ended, as reported by the reset controller. The BSP
+   classifies the hardware bits once and latches the answer, because arming
+   the watchdog overwrites the flag the classification reads -- so the query
+   stays truthful at any point in the run, not only before BSP_WatchdogStart. */
 typedef enum bsp_boot_reason_tag
 {
     BSP_BOOT_POWER_ON, /* normal power-up from cold */

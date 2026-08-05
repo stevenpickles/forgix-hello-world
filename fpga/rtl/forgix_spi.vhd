@@ -153,13 +153,15 @@ begin
         -- Receive is gated on oe so the engine does not clock in its own reply while
         -- it is driving the line.
         if oe = '0' and rise then
-          -- io_sync(2), not io_sync(0), and for a reason beyond metastability: `rise`
-          -- was derived from bits 2 and 1, so the sck edge being acted on is already
-          -- two clk cycles in the past. Bit 2 is the data sample from that same moment.
-          -- Taking the freshest bit here would pair a data value with an edge two
-          -- cycles older than it -- harmless at this sck rate, wrong in principle, and
-          -- the first thing to break if the bus were ever sped up.
-          received := rx_shift(6 downto 0) & io_sync(2);
+          -- io_sync(1), not io_sync(0) or io_sync(2), and for a reason beyond
+          -- metastability: `rise` was derived from bits 2 and 1, so the sck sample
+          -- being acted on entered the chain two clk cycles ago -- and the data
+          -- captured on that same edge has been shifted exactly twice since, landing
+          -- it in bit 1. Bit 0 would pair the edge with data two cycles younger, bit
+          -- 2 with data a cycle older than the edge -- harmless at this sck rate,
+          -- wrong in principle, and the first thing to break if the bus were ever
+          -- sped up.
+          received := rx_shift(6 downto 0) & io_sync(1);
           if rx_count = 7 then
             rx_shift <= received;
             rx_count <= 0;

@@ -94,6 +94,12 @@ bool BSP_UsbPresent( void )
 /// </returns>
 bsp_usb_health_t BSP_UsbHealth( void )
 {
+    /* Reading SOF_RD clears the controller's DEV_SOF interrupt condition as a
+       side effect. Harmless today -- this CDC-only device never enables the
+       SOF interrupt -- but the moment anything does (an isochronous endpoint,
+       tud_sof_cb, a TinyUSB that uses SOF for its own timing), this foreground
+       sampler starts stealing interrupts from the stack nondeterministically,
+       and the frame number must come from a stack callback instead. */
     const bsp_usb_health_t health = {
         .connected = stdio_usb_connected(),
         .suspended = tud_suspended(),

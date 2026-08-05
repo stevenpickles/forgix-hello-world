@@ -5,11 +5,16 @@
 -- wrong value anywhere.
 --
 -- send_read_request_byte is the bench's whole point. It clocks the final bit of a read
--- request and then checks the line is still the master's mid-high-phase, and the
--- FPGA's after the following falling edge. Deleting the RTL's tx_arm_s state breaks
--- neither the readback values nor the protocol -- every register still returns the
--- right byte -- so without these two asserts the regression would be invisible here
--- and would appear as a contended bus on the board.
+-- request and pins the turnaround with three asserts: mid-high-phase before the RTL
+-- can even have seen the edge (the master owns the line, unconditionally), late in the
+-- same high phase after the RTL has had time to react wrongly (this is the one that
+-- catches a design driving oe straight out of read_wait_s -- the synchronizer puts the
+-- earliest wrong drive three clk cycles after the edge, later than the first assert
+-- samples), and after the falling edge, by which time the handover must have happened.
+-- Deleting the RTL's tx_arm_s state breaks neither the readback values nor the
+-- protocol -- every register still returns the right byte -- so without the middle
+-- assert the regression would be invisible here and would appear as a contended bus on
+-- the board.
 --
 -- Everything after that is register semantics that cannot be checked from the RTL in
 -- isolation: that reset restores the power-up LED values, that the button count
@@ -66,6 +71,40 @@ architecture sim of tb_spi_regs is
 
   end procedure send_byte;
 
+  -- Sends one byte and drives button_n low at the same instant as the final bit's sck
+  -- rise. The write reaches the register file 35 ns after that instant (25 ns of
+  -- synchronizer, one registered cycle); this bench's one-cycle debounce window puts
+  -- press_strobe on the identical 35 ns schedule, so the acknowledge and the press
+  -- collide on a single clk_32m edge -- the race the set-dominates-clear gate in the
+  -- register file exists for.
+
+  procedure send_byte_with_press (
+    signal sck      : out std_ulogic;
+    signal sdio     : out std_ulogic;
+    signal button_n : out std_ulogic;
+    constant value  : in byte_t
+  ) is
+  begin
+
+    for bit_index in 7 downto 1 loop
+
+      sdio <= value(bit_index);
+      wait for 40 ns;
+      sck  <= '1';
+      wait for 40 ns;
+      sck  <= '0';
+
+    end loop;
+
+    sdio     <= value(0);
+    wait for 40 ns;
+    sck      <= '1';
+    button_n <= '0';
+    wait for 40 ns;
+    sck      <= '0';
+
+  end procedure send_byte_with_press;
+
   -- Sends the last byte of a read request, which is the byte the bus turns around on.
   -- Identical to send_byte for the first seven bits; the eighth is written out longhand
   -- because the two asserts have to land inside it. Modelled on the MCU releasing SDIO
@@ -98,7 +137,17 @@ architecture sim of tb_spi_regs is
     assert dut_oe = '0'
       report "FPGA drove SDIO before MCU turnaround"
       severity failure;
-    wait for 20 ns;
+    -- The bench clock puts edges at 5 mod 10 ns, so the RTL detects the rise above at
+    -- T+25 and a design that armed oe straight out of read_wait_s drives from T+35.
+    -- Sampling at T+39 -- after that earliest wrong reaction, before the falling edge
+    -- -- is what makes premature drive fail instead of slipping between the assert
+    -- above (T+20, before the RTL can have reacted at all) and the post-fall one
+    -- below.
+    wait for 19 ns;
+    assert dut_oe = '0'
+      report "FPGA drove SDIO before the turnaround falling edge"
+      severity failure;
+    wait for 1 ns;
     sck <= '0';
     -- One falling edge later the handover must have happened, or the reply's first bit
     -- is clocked out of an undriven line. The RTL's tx_arm_s state is what puts the
@@ -318,6 +367,38 @@ begin
     assert result = x"00"
       report "button count clear failed"
       severity failure;
+
+    -- Latch an event with a clean press, then land the acknowledge and a second press
+    -- on the same clk_32m edge: the event must survive, the count must admit both
+    -- presses, and a later uncontested acknowledge must still clear. An ungated
+    -- write-one-to-clear loses the coincident press from the event bit while the
+    -- count still increments -- the two registers disagreeing by one, permanently,
+    -- with a one-cycle window that would surface on hardware as a rare dropped press.
+    button_n <= '0';
+    wait for 100 ns;
+    button_n <= '1';
+    wait for 100 ns;
+    begin_transaction(spi_cs_n);
+    send_byte(spi_sck, spi_sdio_in, CMD_WRITE);
+    send_byte(spi_sck, spi_sdio_in, REG_STATUS);
+    send_byte_with_press(spi_sck, spi_sdio_in, button_n, x"04");
+    end_transaction(spi_cs_n);
+    button_n <= '1';
+    wait for 100 ns;
+    read_register(REG_STATUS, result);
+    assert result(2) = '1'
+      report "press coincident with the acknowledge was lost"
+      severity failure;
+    read_register(REG_BUTTON_COUNT, result);
+    assert result = x"02"
+      report "coincident press was not counted"
+      severity failure;
+    write_register(REG_STATUS, x"04");
+    read_register(REG_STATUS, result);
+    assert result(2) = '0'
+      report "uncontested acknowledge did not clear the event"
+      severity failure;
+    write_register(REG_BUTTON_COUNT, x"00");
 
     -- The tick counter's contract has three parts: a capture is atomic, reads do not
     -- re-sample, and the count advances at exactly one tick per clk cycle. The two

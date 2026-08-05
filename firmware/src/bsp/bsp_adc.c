@@ -19,11 +19,13 @@
 ***************************************************************************************/
 
 
-/* The temperature sensor is wired to the fifth ADC input. It is on-die, so
-   selecting it drives no pad -- which matters here, because where GPIO 26..29
-   go on this board is not documented anywhere and RP2350-E9 makes a floating
-   input worse than an unused one. */
-#define ADC_TEMPERATURE_INPUT ( (uint32_t) 4u )
+/* The temperature sensor is the last ADC input, and the SDK constant tracks
+   which one that is per package: 4 on the RP2350A built today, 8 on an
+   RP2350B. It is on-die, so selecting it drives no pad -- which matters here,
+   because where the analog-capable GPIOs go on this board is not documented
+   anywhere and RP2350-E9 makes a floating input worse than an unused one. A
+   hardcoded 4 would quietly convert a pad's voltage on a B-package retarget. */
+#define ADC_TEMPERATURE_INPUT ( (uint32_t) ADC_TEMPERATURE_CHANNEL_NUM )
 
 
 /* Datasheet transfer function, in integer milli-units so no float is linked:

@@ -536,6 +536,38 @@ void test_lost_configuration_reconfigures_and_flies_the_recovery_signature( void
 }
 
 
+/* Reconfiguration used to repaint unconditionally, so a background recovery
+   punched solid white through whatever a light show or an IBIT LED step was
+   painting -- and, released, that white was never refreshed, so it stuck until
+   the activity's next frame. While the LED is released the fresh registers are
+   the new owner's to fill; the signature arrives with the handover instead. */
+void test_reconfiguration_while_the_led_is_released_writes_nothing( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    application_diagnostics_release_led();
+    poll_at( 500 );
+    poll_at( 750 );
+
+    /* No LED expectation is queued here: a repaint on this path would fail the
+       test as an unexpected BSP_LedSet call. */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( true );
+    BSP_FpgaReconfigure_ExpectAndReturn( true );
+    poll_at( 1000 );
+
+    TEST_ASSERT_EQUAL_UINT32( 100u | ( 1u << 16 ) | ( 1u << 19 ) | ( 1u << 26 ),
+                              MOCK_BSP_WatchdogSnapshot( 2 ) );
+
+    /* The recovery signature flies from the reclaim onward. */
+    BSP_LedSet_Expect( 255, 255, 255, BRIGHTNESS );
+    application_diagnostics_reclaim_led();
+}
+
+
 void test_a_wrong_design_id_reconfigures_without_reading_the_led_back( void )
 {
     start_usb_at( 0 );

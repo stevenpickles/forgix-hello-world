@@ -52,6 +52,10 @@ typedef struct
     bool auto_status_enabled;
     bool swallow_lf;
     status_mode_t status_mode;
+    /* The mode a keystroke paused, so the completed line can put it back. Only
+       the stop paths clear it: quiet, release and `watch off` end a watch,
+       while a keystroke merely holds it for the length of a line. */
+    status_mode_t paused_status_mode;
     uint32_t current_time_ms;
     uint32_t next_status_ms;
     uint32_t status_period_ms;
@@ -88,6 +92,8 @@ static void print_prompt( void );
 static void schedule_idle_status( void );
 
 static void stop_active_status( void );
+
+static void pause_active_status( void );
 
 static void echo_character( int16_t character );
 
@@ -190,7 +196,7 @@ void application_console_release( void )
 ///     Local rendering only: with echo off a command still runs, it just leaves
 ///     no trace of itself on the screen. Not an independent setting either --
 ///     set_quiet writes this same flag, so an explicit `echo on` lasts only
-///     until the next quiet or interactive switch.
+///     until the next quiet, interactive, or watch switch.
 /// </summary>
 void application_console_set_echo( bool enabled )
 {
@@ -215,16 +221,16 @@ void application_console_set_quiet( bool enabled )
 
 
 /// <summary>
-///     Outranks both quiet and the idle timer: it clears quiet rather than
-///     obeying it, since a watch that printed nothing would read as a hang, and
-///     the mode then survives a completed command line where idle status would
-///     be rescheduled from scratch. The first line falls a whole period from
-///     now, not immediately.
+///     Outranks both quiet and the idle timer: it leaves quiet through the
+///     composite switch rather than flag by flag, since a watch that printed
+///     nothing would read as a hang and a prompt with no echo behind it is a
+///     state no command can name. The mode then survives a completed command
+///     line where idle status would be rescheduled from scratch, and the first
+///     line falls a whole period from now, not immediately.
 /// </summary>
 void application_console_set_watch( uint32_t period_seconds )
 {
-    console.quiet = false;
-    console.auto_status_enabled = true;
+    application_console_set_quiet( false );
     console.status_mode = STATUS_WATCH;
     console.status_period_ms = period_seconds * 1000u;
     console.next_status_ms = console.current_time_ms + console.status_period_ms;
@@ -321,13 +327,32 @@ static void schedule_idle_status( void )
 
 
 /// <summary>
-///     Disarms without touching the automatic-status flag, which is the
-///     difference between "not right now" and "not at all": a keystroke uses
-///     this so the completed line can rearm the timer, whereas `watch off`
-///     clears the flag and nothing rearms until the mode is switched.
+///     Ends the running mode outright: the paused latch goes with it, so a
+///     `quiet` or `watch off` dispatched mid-line cannot have the very line
+///     that carried it resurrect the watch it just ended. The automatic-status
+///     flag is untouched -- whether anything rearms later is the mode
+///     switches' decision, not this one's.
 /// </summary>
 static void stop_active_status( void )
 {
+    console.status_mode = STATUS_DISABLED;
+    console.paused_status_mode = STATUS_DISABLED;
+}
+
+
+/// <summary>
+///     What a keystroke does: silences status for the length of the line being
+///     typed, latching the running mode so complete_line can put a watch back
+///     with its period intact. The guard keeps the second keystroke of a line,
+///     which finds the mode already disabled, from overwriting the latch with
+///     the pause itself.
+/// </summary>
+static void pause_active_status( void )
+{
+    if ( console.status_mode != STATUS_DISABLED )
+    {
+        console.paused_status_mode = console.status_mode;
+    }
     console.status_mode = STATUS_DISABLED;
 }
 
@@ -387,28 +412,45 @@ static void complete_line( void )
         console.used = 0;
     }
 
+    /* The keystroke that started this line paused whatever was running. A
+       command that armed its own watch outranks the restore; otherwise a
+       paused watch resumes with its period intact, one whole period from the
+       line that interrupted it, and only the idle default starts over. */
     if ( console.status_mode != STATUS_WATCH )
     {
-        schedule_idle_status();
+        if ( console.paused_status_mode == STATUS_WATCH )
+        {
+            console.status_mode = STATUS_WATCH;
+            console.next_status_ms = console.current_time_ms + console.status_period_ms;
+        }
+        else
+        {
+            schedule_idle_status();
+        }
     }
+    console.paused_status_mode = STATUS_DISABLED;
     print_prompt();
 }
 
 
 /// <summary>
 ///     Drops the buffer without dispatching it and prints ^C, so an abandoned
-///     line is visibly abandoned rather than just gone. Unlike a completed line
-///     this always falls back to idle status, which means Ctrl-C also ends a
-///     running watch as a side effect of cancelling whatever was typed.
+///     line is visibly abandoned rather than just gone. The marker is
+///     echo-class output -- it mirrors what was typed -- so echo off silences
+///     it the same way it silences the characters it stands for. Unlike a
+///     completed line this always falls back to idle status, which means
+///     Ctrl-C also ends a running watch as a side effect of cancelling
+///     whatever was typed.
 /// </summary>
 static void cancel_line( void )
 {
     console.used = 0;
-    if ( !console.quiet )
+    if ( !console.quiet && console.echo_enabled )
     {
         mark_write();
         BSP_ConsolePrintf( "^C\r\n" );
     }
+    stop_active_status();
     schedule_idle_status();
     print_prompt();
 }
@@ -416,13 +458,15 @@ static void cancel_line( void )
 
 /// <summary>
 ///     Repaints onto a new line instead of clearing the screen: the job is to
-///     recover a line that unsolicited output has scrolled through, not to hide
-///     what that output said. Printed with an explicit length because the buffer
-///     only gains its terminator when the line completes.
+///     recover a line that unsolicited output has scrolled through, not to
+///     hide what that output said. With echo off there is nothing on screen to
+///     recover, so the repaint is withheld like the echo it would restore.
+///     Printed with an explicit length because the buffer only gains its
+///     terminator when the line completes.
 /// </summary>
 static void redraw_line( void )
 {
-    if ( !console.quiet )
+    if ( !console.quiet && console.echo_enabled )
     {
         mark_write();
         BSP_ConsolePrintf( "\r\nforgix> %.*s", (int) console.used, console.line );
@@ -433,10 +477,11 @@ static void redraw_line( void )
 /// <summary>
 ///     One Enter is one line: the swallow flag eats the LF of a CRLF pair, and
 ///     any other character clears it so a late LF cannot swallow the next
-///     command's newline instead. Status is disarmed before anything else is
-///     decided, and the buffer always holds a byte back for the terminator, so a
-///     full line rings rather than truncating. Unhandled control codes are
-///     dropped in silence.
+///     command's newline instead. Status is paused -- not stopped -- before
+///     anything else is decided, so typing silences a watch without ending it,
+///     and the buffer always holds a byte back for the terminator, so a full
+///     line rings rather than truncating. Unhandled control codes are dropped
+///     in silence.
 /// </summary>
 static void process_character( int16_t character )
 {
@@ -446,7 +491,7 @@ static void process_character( int16_t character )
         return;
     }
     console.swallow_lf = false;
-    stop_active_status();
+    pause_active_status();
 
     if ( character == '\r' || character == '\n' )
     {

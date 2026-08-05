@@ -132,9 +132,13 @@ bsp_fpga_init_result_t BSP_FpgaInit( void )
     bsp_fpga_init_result_t result = { 0 };
     result.configured = _Configure();
 
-    sleep_ms( 1500 );
     if ( result.configured )
     {
+        /* Only a configured FPGA has anything to settle. A failed
+           configuration used to pay this too, and on a runtime reconfigure
+           that is 1.5 s of a 5 s watchdog window spent waiting on a dead
+           part, once per failing sample, forever. */
+        sleep_ms( 1500 );
         result.design_id = BSP_FpgaPing();
     }
     else
@@ -332,9 +336,10 @@ static void _RuntimeBusIdle( void )
 }
 
 /// <summary>
-///     Clocks the bitstream in over hardware SPI, then waits up to 500 ms for
-///     CDONE. The 32 trailing zero bytes are required by the FPGA to finish
-///     internal startup after the last bitstream byte.
+///     Clocks the bitstream in over hardware SPI, then keeps clocking trailing
+///     zero bytes until CDONE rises or 500 ms passes. The trailing clocks are
+///     what the FPGA finishes its internal startup on -- CDONE advances on
+///     SCK, so a wait that stopped clocking could only ever time out.
 /// </summary>
 /// <returns>
 ///     True if CDONE rose before the deadline.
@@ -364,19 +369,19 @@ static bool _Configure( void )
     sleep_ms( 5 );
     spi_write_blocking( spi0, fpga_image, fpga_image_size );
 
+    /* The wait is not a sleep beside the bus but more zero bytes on it: the
+       configuration state machine advances on SCK, so once the clock parks,
+       CDONE can never rise. Each 32-byte burst is ~32 us at 8 MHz, which
+       paces the polling, and the deadline bounds a part that will never
+       finish. */
     const uint8_t trailing[ 32 ] = { 0 };
-    spi_write_blocking( spi0, trailing, sizeof trailing );
-
     const absolute_time_t deadline = make_timeout_time_ms( 500 );
-    bool done = false;
-    while ( !time_reached( deadline ) )
+    spi_write_blocking( spi0, trailing, sizeof trailing );
+    bool done = gpio_get( PIN_CDONE );
+    while ( !done && !time_reached( deadline ) )
     {
-        if ( gpio_get( PIN_CDONE ) )
-        {
-            done = true;
-            break;
-        }
-        sleep_ms( 1 );
+        spi_write_blocking( spi0, trailing, sizeof trailing );
+        done = gpio_get( PIN_CDONE );
     }
 
     gpio_put( PIN_CS, 1 );
@@ -395,6 +400,11 @@ static void _SendByte( const uint8_t value, const bool releaseAfterSample )
     for ( int32_t bit = 7; bit >= 0; --bit )
     {
         gpio_put( PIN_SDIO, ( value >> bit ) & 1u );
+        /* The FPGA samples SDIO on the rising SCK edge, so this gap is the
+           data's setup time. Back-to-back SIO stores would leave ~13 ns of
+           it -- every other edge in this routine buys a microsecond, and the
+           sampling edge is the one that can least afford less. */
+        busy_wait_us_32( 1 );
         gpio_put( PIN_SCK, 1 );
         busy_wait_us_32( 1 );
         if ( releaseAfterSample && bit == 0 )

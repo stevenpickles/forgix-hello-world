@@ -73,6 +73,16 @@ def read_metrics(
     return metrics
 
 
+def failed_gates(metrics: list[CoverageMetric]) -> list[str]:
+    """Names of the metrics whose gate the report fails; threshold-free rows
+    are informational and can never fail."""
+    return [
+        metric.name
+        for metric in metrics
+        if metric.threshold is not None and metric.percent < metric.threshold
+    ]
+
+
 def coverage_indicator(percent: float) -> str:
     if percent >= 90.0:
         return "&#x1F7E2;"
@@ -146,15 +156,27 @@ def main() -> int:
         default="forgix-application-test-reports",
         help="artifact label shown in the workflow summary",
     )
+    parser.add_argument(
+        "--fail-on-threshold",
+        action="store_true",
+        help="exit nonzero when any gate row fails, after rendering",
+    )
     arguments = parser.parse_args()
 
     metrics = read_metrics(
         arguments.report, arguments.line_threshold, arguments.branch_threshold
     )
+    # Render before judging, so a failing run still gets its summary table --
+    # the whole point of failing here is that a red Gate column and a green
+    # step cannot coexist. The authoritative gate is still ceedling's
+    # fail_under_line/fail_under_branch in firmware/project.yml; the
+    # thresholds passed to this script must mirror those values.
     print(
         render_html(metrics, arguments.run_url, arguments.artifact_name),
         end="",
     )
+    if arguments.fail_on_threshold and failed_gates(metrics):
+        return 1
     return 0
 
 

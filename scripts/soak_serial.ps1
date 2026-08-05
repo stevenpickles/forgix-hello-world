@@ -207,7 +207,12 @@ try {
         }
 
         # --------------------------------------------------------- gap check
+        # The in-progress gap counts toward LargestGap here, not only when a
+        # line finally arrives: the stall that trips the failure limit below is
+        # the largest gap of the run, and folding it in only on reception would
+        # leave it out of its own evidence.
         $idle = ((Get-Date) - $lastReceive)
+        if ($idle -gt $maxGap) { $maxGap = $idle }
         if ($idle.TotalSeconds -ge $GapFailSeconds) {
             $failureReason = "no data for {0:N1} s (limit {1} s)" -f $idle.TotalSeconds, $GapFailSeconds
             break
@@ -226,10 +231,14 @@ finally {
 
     Write-Host ""
     Write-Step "Soak summary"
+    # LastReceived is the time of the last actual reception, not the time this
+    # summary printed -- on a gap failure those differ by the whole failure
+    # window, and the operator correlates ETW/USBView captures against this
+    # timestamp. <none> mirrors LastLine when nothing ever arrived.
     $summary = [ordered]@{
         Elapsed        = "{0:hh\:mm\:ss}" -f $elapsed
         ReceivedLines  = $receivedLines
-        LastReceived   = (Get-Stamp)
+        LastReceived   = if ($receivedLines -gt 0) { $lastReceive.ToString("yyyy-MM-dd HH:mm:ss.fff") } else { "<none>" }
         LastLine       = $lastLine
         LastSequence   = $sequence
         LargestGap     = "{0:N1} s" -f $maxGap.TotalSeconds

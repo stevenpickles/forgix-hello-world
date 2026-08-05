@@ -37,8 +37,11 @@ architecture rtl of forgix_button is
   -- STABLE_CYCLES is why the generics exist. At the real 32 MHz it is 320_000 cycles,
   -- which no testbench can afford to wait through, so the benches override CLK_HZ with
   -- a fictitious small value to shrink the window rather than changing DEBOUNCE_MS and
-  -- testing a different filter from the one that ships.
-  constant STABLE_CYCLES : positive := (CLK_HZ / 1000) * DEBOUNCE_MS;
+  -- testing a different filter from the one that ships. The division floors at 1 kHz:
+  -- below that it truncates to zero, which maximum() clamps only so elaboration
+  -- survives long enough to reach the assert in the body that names the real mistake
+  -- instead of dying on an illegal "range 0 to -1".
+  constant STABLE_CYCLES : positive := maximum(1, (CLK_HZ / 1000) * DEBOUNCE_MS);
 
   -- Power-up state. These initializers are the FPGA's configuration-time values, not
   -- tidiness: the idle levels are '1' because the button is active low, so the filter
@@ -48,6 +51,13 @@ architecture rtl of forgix_button is
   signal counter : natural range 0 to STABLE_CYCLES - 1 := 0;
 
 begin
+
+  -- A CLK_HZ under 1 kHz truncates the debounce window to zero cycles, and the filter
+  -- it would build passes every bounce straight through. Failing elaboration with the
+  -- generic's name beats shipping that filter or dying on a cryptic range error.
+  assert CLK_HZ >= 1000
+    report "CLK_HZ below 1 kHz truncates the debounce window to zero cycles"
+    severity failure;
 
   -- Inverted because button_n is active low: a '0' on the pin is a press.
   raw_pressed <= not sync(1);

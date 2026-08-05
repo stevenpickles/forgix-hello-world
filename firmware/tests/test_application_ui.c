@@ -98,7 +98,7 @@ void setUp( void )
     activity_stops = 0;
     activity_polls_before_finishing = 3;
     application_console_release_Ignore();
-    application_ibit_step_count_IgnoreAndReturn( 14 );
+    application_ibit_step_count_IgnoreAndReturn( 15 );
     application_ibit_step_name_IgnoreAndReturn( "a step" );
 }
 
@@ -215,6 +215,40 @@ void test_shell_key_hands_the_terminal_to_the_console( void )
 }
 
 
+/* Real bytes are 0..255 and the timeout sentinel is only the common negative:
+   an SDK error code other than -1 must read as "nothing arrived", not as a
+   keystroke. Feeding it to the console would fail here as an unexpected call. */
+void test_a_negative_console_error_is_not_a_shell_keystroke( void )
+{
+    open_menu_at( 0 );
+    application_console_start_Expect();
+    key_at( 'c', 100 );
+
+    MOCK_BSP_ConsoleQueueResult( -2 );
+    application_console_idle_Expect();
+    poll_at( 200 );
+}
+
+
+/* The same phantom keystroke in activity mode would abort a running soak --
+   an hours-long tally ended by a USB hiccup rather than by the user. */
+void test_a_negative_console_error_does_not_abort_an_activity( void )
+{
+    open_menu_at( 0 );
+    application_diagnostics_release_led_Expect();
+    application_ibit_soak_ExpectAndReturn( &FAKE_ACTIVITY );
+    key_at( '2', 100 );
+    MOCK_BSP_ConsoleReset();
+
+    MOCK_BSP_ConsoleQueueResult( -2 );
+    poll_at( 200 );
+
+    TEST_ASSERT_EQUAL_UINT32( 1, activity_polls );
+    TEST_ASSERT_EQUAL_UINT32( 0, activity_stops );
+    TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
+}
+
+
 void test_menu_command_takes_the_terminal_back_from_the_shell( void )
 {
     open_menu_at( 0 );
@@ -324,12 +358,12 @@ void test_step_submenu_lists_every_step_and_runs_the_one_chosen( void )
 }
 
 
-/* Fourteen steps do not fit in the digits, so the tail of the list is lettered. */
+/* Fifteen steps do not fit in the digits, so the tail of the list is lettered. */
 void test_step_submenu_letters_the_steps_that_run_out_of_digits( void )
 {
     open_menu_at( 0 );
     key_at( '3', 100 );
-    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "  e  a step" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "  f  a step" ) );
 
     application_diagnostics_release_led_Expect();
     application_ibit_single_ExpectAndReturn( 9, &FAKE_ACTIVITY );

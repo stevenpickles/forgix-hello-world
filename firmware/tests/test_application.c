@@ -41,6 +41,8 @@ static void expect_memory_report( void );
 
 static bsp_memory_report_t memory_report( void );
 
+static bsp_memory_identity_dump_t identity_dump( void );
+
 static bsp_led_state_t expected_hello_led( void );
 
 static void expect_hello_readback( uint8_t design_id, bsp_led_state_t led );
@@ -352,6 +354,66 @@ void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access( v
 }
 
 
+/* No BSP_FpgaIsReady expectation is queued: a consult would fail through
+   CMock, which is the FPGA-down guarantee for the one command that exists to
+   interrogate a distrusted board. */
+void test_memid_dumps_every_response_byte_without_consulting_the_fpga( void )
+{
+    bsp_memory_identity_dump_t dump = identity_dump();
+
+    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs0 flash 9F: 00 EF 40 15 EF 40 15 EF 40 15 EF 40 15 EF 40 15" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs1 psram 9F @25000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FD" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs1 psram 9F @5000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FE" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "cs1 psram 9F @1000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FF" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok" ) );
+}
+
+
+void test_memid_reports_a_failed_qpi_reentry( void )
+{
+    bsp_memory_identity_dump_t dump = identity_dump();
+    dump.restored = false;
+
+    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(),
+                "error: qpi re-entry failed; psram is down until the next check" ) );
+}
+
+
+void test_memid_says_when_the_image_has_no_psram_support( void )
+{
+    bsp_memory_identity_dump_t dump = identity_dump();
+    dump.psram_probed = false;
+
+    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: 00 EF 40 15" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(),
+                                  "cs1 psram: not probed; this image was built without PSRAM" ) );
+    /* the probe lines and the re-entry verdict describe reads that never ran */
+    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F" ) );
+    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry" ) );
+}
+
+
 void test_reset_reaches_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -373,23 +435,40 @@ void test_unknown_command_is_rejected( void )
 }
 
 
+/* The gate-free commands answer their own malformed forms without consulting
+   the FPGA at all: no readiness expectation is queued for them, so a consult
+   would fail the test through CMock. That is also the FPGA-down guarantee --
+   a typo in "help" on a board whose FPGA is dead used to be answered with the
+   FPGA error, blaming the hardware for a malformed line on the very commands
+   kept alive to diagnose it. */
 void test_known_commands_with_extra_arguments_are_rejected( void )
 {
-    const char *commands[] = {
-        "help extra", "hello extra", "off extra",   "status extra",
-        "diag extra", "menu extra",  "reset extra",
+    const char *gated_commands[] = { "hello extra", "off extra", "reset extra" };
+    const char *gate_free_commands[] = {
+        "help extra", "status extra", "diag extra", "memid extra", "menu extra",
     };
 
-    for ( uint32_t index = 0; index < (uint32_t) ( sizeof commands / sizeof commands[ 0 ] );
-          ++index )
+    for ( uint32_t index = 0;
+          index < (uint32_t) ( sizeof gated_commands / sizeof gated_commands[ 0 ] ); ++index )
     {
         BSP_FpgaIsReady_ExpectAndReturn( true );
-        process( commands[ index ] );
+        process( gated_commands[ index ] );
+
+        TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
+        MOCK_BSP_ConsoleReset();
+    }
+
+    for ( uint32_t index = 0;
+          index < (uint32_t) ( sizeof gate_free_commands / sizeof gate_free_commands[ 0 ] );
+          ++index )
+    {
+        process( gate_free_commands[ index ] );
 
         TEST_ASSERT_EQUAL_STRING( "error: invalid command (try help)\n", MOCK_BSP_ConsoleOutput() );
         MOCK_BSP_ConsoleReset();
     }
 }
+
 
 
 void test_command_tokenization_is_safely_limited_to_the_argument_capacity( void )
@@ -434,6 +513,37 @@ static bsp_memory_report_t memory_report( void )
         .psram_ok = true,
     };
     return report;
+}
+
+
+/* Bytes chosen to look like the real investigation: a Winbond flash ID
+   cycling on the control line the way a real NOR repeats it under continued
+   clocking, the observed unexpected PSRAM identity on all three rates, and a
+   trailing byte that differs per rate so a test could never pass by printing
+   one response three times. */
+static bsp_memory_identity_dump_t identity_dump( void )
+{
+    bsp_memory_identity_dump_t dump = {
+        .psram_probed = true,
+        .probe_hz = { 25000000u, 5000000u, 1000000u },
+        .restored = true,
+    };
+    const uint8_t flash[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
+        0x00, 0xEF, 0x40, 0x15, 0xEF, 0x40, 0x15, 0xEF,
+        0x40, 0x15, 0xEF, 0x40, 0x15, 0xEF, 0x40, 0x15,
+    };
+    const uint8_t psram[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
+        0x00, 0x00, 0x00, 0x00, 0x66, 0x0B, 0x43, 0x57,
+        0x66, 0x0B, 0x43, 0x57, 0x66, 0x0B, 0x43, 0x00,
+    };
+    memcpy( dump.flash_response, flash, sizeof flash );
+    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
+    {
+        memcpy( dump.psram_response[ rate ], psram, sizeof psram );
+        dump.psram_response[ rate ][ BSP_MEMORY_IDENTITY_RESPONSE_BYTES - 1u ] =
+            (uint8_t) ( 0xFDu + rate );
+    }
+    return dump;
 }
 
 

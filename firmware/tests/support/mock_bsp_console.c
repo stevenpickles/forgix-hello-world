@@ -21,14 +21,15 @@
 ***************************************************************************************/
 
 
-/* The queue holds only bytes a host could actually send. BSP_CONSOLE_TIMEOUT is
-   produced when the queue runs dry rather than stored in it, so the element type
-   does not have to carry the sentinel. */
-/* Sized for a whole built-in test run. Fourteen result lines, their headings and
+/* The queue is as wide as the read result so a test can stage the negative SDK
+   error codes a real port can produce, not just the bytes a host sends.
+   BSP_CONSOLE_TIMEOUT is still produced when the queue runs dry rather than
+   stored in it. */
+/* Sized for a whole built-in test run. Fifteen result lines, their headings and
    the summary run past two kilobytes, and a capture that truncates turns a
    passing tail assertion into a confusing failure about the wrong thing. */
 static char _output[ 8192 ];
-static uint8_t _input[ 512 ];
+static int16_t _input[ 512 ];
 static uint32_t _inputCount;
 static uint32_t _inputPosition;
 
@@ -73,9 +74,20 @@ void MOCK_BSP_ConsoleReset( void )
 /// </summary>
 void MOCK_BSP_ConsoleQueueCharacter( const uint8_t character )
 {
+    MOCK_BSP_ConsoleQueueResult( (int16_t) character );
+}
+
+
+/// <summary>
+///     Stages a raw read result, negative error codes included, so a test can
+///     hand the code under test exactly what a misbehaving port would. Drops on
+///     a full queue for the same reason QueueCharacter does.
+/// </summary>
+void MOCK_BSP_ConsoleQueueResult( const int16_t result )
+{
     if ( _inputCount < (uint32_t) ( sizeof _input / sizeof _input[ 0 ] ) )
     {
-        _input[ _inputCount++ ] = character;
+        _input[ _inputCount++ ] = result;
     }
 }
 

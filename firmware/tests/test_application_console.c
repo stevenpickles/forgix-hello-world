@@ -110,7 +110,7 @@ void test_console_echoes_a_command_and_coalesces_crlf( void )
 
     TEST_ASSERT_EQUAL_STRING(
         "help\r\n"
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n"
         "forgix> ",
         MOCK_BSP_ConsoleOutput() );
@@ -221,6 +221,85 @@ void test_watch_uses_the_requested_period_and_stops_before_echoing_a_key( void )
 }
 
 
+/* The regression this pins: any keystroke used to stop the watch outright, so
+   the completed line fell back to the 10 s idle cadence and an hourly watch
+   silently became a ten-second one -- or a two-second one silently a ten-second
+   one. A completed command must hand the watch back with its period intact. */
+void test_watch_survives_a_completed_command_line( void )
+{
+    start_at( 0 );
+    MOCK_BSP_ConsoleReset();
+    poll_text_at( "watch 2\r", 100 );
+    expect_ready_status( 14 );
+    poll_at( 2100 );
+    poll_text_at( "help\r", 2200 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_at( 4199 );
+    expect_ready_status( 15 );
+    poll_at( 4200 );
+
+    TEST_ASSERT_EQUAL_STRING( "\r\nid=B6 status=01 button=03 count=15 fpga_status=1\nforgix> ",
+                              MOCK_BSP_ConsoleOutput() );
+}
+
+
+/* `quiet` then `watch` used to clear the quiet flag but leave echo off -- a
+   half-quiet state no command could name, escapable only through
+   `interactive`. Arming a watch is an interactive act, so echo, prompt, and
+   telemetry all come back with it. */
+void test_watch_after_quiet_restores_echo_and_the_prompt( void )
+{
+    start_at( 0 );
+    poll_text_at( "quiet\r", 100 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_text_at( "watch 2\r", 200 );
+    MOCK_BSP_ConsoleQueueCharacter( 'x' );
+    poll_at( 300 );
+
+    TEST_ASSERT_EQUAL_STRING( "ok\nforgix> x", MOCK_BSP_ConsoleOutput() );
+}
+
+
+void test_an_empty_line_leaves_a_watch_running( void )
+{
+    start_at( 0 );
+    MOCK_BSP_ConsoleReset();
+    poll_text_at( "watch 2\r", 100 );
+    poll_text_at( "\r", 300 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_at( 2299 );
+    expect_ready_status( 16 );
+    poll_at( 2300 );
+
+    TEST_ASSERT_EQUAL_STRING( "\r\nid=B6 status=01 button=03 count=16 fpga_status=1\nforgix> ",
+                              MOCK_BSP_ConsoleOutput() );
+}
+
+
+/* Cancelling is the one line ending that ends a watch: the ^C is aimed at
+   whatever is currently claiming the terminal, and a watch that survived it
+   would keep claiming it every period. */
+void test_ctrl_c_ends_a_running_watch_and_falls_back_to_idle_status( void )
+{
+    start_at( 0 );
+    MOCK_BSP_ConsoleReset();
+    poll_text_at( "watch 2\r", 100 );
+    MOCK_BSP_ConsoleQueueCharacter( 3 );
+    poll_at( 300 );
+    MOCK_BSP_ConsoleReset();
+
+    poll_at( 2300 );
+    TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
+
+    expect_ready_status( 17 );
+    poll_at( 10300 );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "count=17" ) );
+}
+
+
 void test_watch_off_suppresses_idle_status_until_interactive_mode_is_restored( void )
 {
     start_at( 0 );
@@ -255,7 +334,7 @@ void test_quiet_mode_keeps_machine_commands_free_of_echo_prompts_and_telemetry( 
     poll_text_at( "help\r", 50100 );
 
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
         MOCK_BSP_ConsoleOutput() );
 }
@@ -288,7 +367,7 @@ void test_echo_can_be_disabled_and_reenabled_without_changing_command_responses(
     poll_at( 151 );
     poll_text_at( "help\r", 200 );
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\nforgix> ",
         MOCK_BSP_ConsoleOutput() );
 
@@ -344,7 +423,7 @@ void test_released_console_stops_prompting_and_stops_scheduling_status( void )
 
     TEST_ASSERT_EQUAL_STRING(
         "help\r\n"
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | menu | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu | reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
         MOCK_BSP_ConsoleOutput() );
 
@@ -369,6 +448,26 @@ void test_ctrl_c_and_ctrl_l_remain_silent_in_quiet_mode( void )
 }
 
 
+/* The ^C marker and the repaint mirror what was typed, so with echo off they
+   have nothing to mirror: a script that happens to send 0x03 or 0x0C must not
+   get terminal-rendering bytes injected into its stream. The prompt after a
+   cancel is command-class output and still prints, matching a completed line. */
+void test_ctrl_c_and_ctrl_l_are_silent_with_echo_off( void )
+{
+    start_at( 0 );
+    poll_text_at( "echo off\r", 100 );
+    MOCK_BSP_ConsoleReset();
+
+    MOCK_BSP_ConsoleQueueCharacter( 12 );
+    poll_at( 200 );
+    TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
+
+    MOCK_BSP_ConsoleQueueCharacter( 3 );
+    poll_at( 200 );
+    TEST_ASSERT_EQUAL_STRING( "forgix> ", MOCK_BSP_ConsoleOutput() );
+}
+
+
 
 
 /***************************************************************************************
@@ -389,7 +488,7 @@ static void poll_at( uint32_t now_ms )
 {
     MOCK_BSP_TimeSetMs( now_ms );
     int16_t character = BSP_ConsoleGetCharTimeoutUs( 1000 );
-    if ( character != BSP_CONSOLE_TIMEOUT )
+    if ( character >= 0 )
     {
         application_console_feed( character );
     }
