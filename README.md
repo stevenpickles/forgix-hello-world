@@ -7,7 +7,8 @@ Firmware is split into three layers under `firmware/src`: `main.c` only
 initializes the board and dispatches the application, `application/` owns shell
 and command behavior, and `bsp/` owns every Pico SDK and board-hardware detail.
 Application code consumes the aggregate `bsp.h` interface instead of including
-Pico SDK headers directly.
+Pico SDK headers directly. See [the documentation index](docs/README.md) and
+[the script index](scripts/README.md) for everything else in this repo.
 
 The supported build environment is Windows with Git Bash. Tool locations live in
 `scripts/env.sh`, which every script sources for itself, so the scripts run in a
@@ -26,7 +27,7 @@ only needs that one export. That same rule is what makes the private
 `ghcr.io/stevenpickles/forgix-build` container work: it bakes every toolchain
 at known `/opt` paths, pre-sets all of these variables, and marks itself with
 `FORGIX_BUILD_CONTAINER=1`, so the identical scripts run unchanged inside it
-(see `ci/forgix-build/Dockerfile` and `docs/fpga-ci.md`). Source the file
+(see `ci/forgix-build/Dockerfile` and [the FPGA CI notes](docs/fpga-ci.md)). Source the file
 yourself when invoking `cmake`, `ninja`, or `picotool` by hand; `--print`
 reports what it resolved:
 
@@ -119,7 +120,7 @@ something.
 ```text
   1  Built-in test          the whole sequence, once
   2  Built-in test soak     repeat with a tally until a key is pressed
-  3  One test at a time     re-run a single step without the other thirteen
+  3  One test at a time     re-run a single step without the other fourteen
   4  Board report           what this board is, without judging it
   5  Blinker                red, green, blue at 1 Hz until a key is pressed
   6  Advanced blinker       heartbeat, colour wheel, aurora
@@ -140,18 +141,36 @@ prompt, maps both CR and LF to one command terminator, and supports
 Backspace/Delete, `Ctrl-C` to cancel a line, `Ctrl-U` to erase it, and `Ctrl-L`
 to redraw it. Ten seconds after a completed command, idle status reporting starts
 at ten-second intervals; it is suppressed while a partial command is present. The
-following commands control the terminal policy:
+full command surface is:
+
+```text
+hello                           Ping the FPGA and set the LED to confirm the link
+color <r> <g> <b> [brightness]  Set the LED to that RGB and brightness (0..255 each)
+off                             Turn the LED off
+reset                           Reset and reconfigure the FPGA
+```
+
+```text
+status                  One-line snapshot: FPGA id, status register, button, status pin
+diag                    Full diagnostics report, both QSPI memories included
+memid                   Re-read PSRAM and flash identity in the datasheet's legal window
+menu                    Leave the shell and redraw the menu
+help                    Print this command list
+```
 
 ```text
 echo on|off             Enable or disable device-side character echo
 watch <1..3600>|off     Report status at that interval, or disable idle reports
 quiet                   Disable echo, prompts, and unsolicited status
 interactive             Restore the default interactive behavior
-menu                    Leave the shell and redraw the menu
 ```
 
-`menu` sits above the FPGA-ready gate that the hardware commands sit behind:
-getting back to the tests must not be one of the things a dead FPGA takes away.
+`status`, `diag`, `memid`, `menu`, and `help` all sit above the FPGA-ready gate
+that `hello`, `color`, `off`, and `reset` sit behind: diagnosing a dead FPGA, and
+getting back to the tests that do, must not be one of the things a dead FPGA
+takes away. For what `diag` and `memid` actually report, see
+[the diagnostics reference](docs/diagnostics-reference.md#the-diag-command) and
+[the memid command](docs/diagnostics-reference.md#the-memid-command).
 
 An active `watch` stops as soon as a key is received so its output cannot
 interrupt the next command. `scripts/test_hardware.sh` sends `CR` then `c` to
@@ -197,19 +216,19 @@ device. `diag` reports both memories. The built-in test also re-reads the
 identity every run in the datasheet's legal window -- global reset, then Read-ID
 -- which is the only capture that stays meaningful after a warm reboot; the
 boot-time bytes come from a device still in QPI mode and are nonsense then. One
-open question remains: the device identifies itself as `KGD 0x0B, EID 0x43`
-rather than AP Memory's `0x5D`, so the fitted part does not match the
-`APS1604M-3SQR-SN` on the schematic even though it works correctly. Reading the
-package marking would settle it.
+open question remains about the device's identity — see
+[the built-in test reference](docs/ibit.md#what-it-reports-but-does-not-judge).
 
-See the [lockup investigation plan](docs/lockup-investigation-plan.md) for the
-full record, including the wrong turns and why they were wrong, and the
-[firmware lockup debugging plan](docs/usb-cdc-debugging.md) for the soak results
-and the diagnostics still built into both images.
+The diagnostics built for the investigation remain in both images and are
+documented in [the diagnostics reference](docs/diagnostics-reference.md); the
+full investigation record, including the wrong turns and why they were wrong,
+is preserved in git history.
 
 Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open for
 the whole run and never reopens it after a failure, since a single controlled
-reopen is itself one of the experiments.
+reopen is itself one of the experiments. See
+[the diagnostics reference](docs/diagnostics-reference.md#soak-harness) for how
+its results are read.
 
 Application behavior can also be exercised without a board. The Ceedling
 toolchain (Ceedling 1.1.2, gcovr 8.6, host gcc) is pinned in the private
@@ -242,13 +261,15 @@ source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible
 TinyUSB checkout; the scripts also recognize `build/tinyusb`. UF2 generation
 and flashing require picotool 2.3.0, matching the SDK.
 
-See `docs/register-map.md` for the runtime protocol. The Efinity project files
+See [the register map](docs/register-map.md) for the runtime protocol. The Efinity project files
 build a placed-and-routed T8F49 passive-SPI image locally and verify the board
 pinout plus setup/hold timing before firmware compilation begins.
 
 GitHub Actions runs entirely inside the `forgix-build` image on every push and
 same-repository pull request: a `verify` job (script and project-metadata
-validation, firmware-layering checks, the clang-format and VSG format gates,
+validation, firmware-layering checks, the clang-format and VSG format gates
+([the firmware style rubric](docs/firmware-style-rubric.md) and
+[the VHDL style rubric](docs/vhdl-style-rubric.md)),
 VHDL 2008 simulation with GHDL 6.0.0, and the Ceedling application tests with
 BSP mocks and enforced coverage), the Efinity synthesis job, and an RP2354 USB
 firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
@@ -265,6 +286,7 @@ pinout and timing reports, and `SHA256SUMS` as a GitHub release. Fork pull
 requests cannot pull the private image — they are never issued the registry
 secret, however the workflow is rewritten — so they run the reduced
 `fork-verify` job (the freely installable tools only), and the full pipeline
-runs when a maintainer pushes the branch. See `docs/fpga-ci.md` for the
-one-time image setup, the reason the package is never granted to this
-repository, and the licensing constraints that shape both.
+runs when a maintainer pushes the branch. See
+[the FPGA CI notes](docs/fpga-ci.md) for the one-time image setup, the reason
+the package is never granted to this repository, and the licensing constraints
+that shape both.
