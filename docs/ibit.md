@@ -81,7 +81,9 @@ SDK's own detection.
 but reports `KGD 0x0B, EID 0x43` rather than AP Memory's `0x5D`, so it is not the
 `APS1604M-3SQR-SN` the schematic calls for. Identity and function are separate
 questions; the test answers the second and no test can answer the first. Reading
-the package marking would settle it.
+the package marking would settle it. `memid` prints the raw Read-ID bytes at
+three clock rates for offline comparison; see
+[the diagnostics reference](diagnostics-reference.md#the-memid-command).
 
 Step 7 re-reads those bytes on every run, in the one window the datasheet
 allows: a global reset, the 50 ns settling time, then a serial Read-ID under the
@@ -100,8 +102,9 @@ touches no pad, which is why it is the one analog reading taken.
 
 **The GPIO 0 lockup.** The built-in test runs long after `BSP_Init()` installed
 the pull-up that stands in for the missing 10K resistor. It cannot test the window
-between power-up and the first instruction, because nothing runs there. See the
-README section on the firmware lockup; fitting the resistor is the actual fix.
+between power-up and the first instruction, because nothing runs there. See
+[the README's lockup section](../README.md#firmware-lockup-cause-and-fix);
+fitting the resistor is the actual fix.
 
 **Anything destructive to the MCU.** No SRAM march test, no deliberate watchdog
 reset, no second-core launch. Every MCU check is read-only, so a run cannot leave
@@ -124,7 +127,7 @@ leaves nothing that the next run or a power cycle is needed to repair.
   still says the loop is alive long after a one-shot test has stopped saying
   anything.
 - **`6` Advanced blinker** — heartbeat, colour wheel and aurora. These ran from
-  the host in `scripts/test_hardware.ps1`; in firmware they need nothing but
+  the host in `scripts/test_hardware.sh`; in firmware they need nothing but
   power.
 - **`c`** drops to the `forgix>` shell, and the shell's `menu` command comes back.
 - **`r`** reboots; **`b`** enters BOOTSEL for reflashing without unplugging.
@@ -137,4 +140,4 @@ changed the LED puts it back first, including on an abort.
 Every part of this has its own watchdog progress marker, so a reset attributes
 itself: `MENU` (7), `IBIT` (8), `EFFECT` (9). Read them off a frozen board with
 `scripts/decode_scratch.py`; the procedure is in
-[the USB CDC debugging notes](usb-cdc-debugging.md).
+[the diagnostics reference](diagnostics-reference.md#reading-a-frozen-board).

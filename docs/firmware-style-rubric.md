@@ -19,6 +19,11 @@ no `.clang-format`, no `.editorconfig`, no style guide, and no C linter enabled 
 `.trunk/trunk.yaml`. The convention survives there by copy-paste, which is why its newest files
 carry the most drift. This document is the written form.
 
+> **Provenance only.** The `../comms-v4-firmware/bsp/` reference is cited above to explain where
+> each rule came from and why. It is historical: the sibling repository is not required to exist
+> to apply or check this rubric. `scripts/check_firmware_style.py` is self-contained and reads
+> nothing outside this repository.
+
 **Status: applied to all three profiles.** All 55 files in the firmware tree score 100% on the
 automated rules — 34 in **bsp**, 15 in **application**, 6 in **tests**. `scripts/check_firmware_style.py
 --strict` runs in CI over all of them by default, so a regression in any layer fails the build.

@@ -256,10 +256,14 @@ with the installed MSVC 19.35 compiler.
 
 ### `picotool reboot -f -u` returns to COM3
 
-The current Forgix Hello World firmware is expected to enter BOOTSEL normally.
-If the board returns to COM3 instead, its running firmware did not complete the
-software BOOTSEL transition. Use the powered-off `PRG`-to-`GND` recovery
-procedure, confirm with `picotool info -a`, then flash without `-f`.
+The normal way to enter BOOTSEL is `./scripts/bootsel.sh`: it wraps this same
+`picotool reboot -f -u` call and then waits for the bootloader to enumerate, so
+a successful run means the board is actually ready to flash rather than only
+that the request was accepted. If the board returns to COM3 instead, its
+running firmware did not complete the software BOOTSEL transition. Use the
+powered-off `PRG`-to-`GND` recovery procedure, confirm with `picotool info -a`,
+then flash without `-f`. See [the README](../README.md) for the cases the
+script cannot rescue.
 
 ### COM3 cannot be opened after flashing
 

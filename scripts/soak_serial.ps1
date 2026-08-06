@@ -15,7 +15,7 @@
 
     On a failure it records the last reception, the last sequence number, and
     the largest gap, then prints the Stage 4 capture checklist from
-    docs/usb-cdc-debugging.md and exits without touching the board.
+    docs/diagnostics-reference.md and exits without touching the board.
 
     A `diag:` boot report arriving on the still-open port means the watchdog
     reset the board; it is captured automatically and flagged in the log.
@@ -264,8 +264,7 @@ finally {
             "6. Power-cycle last, after every observation above is recorded.",
             "",
             "Then read the result against the mode-1 decision tree in",
-            "docs/lockup-investigation-plan.md and append a row to the results log in",
-            "docs/usb-cdc-debugging.md."
+            "docs/diagnostics-reference.md."
         ) | ForEach-Object { Write-Host "    $_" }
     }
 

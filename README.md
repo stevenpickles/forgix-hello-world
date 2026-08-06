@@ -7,28 +7,48 @@ Firmware is split into three layers under `firmware/src`: `main.c` only
 initializes the board and dispatches the application, `application/` owns shell
 and command behavior, and `bsp/` owns every Pico SDK and board-hardware detail.
 Application code consumes the aggregate `bsp.h` interface instead of including
-Pico SDK headers directly.
+Pico SDK headers directly. See [the documentation index](docs/README.md) and
+[the script index](scripts/README.md) for everything else in this repo.
 
-The supported build environment is Windows with Git Bash. Tool locations live in
-`scripts/env.sh`, which every script sources for itself, so the scripts run in a
-fresh shell with no setup:
+There are two build environments, and the same scripts run unchanged in both.
+
+The private `ghcr.io/stevenpickles/forgix-build` container is the canonical
+verification environment. It bakes every toolchain — Efinity, GHDL, VSG,
+clang-format, Ceedling, the Arm and host compilers — at pinned versions and
+known `/opt` paths, it is what CI runs, and `./scripts/test_ceedling.sh` runs
+it even when invoked from the host, digest-pinned so the toolchain under the
+tests is byte-identical everywhere. Pulling it needs a one-time
+`docker login ghcr.io` with a `read:packages` PAT, because the image also
+carries the licensed Efinity tools; `forgix-verify` inside it checks the whole
+tool contract (see `ci/forgix-build/Dockerfile` and
+[the FPGA CI notes](docs/fpga-ci.md) for the one-time setup). The clang-format
+gate is only authoritative there: the formatter version is pinned in the
+image, and a locally installed LLVM can flag formatting the pinned version
+accepts.
+
+A host shell is only needed for what touches the board — flashing, BOOTSEL,
+the hardware smoke test, and soak runs — because the container has no USB
+access. That tooling is tested on Windows with Git Bash, and native builds
+work there too. Tool locations live in `scripts/env.sh`, which every script
+sources for itself, so the scripts run in a fresh shell with no setup:
 
 ```bash
-EFINITY_HOME       /c/Efinix/Efinity/2026.1
-PICO_SDK_PATH      /c/RPi/pico-sdk-2.3.0
-GHDL_BIN_PATH      /c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin
-PICOTOOL_BIN_PATH  /c/RPi/picotool-2.3.0-install-usb/picotool
-PICO_TINYUSB_PATH  resolved from the SDK submodule, or build/tinyusb
+EFINITY_HOME               /c/Efinix/Efinity/2026.1
+PICO_SDK_PATH              /c/RPi/pico-sdk-2.3.0
+GHDL_BIN_PATH              /c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin
+PICOTOOL_BIN_PATH          /c/RPi/picotool-2.3.0-install-usb/picotool, or build/picotool-2.3.0/picotool
+PICO_TINYUSB_PATH          resolved from the SDK submodule, or build/tinyusb
+FORGIX_FIRMWARE_BUILD_DIR  build/firmware, or build/firmware-linux off Windows
 ```
 
 Any variable already set in the environment wins, so a non-default installation
-only needs that one export. That same rule is what makes the private
-`ghcr.io/stevenpickles/forgix-build` container work: it bakes every toolchain
-at known `/opt` paths, pre-sets all of these variables, and marks itself with
-`FORGIX_BUILD_CONTAINER=1`, so the identical scripts run unchanged inside it
-(see `ci/forgix-build/Dockerfile` and `docs/fpga-ci.md`). Source the file
-yourself when invoking `cmake`, `ninja`, or `picotool` by hand; `--print`
-reports what it resolved:
+only needs that one export; the container pre-sets all of them and marks itself
+with `FORGIX_BUILD_CONTAINER=1`. The firmware build tree is split per platform
+because a CMake cache records absolute paths, so the Windows tree and the
+container cannot share one directory — env.sh decides once, and the script that
+builds into the tree and the script that flashes out of it cannot disagree
+about where it is. Source the file yourself when invoking `cmake`, `ninja`, or
+`picotool` by hand; `--print` reports what it resolved:
 
 ```bash
 source ./scripts/env.sh --print
@@ -105,8 +125,11 @@ hello world - 47 - press any key
 ```
 
 The count is seconds since boot rather than bytes sent, so it keeps advancing
-while nothing is listening: reading `47` means the board has been up and
-transmitting for the three quarters of a minute it took to find the port. The
+while nothing is listening: reading `47` means the board has been up for the
+three quarters of a minute it took to find the port. Only the printing waits
+for the host to assert DTR, because pushing into a port no host has opened is
+the one unbounded trip through the untimed stdio flush this firmware can
+inflict on itself. The
 board boots the instant it is powered, so anything printed once at boot is gone
 before a terminal can be opened, and this is what replaces it. The message needs
 nothing from the host, which is the point — it proves the assembly can transmit
@@ -119,7 +142,7 @@ something.
 ```text
   1  Built-in test          the whole sequence, once
   2  Built-in test soak     repeat with a tally until a key is pressed
-  3  One test at a time     re-run a single step without the other thirteen
+  3  One test at a time     re-run a single step without the other fourteen
   4  Board report           what this board is, without judging it
   5  Blinker                red, green, blue at 1 Hz until a key is pressed
   6  Advanced blinker       heartbeat, colour wheel, aurora
@@ -140,18 +163,36 @@ prompt, maps both CR and LF to one command terminator, and supports
 Backspace/Delete, `Ctrl-C` to cancel a line, `Ctrl-U` to erase it, and `Ctrl-L`
 to redraw it. Ten seconds after a completed command, idle status reporting starts
 at ten-second intervals; it is suppressed while a partial command is present. The
-following commands control the terminal policy:
+full command surface is:
+
+```text
+hello                           Ping the FPGA and set the LED to confirm the link
+color <r> <g> <b> [brightness]  Set the LED to that RGB and brightness (0..255 each)
+off                             Turn the LED off
+reset                           Reset and reconfigure the FPGA
+```
+
+```text
+status                  One-line snapshot: FPGA id, status register, button, press count, status pin
+diag                    Full diagnostics report, both QSPI memories included
+memid                   Re-read PSRAM and flash identity in the datasheet's legal window
+menu                    Leave the shell and redraw the menu
+help                    Print this command list
+```
 
 ```text
 echo on|off             Enable or disable device-side character echo
 watch <1..3600>|off     Report status at that interval, or disable idle reports
 quiet                   Disable echo, prompts, and unsolicited status
 interactive             Restore the default interactive behavior
-menu                    Leave the shell and redraw the menu
 ```
 
-`menu` sits above the FPGA-ready gate that the hardware commands sit behind:
-getting back to the tests must not be one of the things a dead FPGA takes away.
+`status`, `diag`, `memid`, `menu`, and `help` all sit above the FPGA-ready gate
+that `hello`, `color`, `off`, and `reset` sit behind: diagnosing a dead FPGA, and
+getting back to the tests that do, must not be one of the things a dead FPGA
+takes away. For what `diag` and `memid` actually report, see
+[the diagnostics reference](docs/diagnostics-reference.md#the-diag-command) and
+[the memid command](docs/diagnostics-reference.md#the-memid-command).
 
 An active `watch` stops as soon as a key is received so its output cannot
 interrupt the next command. `scripts/test_hardware.sh` sends `CR` then `c` to
@@ -197,28 +238,27 @@ device. `diag` reports both memories. The built-in test also re-reads the
 identity every run in the datasheet's legal window -- global reset, then Read-ID
 -- which is the only capture that stays meaningful after a warm reboot; the
 boot-time bytes come from a device still in QPI mode and are nonsense then. One
-open question remains: the device identifies itself as `KGD 0x0B, EID 0x43`
-rather than AP Memory's `0x5D`, so the fitted part does not match the
-`APS1604M-3SQR-SN` on the schematic even though it works correctly. Reading the
-package marking would settle it.
+open question remains about the device's identity — see
+[the built-in test reference](docs/ibit.md#what-it-reports-but-does-not-judge).
 
-See the [lockup investigation plan](docs/lockup-investigation-plan.md) for the
-full record, including the wrong turns and why they were wrong, and the
-[firmware lockup debugging plan](docs/usb-cdc-debugging.md) for the soak results
-and the diagnostics still built into both images.
+The diagnostics built for the investigation remain in both images and are
+documented in [the diagnostics reference](docs/diagnostics-reference.md); the
+full investigation record, including the wrong turns and why they were wrong,
+is preserved in git history.
 
 Run long sessions with `./scripts/soak_serial.ps1`, which holds the port open for
 the whole run and never reopens it after a failure, since a single controlled
-reopen is itself one of the experiments.
+reopen is itself one of the experiments. See
+[the diagnostics reference](docs/diagnostics-reference.md#soak-harness) for how
+its results are read.
 
 Application behavior can also be exercised without a board. The Ceedling
 toolchain (Ceedling 1.1.2, gcovr 8.6, host gcc) is pinned in the private
-`forgix-build` Docker image, so the same compiler, Unity, CMock, and coverage
-tools run on Windows and in CI. The image is private because it also carries
-the licensed Efinity tools, so running it locally needs a one-time
-`docker login ghcr.io` with a `read:packages` PAT; contributors without access
-can instead install Ceedling 1.1.2 and gcovr 8.6 natively and run `ceedling`
-from `firmware/`:
+`forgix-build` image, and `./scripts/test_ceedling.sh` runs that image even
+when invoked from the host, so the same compiler, Unity, CMock, and coverage
+tools run on Windows and in CI. Contributors without image access can instead
+install Ceedling 1.1.2 and gcovr 8.6 natively and run `ceedling` from
+`firmware/`:
 
 ```bash
 python scripts/check_firmware_layers.py
@@ -242,29 +282,37 @@ source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible
 TinyUSB checkout; the scripts also recognize `build/tinyusb`. UF2 generation
 and flashing require picotool 2.3.0, matching the SDK.
 
-See `docs/register-map.md` for the runtime protocol. The Efinity project files
+See [the register map](docs/register-map.md) for the runtime protocol. The Efinity project files
 build a placed-and-routed T8F49 passive-SPI image locally and verify the board
 pinout plus setup/hold timing before firmware compilation begins.
 
 GitHub Actions runs entirely inside the `forgix-build` image on every push and
 same-repository pull request: a `verify` job (script and project-metadata
-validation, firmware-layering checks, the clang-format and VSG format gates,
+validation, firmware-layering checks, the clang-format and VSG format gates
+([the firmware style rubric](docs/firmware-style-rubric.md) and
+[the VHDL style rubric](docs/vhdl-style-rubric.md)),
 VHDL 2008 simulation with GHDL 6.0.0, and the Ceedling application tests with
 BSP mocks and enforced coverage), the Efinity synthesis job, and an RP2354 USB
 firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
 last linking the bitstream that same run produced, falling back to the
 `tests/fixtures/fpga-test.bin` compile fixture only if synthesis failed. The
 verify job publishes its JUnit, detailed HTML, Cobertura XML, and text reports
-as a workflow artifact. Hardware tests remain local.
+as a workflow artifact. Hardware tests remain local. A push or pull request
+confined to Markdown, `docs/`, or the license skips the entire workflow —
+nothing in CI reads those files — so a documentation-only pull request arrives
+with no checks at all.
 
 Pushing a `v*` tag runs `release.yml`, which places and routes the T8F49
 design, builds the RP2354 firmware against that exact bitstream using the
 image's prebuilt picotool for UF2 generation, checks the image appears
-byte-for-byte in the linked binary, and publishes the UF2, ELF, bitstream,
-pinout and timing reports, and `SHA256SUMS` as a GitHub release. Fork pull
+byte-for-byte in the linked binary, and publishes both UF2s — the shell image
+and the USB-free `forgix-led-only-diagnostic` — plus the ELF and its map, the
+bitstream as `.bin` and `.hex`, the pinout and timing reports, and
+`SHA256SUMS` as a GitHub release. Fork pull
 requests cannot pull the private image — they are never issued the registry
 secret, however the workflow is rewritten — so they run the reduced
 `fork-verify` job (the freely installable tools only), and the full pipeline
-runs when a maintainer pushes the branch. See `docs/fpga-ci.md` for the
-one-time image setup, the reason the package is never granted to this
-repository, and the licensing constraints that shape both.
+runs when a maintainer pushes the branch. See
+[the FPGA CI notes](docs/fpga-ci.md) for the one-time image setup, the reason
+the package is never granted to this repository, and the licensing constraints
+that shape both.
