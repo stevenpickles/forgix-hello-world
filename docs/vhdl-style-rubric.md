@@ -11,7 +11,7 @@ Eight files, VHDL-2008, simulated with GHDL 6.0.0 (`bash scripts/test.sh`) and s
 with Efinity. Sections A to D are the rules, stated as the **rtl** profile has them;
 section E lists where **tb** differs. A rule section E does not mention applies to both.
 
-This is the VHDL counterpart to `firmware-style-rubric.md`, and it inherits that document's
+This is the VHDL counterpart to [the firmware style rubric](firmware-style-rubric.md), and it inherits that document's
 governing principle: **a rule a machine cannot reproduce is not a rule.** The formatter half
 is delegated wholesale to VSG 3.35.0, configured in `fpga/vsg.yaml`. The documentation half
 (section D) cannot be mechanized and is marked human-judged throughout — that is a
@@ -35,12 +35,12 @@ comment inside a declarative block splits its alignment group, so section D's ed
 section C8's rules fail again — re-running `--fix` after writing comments is part of the
 job, not a sign something went wrong.
 
-The sections below are written in the present tense of the tree as it was *before* this was
-applied: the violation counts, "seven of the nine processes are unlabelled", "the eight
-files contain zero comments", and the Adoption ordering all describe the starting state.
-They are kept as written because they are the argument for each rule and the record of what
-the work cost. The rules themselves are current; only the observations about the code are
-historical.
+> **Historical tense note.** The sections below are written in the present tense of the tree
+> as it was *before* this was applied: the violation counts, "seven of the nine processes are
+> unlabelled", "the eight files contain zero comments", and the Adoption ordering all describe
+> the starting state. They are kept as written because they are the argument for each rule and
+> the record of what the work cost. The rules themselves are current; only the observations
+> about the code are historical.
 
 Every rule has a stable ID. Renumbering them breaks the cross-references in `fpga/vsg.yaml`,
 which cites them by ID in its comments.
