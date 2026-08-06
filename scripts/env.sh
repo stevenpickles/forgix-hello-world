@@ -2,19 +2,21 @@
 #
 #   source ./scripts/env.sh --print
 #
-# Every script that needs a tool path sources this, so the scripts work in a
-# fresh Git Bash session with no setup. Sourcing it yourself is only needed when
-# you want to invoke cmake, ninja, or picotool by hand.
+# Every script that needs a tool path sources this. Sourcing it yourself is
+# only needed when you want to invoke cmake, ninja, or picotool by hand.
 #
-# Variables already set in the environment always win, so CI and non-default
-# installations are unaffected. Set any of these before sourcing to override:
+# Machine-specific installation paths do not belong in this tracked file: they
+# live in scripts/env.local.sh -- untracked, gitignored -- which this file
+# sources first. Copy scripts/env.local.example.sh to create one. Variables
+# already set in the environment always win over both files, so CI and one-off
+# overrides are unaffected:
 #
 #   EFINITY_HOME PICO_SDK_PATH GHDL_BIN_PATH PICOTOOL_BIN_PATH PICO_TINYUSB_PATH
 #   FORGIX_FIRMWARE_BUILD_DIR
 #
 # Inside the forgix-build container (FORGIX_BUILD_CONTAINER=1) every one of
-# them arrives pre-set from the image's ENV contract, so the Windows defaults
-# below never apply there -- see ci/forgix-build/Dockerfile.
+# them arrives pre-set from the image's ENV contract, so neither file applies
+# there -- see ci/forgix-build/Dockerfile.
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   printf 'env.sh must be sourced, not executed:\n  source %s\n' "${BASH_SOURCE[0]}" >&2
@@ -23,23 +25,29 @@ fi
 
 forgix_env_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-: "${EFINITY_HOME:=/c/Efinix/Efinity/2026.1}"
-: "${PICO_SDK_PATH:=/c/RPi/pico-sdk-2.3.0}"
-: "${GHDL_BIN_PATH:=/c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin}"
+# One developer's disk layout is not the repository's default: machine paths
+# come only from the untracked local file, sourced before the fallbacks below.
+if [[ -f "$forgix_env_root/scripts/env.local.sh" ]]; then
+  source "$forgix_env_root/scripts/env.local.sh"
+fi
+
+# Defined empty when nothing supplied them, so consumers running under `set -u`
+# reach their own "set X to ..." guidance instead of an unbound-variable abort.
+: "${EFINITY_HOME:=}"
+: "${PICO_SDK_PATH:=}"
+: "${GHDL_BIN_PATH:=}"
 export EFINITY_HOME PICO_SDK_PATH GHDL_BIN_PATH
 
-# picotool: prefer the USB-enabled install from ./scripts/build_picotool.sh. The
-# copy the Pico SDK fetches into build/ is built without libusb -- it can convert
-# a UF2 but has no `load` or `reboot`, so it must never be the first choice.
+# picotool: prefer the USB-enabled install from ./scripts/build_picotool.sh,
+# pinned via PICOTOOL_BIN_PATH in env.local.sh. The copy the Pico SDK fetches
+# into build/ is built without libusb -- it can convert a UF2 but has no `load`
+# or `reboot`, so it must never be the first choice. The repo-relative probe
+# below covers an install dropped into the build tree.
 if [[ -z "${PICOTOOL_BIN_PATH:-}" ]]; then
-  for forgix_env_candidate in \
-      /c/RPi/picotool-2.3.0-install-usb/picotool \
-      "$forgix_env_root/build/picotool-2.3.0/picotool"; do
-    if [[ -x "$forgix_env_candidate/picotool.exe" || -x "$forgix_env_candidate/picotool" ]]; then
-      PICOTOOL_BIN_PATH="$forgix_env_candidate"
-      break
-    fi
-  done
+  forgix_env_candidate="$forgix_env_root/build/picotool-2.3.0/picotool"
+  if [[ -x "$forgix_env_candidate/picotool.exe" || -x "$forgix_env_candidate/picotool" ]]; then
+    PICOTOOL_BIN_PATH="$forgix_env_candidate"
+  fi
   unset forgix_env_candidate
 fi
 

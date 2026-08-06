@@ -29,21 +29,24 @@ accepts.
 A host shell is only needed for what touches the board — flashing, BOOTSEL,
 the hardware smoke test, and soak runs — because the container has no USB
 access. That tooling is tested on Windows with Git Bash, and native builds
-work there too. Tool locations live in `scripts/env.sh`, which every script
-sources for itself, so the scripts run in a fresh shell with no setup:
+work there too. Tool locations resolve through `scripts/env.sh`, which every
+script sources for itself, so the scripts run in a fresh shell with no setup:
 
-```bash
-EFINITY_HOME               /c/Efinix/Efinity/2026.1
-PICO_SDK_PATH              /c/RPi/pico-sdk-2.3.0
-GHDL_BIN_PATH              /c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin
-PICOTOOL_BIN_PATH          /c/RPi/picotool-2.3.0-install-usb/picotool, or build/picotool-2.3.0/picotool
+```text
+EFINITY_HOME               Efinity 2026.1 installation
+PICO_SDK_PATH              Pico SDK 2.3.0
+GHDL_BIN_PATH              directory holding the ghdl executable
+PICOTOOL_BIN_PATH          USB-enabled picotool; build/picotool-2.3.0/picotool is probed
 PICO_TINYUSB_PATH          resolved from the SDK submodule, or build/tinyusb
 FORGIX_FIRMWARE_BUILD_DIR  build/firmware, or build/firmware-linux off Windows
 ```
 
-Any variable already set in the environment wins, so a non-default installation
-only needs that one export; the container pre-sets all of them and marks itself
-with `FORGIX_BUILD_CONTAINER=1`. The firmware build tree is split per platform
+Where these tools live on a given machine is pinned in `scripts/env.local.sh`
+— untracked, created by copying `scripts/env.local.example.sh` — so one
+developer's disk layout is never the repository's default. Any variable
+already set in the environment wins over both files; the container pre-sets
+all of them and marks itself with `FORGIX_BUILD_CONTAINER=1`. The firmware
+build tree is split per platform
 because a CMake cache records absolute paths, so the Windows tree and the
 container cannot share one directory — env.sh decides once, and the script that
 builds into the tree and the script that flashes out of it cannot disagree

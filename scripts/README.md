@@ -21,6 +21,7 @@ document](../docs/fpga-ci.md)).
 | [efinity_hex_to_bin.py](efinity_hex_to_bin.py) | Convert an Efinity passive-SPI hexadecimal image to compact bytes |
 | [embed_image.py](embed_image.py) | Convert a compact FPGA binary to deterministic C source and header files |
 | [env.sh](env.sh) | Tool locations for the Forgix build scripts — `EFINITY_HOME`, `PICO_SDK_PATH`, `GHDL_BIN_PATH`, `PICOTOOL_BIN_PATH`, `PICO_TINYUSB_PATH`, `FORGIX_FIRMWARE_BUILD_DIR`. Source it; do not run it |
+| [env.local.example.sh](env.local.example.sh) | Template for `scripts/env.local.sh`, the untracked file that pins one machine's tool locations; `env.sh` sources it when present |
 | [flash.sh](flash.sh) | Flash a built UF2 to the board with picotool, verify USB support first, then confirm the image actually in flash matches what was requested |
 | [run_efinity.cmd](run_efinity.cmd) | Windows counterpart to `run_efinity.sh`, invoked by `build_fpga.sh`: runs Efinity's `setup.bat` then one headless compile of the project |
 | [run_efinity.sh](run_efinity.sh) | POSIX sibling of `run_efinity.cmd`, invoked by `build_fpga.sh`: one headless Efinity compile, run as a separate process so Efinity's environment rewrite cannot leak into the caller |

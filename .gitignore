@@ -9,6 +9,9 @@ fpga/work-obj*.cf
 __pycache__/
 *.py[cod]
 
+# One machine's tool locations; the tracked template is env.local.example.sh.
+scripts/env.local.sh
+
 # The Efinity installer is licensed software that may not be redistributed, and
 # this repository is public. build_image.sh is usually pointed at a download
 # outside the tree, but the tarball is easy to leave here after using it -- and
