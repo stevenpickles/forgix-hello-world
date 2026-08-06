@@ -23,8 +23,9 @@ host.
 | libusb static library | `/c/Forgix/libusb-1.0.29/VS2019/MS64/static/libusb-1.0.lib` |
 
 The build also uses Visual Studio 2022 Community's x64 C++ toolchain and CMake
-3.28.1 from STM32CubeCLT 1.20.0. Override the defaults accepted by
-`scripts/build_picotool.sh` if these tools are installed elsewhere.
+3.28.1 from STM32CubeCLT 1.20.0 (`CMAKE_EXE`). `scripts/build_picotool.sh`
+carries no built-in paths beyond VsDevCmd's fixed VS2022 Community location:
+every other input is pinned in `scripts/env.local.sh` or exported per run.
 
 ## Why picotool must be built from source
 
@@ -110,16 +111,16 @@ The default installed executable is:
 C:\RPi\picotool-2.3.0-install-usb\picotool\picotool.exe
 ```
 
-The paths may be overridden before invoking the script:
+The script takes every machine-specific path from the environment or from
+`scripts/env.local.sh` (see `scripts/env.local.example.sh`), which is the
+durable place to pin them; exports in the shell work for a one-off run. The
+build and install trees default to `<PICOTOOL_SOURCE>-build-usb` and
+`<PICOTOOL_SOURCE>-install-usb`:
 
 ```bash
 export PICOTOOL_SOURCE="/c/RPi/picotool-2.3.0"
-export PICOTOOL_BUILD="/c/RPi/picotool-2.3.0-build-usb"
-export PICOTOOL_INSTALL="/c/RPi/picotool-2.3.0-install-usb"
 export PICO_SDK_PATH="/c/RPi/pico-sdk-2.3.0"
 export LIBUSB_ROOT="/c/Forgix/libusb-1.0.29"
-export LIBUSB_INCLUDE_DIR="$LIBUSB_ROOT/include"
-export LIBUSB_LIBRARY="$LIBUSB_ROOT/VS2019/MS64/static/libusb-1.0.lib"
 
 ./scripts/build_picotool.sh
 ```
