@@ -10,26 +10,45 @@ Application code consumes the aggregate `bsp.h` interface instead of including
 Pico SDK headers directly. See [the documentation index](docs/README.md) and
 [the script index](scripts/README.md) for everything else in this repo.
 
-The supported build environment is Windows with Git Bash. Tool locations live in
-`scripts/env.sh`, which every script sources for itself, so the scripts run in a
-fresh shell with no setup:
+There are two build environments, and the same scripts run unchanged in both.
+
+The private `ghcr.io/stevenpickles/forgix-build` container is the canonical
+verification environment. It bakes every toolchain — Efinity, GHDL, VSG,
+clang-format, Ceedling, the Arm and host compilers — at pinned versions and
+known `/opt` paths, it is what CI runs, and `./scripts/test_ceedling.sh` runs
+it even when invoked from the host, digest-pinned so the toolchain under the
+tests is byte-identical everywhere. Pulling it needs a one-time
+`docker login ghcr.io` with a `read:packages` PAT, because the image also
+carries the licensed Efinity tools; `forgix-verify` inside it checks the whole
+tool contract (see `ci/forgix-build/Dockerfile` and
+[the FPGA CI notes](docs/fpga-ci.md) for the one-time setup). The clang-format
+gate is only authoritative there: the formatter version is pinned in the
+image, and a locally installed LLVM can flag formatting the pinned version
+accepts.
+
+Windows with Git Bash is the supported host environment, and the only one for
+anything that touches the board — flashing, BOOTSEL, the hardware smoke test,
+and soak runs — because the container has no USB access. Native builds work
+too. Tool locations live in `scripts/env.sh`, which every script sources for
+itself, so the scripts run in a fresh shell with no setup:
 
 ```bash
-EFINITY_HOME       /c/Efinix/Efinity/2026.1
-PICO_SDK_PATH      /c/RPi/pico-sdk-2.3.0
-GHDL_BIN_PATH      /c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin
-PICOTOOL_BIN_PATH  /c/RPi/picotool-2.3.0-install-usb/picotool
-PICO_TINYUSB_PATH  resolved from the SDK submodule, or build/tinyusb
+EFINITY_HOME               /c/Efinix/Efinity/2026.1
+PICO_SDK_PATH              /c/RPi/pico-sdk-2.3.0
+GHDL_BIN_PATH              /c/Forgix/GHDL/ghdl-mcode-6.0.0-ucrt64/bin
+PICOTOOL_BIN_PATH          /c/RPi/picotool-2.3.0-install-usb/picotool, or build/picotool-2.3.0/picotool
+PICO_TINYUSB_PATH          resolved from the SDK submodule, or build/tinyusb
+FORGIX_FIRMWARE_BUILD_DIR  build/firmware, or build/firmware-linux off Windows
 ```
 
 Any variable already set in the environment wins, so a non-default installation
-only needs that one export. That same rule is what makes the private
-`ghcr.io/stevenpickles/forgix-build` container work: it bakes every toolchain
-at known `/opt` paths, pre-sets all of these variables, and marks itself with
-`FORGIX_BUILD_CONTAINER=1`, so the identical scripts run unchanged inside it
-(see `ci/forgix-build/Dockerfile` and [the FPGA CI notes](docs/fpga-ci.md)). Source the file
-yourself when invoking `cmake`, `ninja`, or `picotool` by hand; `--print`
-reports what it resolved:
+only needs that one export; the container pre-sets all of them and marks itself
+with `FORGIX_BUILD_CONTAINER=1`. The firmware build tree is split per platform
+because a CMake cache records absolute paths, so the Windows tree and the
+container cannot share one directory — env.sh decides once, and the script that
+builds into the tree and the script that flashes out of it cannot disagree
+about where it is. Source the file yourself when invoking `cmake`, `ninja`, or
+`picotool` by hand; `--print` reports what it resolved:
 
 ```bash
 source ./scripts/env.sh --print
@@ -232,12 +251,11 @@ its results are read.
 
 Application behavior can also be exercised without a board. The Ceedling
 toolchain (Ceedling 1.1.2, gcovr 8.6, host gcc) is pinned in the private
-`forgix-build` Docker image, so the same compiler, Unity, CMock, and coverage
-tools run on Windows and in CI. The image is private because it also carries
-the licensed Efinity tools, so running it locally needs a one-time
-`docker login ghcr.io` with a `read:packages` PAT; contributors without access
-can instead install Ceedling 1.1.2 and gcovr 8.6 natively and run `ceedling`
-from `firmware/`:
+`forgix-build` image, and `./scripts/test_ceedling.sh` runs that image even
+when invoked from the host, so the same compiler, Unity, CMock, and coverage
+tools run on Windows and in CI. Contributors without image access can instead
+install Ceedling 1.1.2 and gcovr 8.6 natively and run `ceedling` from
+`firmware/`:
 
 ```bash
 python scripts/check_firmware_layers.py
