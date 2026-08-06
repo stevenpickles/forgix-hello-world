@@ -125,8 +125,11 @@ hello world - 47 - press any key
 ```
 
 The count is seconds since boot rather than bytes sent, so it keeps advancing
-while nothing is listening: reading `47` means the board has been up and
-transmitting for the three quarters of a minute it took to find the port. The
+while nothing is listening: reading `47` means the board has been up for the
+three quarters of a minute it took to find the port. Only the printing waits
+for the host to assert DTR, because pushing into a port no host has opened is
+the one unbounded trip through the untimed stdio flush this firmware can
+inflict on itself. The
 board boots the instant it is powered, so anything printed once at boot is gone
 before a terminal can be opened, and this is what replaces it. The message needs
 nothing from the host, which is the point — it proves the assembly can transmit
@@ -170,7 +173,7 @@ reset                           Reset and reconfigure the FPGA
 ```
 
 ```text
-status                  One-line snapshot: FPGA id, status register, button, status pin
+status                  One-line snapshot: FPGA id, status register, button, press count, status pin
 diag                    Full diagnostics report, both QSPI memories included
 memid                   Re-read PSRAM and flash identity in the datasheet's legal window
 menu                    Leave the shell and redraw the menu
@@ -294,13 +297,18 @@ firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
 last linking the bitstream that same run produced, falling back to the
 `tests/fixtures/fpga-test.bin` compile fixture only if synthesis failed. The
 verify job publishes its JUnit, detailed HTML, Cobertura XML, and text reports
-as a workflow artifact. Hardware tests remain local.
+as a workflow artifact. Hardware tests remain local. A push or pull request
+confined to Markdown, `docs/`, or the license skips the entire workflow —
+nothing in CI reads those files — so a documentation-only pull request arrives
+with no checks at all.
 
 Pushing a `v*` tag runs `release.yml`, which places and routes the T8F49
 design, builds the RP2354 firmware against that exact bitstream using the
 image's prebuilt picotool for UF2 generation, checks the image appears
-byte-for-byte in the linked binary, and publishes the UF2, ELF, bitstream,
-pinout and timing reports, and `SHA256SUMS` as a GitHub release. Fork pull
+byte-for-byte in the linked binary, and publishes both UF2s — the shell image
+and the USB-free `forgix-led-only-diagnostic` — plus the ELF and its map, the
+bitstream as `.bin` and `.hex`, the pinout and timing reports, and
+`SHA256SUMS` as a GitHub release. Fork pull
 requests cannot pull the private image — they are never issued the registry
 secret, however the workflow is rewritten — so they run the reduced
 `fork-verify` job (the freely installable tools only), and the full pipeline
