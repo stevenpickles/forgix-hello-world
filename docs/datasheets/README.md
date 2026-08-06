@@ -16,6 +16,9 @@ Key facts for the driver:
 - Read ID may only be issued straight after a Global Reset plus `tRST` 50 ns.
 - Expected response: vendor `0Dh` at byte 4, known-good-die `5Dh` at byte 5, then
   EID whose top three bits encode density -- `000` for this 2 MByte part.
+- The fitted device answers KGD `0x0B`, EID `0x43` instead; see
+  [the built-in test reference](../ibit.md#what-it-reports-but-does-not-judge)
+  for the open question.
 - Command widths matter. `F5h` Exit Quad Mode is a **quad** command and does not
   exist in serial mode; `66h`/`99h` reset exist in both. A device left in QPI
   cannot be reset by serial-width commands.
