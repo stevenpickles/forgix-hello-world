@@ -26,11 +26,11 @@ gate is only authoritative there: the formatter version is pinned in the
 image, and a locally installed LLVM can flag formatting the pinned version
 accepts.
 
-Windows with Git Bash is the supported host environment, and the only one for
-anything that touches the board — flashing, BOOTSEL, the hardware smoke test,
-and soak runs — because the container has no USB access. Native builds work
-too. Tool locations live in `scripts/env.sh`, which every script sources for
-itself, so the scripts run in a fresh shell with no setup:
+A host shell is only needed for what touches the board — flashing, BOOTSEL,
+the hardware smoke test, and soak runs — because the container has no USB
+access. That tooling is tested on Windows with Git Bash, and native builds
+work there too. Tool locations live in `scripts/env.sh`, which every script
+sources for itself, so the scripts run in a fresh shell with no setup:
 
 ```bash
 EFINITY_HOME               /c/Efinix/Efinity/2026.1
