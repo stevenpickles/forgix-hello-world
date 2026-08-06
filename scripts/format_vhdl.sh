@@ -7,22 +7,18 @@ set -euo pipefail
 # Pass --check to verify without writing, which is what CI calls.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/env.sh"
 
-# pip's user-site install does not put vsg on PATH on Windows, so look there too.
+# pip's user-site install does not put vsg on PATH on Windows; pin VSG in
+# scripts/env.local.sh when that is where it lives.
 vsg="${VSG:-}"
 if [[ -z "$vsg" ]]; then
-  for candidate in \
-    "$(command -v vsg 2>/dev/null || true)" \
-    "/c/Users/Steven/AppData/Roaming/Python/Python314/Scripts/vsg"; do
-    if [[ -n "$candidate" && -x "$candidate" ]]; then
-      vsg="$candidate"
-      break
-    fi
-  done
+  vsg="$(command -v vsg 2>/dev/null || true)"
 fi
 
 if [[ -z "$vsg" ]]; then
-  printf 'vsg not found. Install it with `pip install vsg==3.35.0` or set VSG to its path.\n' >&2
+  printf 'vsg not found. Install it with `pip install vsg==3.35.0` or set VSG to its path\n' >&2
+  printf '(scripts/env.local.sh is the durable place for that).\n' >&2
   exit 1
 fi
 

@@ -8,8 +8,11 @@ set -euo pipefail
 # Pass --check to verify without writing, which is what CI should call.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$repo_root/scripts/env.sh"
 
-# The Windows LLVM installer does not put clang-format on PATH, so look there too.
+# The Windows LLVM installer does not put clang-format on PATH, so look in its
+# fixed install locations too; a non-standard location pins CLANG_FORMAT in
+# scripts/env.local.sh.
 clang_format="${CLANG_FORMAT:-}"
 if [[ -z "$clang_format" ]]; then
   for candidate in \

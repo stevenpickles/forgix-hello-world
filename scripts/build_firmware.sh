@@ -7,6 +7,13 @@ source "$repo_root/scripts/env.sh"
 # the builder and the flasher cannot disagree about where the images are.
 build_dir="$FORGIX_FIRMWARE_BUILD_DIR"
 fpga_image="$repo_root/fpga/outflow/forgix_hello_world.bin"
+
+# Guarded here because CMake's own complaint about a missing SDK is a page of
+# include errors rather than the name of the variable to set.
+if [[ -z "$PICO_SDK_PATH" ]]; then
+  printf 'PICO_SDK_PATH is not set. Pin it in scripts/env.local.sh or export it.\n' >&2
+  exit 1
+fi
 firmware_binary="$build_dir/forgix_hello_world.bin"
 uf2="$build_dir/forgix_hello_world.uf2"
 led_only_uf2="$build_dir/forgix_led_only_diagnostic.uf2"

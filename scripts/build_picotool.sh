@@ -4,15 +4,32 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$repo_root/scripts/env.sh"
 
-picotool_source="${PICOTOOL_SOURCE:-/c/RPi/picotool-2.3.0}"
-picotool_build="${PICOTOOL_BUILD:-/c/RPi/picotool-2.3.0-build-usb}"
-picotool_install="${PICOTOOL_INSTALL:-/c/RPi/picotool-2.3.0-install-usb}"
+# Machine-specific inputs come from the environment or scripts/env.local.sh;
+# docs/picotool-windows.md records a known-good layout for every one of them.
+# Only VsDevCmd keeps a default, because it is the VS2022 Community installer's
+# fixed location rather than anyone's choice of disk layout.
+picotool_source="${PICOTOOL_SOURCE:-}"
+picotool_build="${PICOTOOL_BUILD:-${picotool_source:+$picotool_source-build-usb}}"
+picotool_install="${PICOTOOL_INSTALL:-${picotool_source:+$picotool_source-install-usb}}"
 pico_sdk_path="$PICO_SDK_PATH"
-libusb_root="${LIBUSB_ROOT:-/c/Forgix/libusb-1.0.29}"
-libusb_include="${LIBUSB_INCLUDE_DIR:-$libusb_root/include}"
-libusb_library="${LIBUSB_LIBRARY:-$libusb_root/VS2019/MS64/static/libusb-1.0.lib}"
-cmake_executable="${CMAKE_EXE:-/c/ST/STM32CubeCLT_1.20.0/CMake/bin/cmake.exe}"
+libusb_root="${LIBUSB_ROOT:-}"
+libusb_include="${LIBUSB_INCLUDE_DIR:-${libusb_root:+$libusb_root/include}}"
+libusb_library="${LIBUSB_LIBRARY:-${libusb_root:+$libusb_root/VS2019/MS64/static/libusb-1.0.lib}}"
+cmake_executable="${CMAKE_EXE:-$(command -v cmake 2>/dev/null || true)}"
 vsdevcmd="${VSDEVCMD_PATH:-/c/Program Files/Microsoft Visual Studio/2022/Community/Common7/Tools/VsDevCmd.bat}"
+
+missing=()
+[[ -n "$picotool_source" ]] || missing+=(PICOTOOL_SOURCE)
+[[ -n "$pico_sdk_path" ]] || missing+=(PICO_SDK_PATH)
+[[ -n "$libusb_include" && -n "$libusb_library" ]] \
+  || missing+=("LIBUSB_ROOT (or LIBUSB_INCLUDE_DIR and LIBUSB_LIBRARY)")
+[[ -n "$cmake_executable" ]] || missing+=("CMAKE_EXE (no cmake found on PATH)")
+if (( ${#missing[@]} )); then
+  printf 'Not set: %s\n' "${missing[@]}" >&2
+  printf 'Pin these in scripts/env.local.sh or export them before running.\n' >&2
+  printf 'docs/picotool-windows.md records a known-good layout.\n' >&2
+  exit 1
+fi
 
 require_file() {
   local description="$1"
