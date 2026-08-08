@@ -42,7 +42,6 @@ architecture rtl of forgix_hello_world is
   signal por        : unsigned(7 downto 0) := (others => '0');
   signal rst        : std_ulogic;
   signal wr         : std_ulogic;
-  signal rd         : std_ulogic;
   signal reset_regs : std_ulogic;
   signal spi_error  : std_ulogic;
   signal addr       : byte_t;
@@ -106,7 +105,6 @@ begin
       sdio_out   => spi_sdio_out,
       sdio_oe    => spi_sdio_oe,
       reg_write  => wr,
-      reg_read   => rd,
       reg_addr   => addr,
       reg_wdata  => wdata,
       reg_rdata  => rdata,

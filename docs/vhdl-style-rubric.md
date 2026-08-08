@@ -154,7 +154,7 @@ after that there is no reason to reorder them anyway.
 -- BAD: what is the eleventh signal bound to?
 spi : entity work.forgix_spi port map (
   clk_32m, rst, spi_cs_n, spi_sck, spi_sdio_in, spi_sdio_out, spi_sdio_oe,
-  wr, rd, addr, wdata, rdata, reset_regs, spi_error);
+  wr, addr, wdata, rdata, reset_regs, spi_error);
 
 -- GOOD
 spi : entity work.forgix_spi
