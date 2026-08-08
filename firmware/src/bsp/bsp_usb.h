@@ -29,13 +29,13 @@ extern "C" {
 
 typedef struct bsp_usb_health_t_tag
 {
-    bool connected;            /* host asserted DTR on the CDC interface */
-    bool suspended;            /* device stack reports USB bus suspend */
-    uint32_t write_available;  /* free bytes in the CDC transmit FIFO */
-    uint32_t activity_count;   /* bumped on every completed CDC transfer, either direction */
+    bool connected;             /* host asserted DTR on the CDC interface */
+    bool suspended;             /* device stack reports USB bus suspend */
+    uint32_t write_available;   /* free bytes in the CDC transmit FIFO */
+    uint32_t activity_count;    /* bumped on every completed CDC transfer, either direction */
     uint32_t tx_complete_count; /* bumped only on completed outbound transfers -- the one
                                    counter that proves the transmit path itself is moving */
-    uint32_t frame_number;     /* host start-of-frame counter; frozen means no SOF */
+    uint32_t frame_number;      /* host start-of-frame counter; frozen means no SOF */
 } bsp_usb_health_t;
 
 

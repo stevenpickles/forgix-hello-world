@@ -424,9 +424,8 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
         *green = 0;
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
     }
-    else if ( diagnostics.fifo_stalled &&
-              stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
-                             APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
+    else if ( diagnostics.fifo_stalled && stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
+                                                         APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
     {
         /* red: every sample for the whole window saw the transmit FIFO full
            with no TX completion, measured from the first such sample. The flag
