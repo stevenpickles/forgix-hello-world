@@ -914,7 +914,7 @@ static application_ibit_outcome_t step_fpga_registers( char *detail, size_t capa
        stuck low or high returns, and either would pass a test that wrote them. */
     BSP_LedSet( 0x5au, 0xa5u, 0x3cu, 0xc3u );
     const bsp_led_state_t readback = BSP_LedGet();
-    BSP_LedSet( before.red, before.green, before.blue, before.brightness );
+    BSP_LedRestore( &before );
 
     const bool ok = readback.red == 0x5au && readback.green == 0xa5u && readback.blue == 0x3cu &&
                     readback.brightness == 0xc3u;
@@ -965,16 +965,14 @@ static application_ibit_outcome_t step_led( char *detail, size_t capacity )
         {
             snprintf( detail, capacity, "readback mismatch at step %lu: %u,%u,%u",
                       (unsigned long) ibit.phase, readback.red, readback.green, readback.blue );
-            BSP_LedSet( ibit.led_before.red, ibit.led_before.green, ibit.led_before.blue,
-                        ibit.led_before.brightness );
+            BSP_LedRestore( &ibit.led_before );
             return APPLICATION_IBIT_FAIL;
         }
         ++ibit.phase;
         return APPLICATION_IBIT_PENDING;
     }
 
-    BSP_LedSet( ibit.led_before.red, ibit.led_before.green, ibit.led_before.blue,
-                ibit.led_before.brightness );
+    BSP_LedRestore( &ibit.led_before );
     snprintf( detail, capacity,
               "red, green, blue and white all read back; previous colour restored" );
     return APPLICATION_IBIT_PASS;
@@ -1265,8 +1263,7 @@ static void restore( void )
 {
     if ( ibit.led_saved )
     {
-        BSP_LedSet( ibit.led_before.red, ibit.led_before.green, ibit.led_before.blue,
-                    ibit.led_before.brightness );
+        BSP_LedRestore( &ibit.led_before );
         ibit.led_saved = false;
     }
 }

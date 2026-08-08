@@ -133,7 +133,8 @@ leaves nothing that the next run or a power cycle is needed to repair.
 - **`r`** reboots; **`b`** enters BOOTSEL for reflashing without unplugging.
 
 Any key aborts a running test or show and returns to the menu. Anything that
-changed the LED puts it back first, including on an abort.
+changed the LED puts the whole captured state back first -- colour, brightness,
+and whether it was lit at all -- including on an abort.
 
 ## When something hangs
 

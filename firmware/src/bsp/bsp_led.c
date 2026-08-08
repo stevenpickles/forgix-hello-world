@@ -59,11 +59,28 @@ void BSP_LedSet( const uint8_t red, const uint8_t green, const uint8_t blue,
 /// <summary>
 ///     Clears the enable bit only. The colour registers keep their values, so a
 ///     later BSP_LedSet with the same arguments restores exactly what was
-///     showing, and BSP_LedGet can still report what was last asked for.
+///     showing, and BSP_LedGet can still report what was last asked for. To put
+///     back a full captured state, dark or lit, use BSP_LedRestore.
 /// </summary>
 void BSP_LedOff( void )
 {
     BSP_FpgaWriteRegister( REG_LED_ENABLE, 0 );
+}
+
+/// <summary>
+///     Writes all five registers from a saved state, the enable bit last, so a
+///     state saved dark never flashes and a lit one changes colour in one step.
+///     Not atomic: these are five separate bus transactions, and a reader midway
+///     through can observe old and new registers mixed. The transient is bounded
+///     by the enable landing last, nothing more.
+/// </summary>
+void BSP_LedRestore( const bsp_led_state_t *const ptr_state )
+{
+    BSP_FpgaWriteRegister( REG_LED_R, ptr_state->red );
+    BSP_FpgaWriteRegister( REG_LED_G, ptr_state->green );
+    BSP_FpgaWriteRegister( REG_LED_B, ptr_state->blue );
+    BSP_FpgaWriteRegister( REG_LED_GLOBAL, ptr_state->brightness );
+    BSP_FpgaWriteRegister( REG_LED_ENABLE, ptr_state->enabled ? 1u : 0u );
 }
 
 /// <summary>

@@ -287,16 +287,15 @@ static void begin( uint32_t update_ms )
 
 /// <summary>
 ///     Clears the saved flag on its way out, so the stop() the UI calls after a
-///     poll that already restored does not write the LED a second time. Only the
-///     colour and brightness come back -- BSP_LedSet latches the enable bit, so
-///     an LED caught dark when it was saved returns lit until its owner writes it.
+///     poll that already restored does not write the LED a second time. The
+///     whole captured state comes back, including the enable bit -- an LED
+///     caught dark when it was saved returns dark.
 /// </summary>
 static void restore( void )
 {
     if ( effects.saved )
     {
-        BSP_LedSet( effects.before.red, effects.before.green, effects.before.blue,
-                    effects.before.brightness );
+        BSP_LedRestore( &effects.before );
         effects.saved = false;
     }
 }

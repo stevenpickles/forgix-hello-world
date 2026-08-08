@@ -31,7 +31,8 @@
 ***************************************************************************************/
 
 
-static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness );
+static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness,
+                                  bool enabled );
 
 static const application_activity_t *start_at( const application_activity_t *activity,
                                                uint32_t now_ms );
@@ -62,8 +63,10 @@ void tearDown( void )
 
 void test_blinker_cycles_red_green_and_blue_with_a_gap_between_each( void )
 {
+    const bsp_led_state_t saved = led_state( 1, 2, 3, 4, true );
+
     BSP_FpgaIsReady_ExpectAndReturn( true );
-    BSP_LedGet_ExpectAndReturn( led_state( 1, 2, 3, 4 ) );
+    BSP_LedGet_ExpectAndReturn( saved );
     BSP_LedSet_Expect( 255, 0, 0, 160 );
     BSP_LedSet_Expect( 0, 0, 0, 160 );
     BSP_LedSet_Expect( 0, 255, 0, 160 );
@@ -84,7 +87,7 @@ void test_blinker_cycles_red_green_and_blue_with_a_gap_between_each( void )
         TEST_ASSERT_TRUE( activity->poll() );
     }
 
-    BSP_LedSet_Expect( 1, 2, 3, 4 );
+    BSP_LedRestore_Expect( &saved );
     activity->stop();
 }
 
@@ -108,8 +111,10 @@ void test_blinker_says_why_it_cannot_run_without_the_fpga( void )
    every leg of the aurora blend. */
 void test_advanced_blinker_runs_the_whole_show_and_then_restores_the_colour( void )
 {
+    const bsp_led_state_t saved = led_state( 7, 7, 7, 7, true );
+
     BSP_FpgaIsReady_ExpectAndReturn( true );
-    BSP_LedGet_ExpectAndReturn( led_state( 7, 7, 7, 7 ) );
+    BSP_LedGet_ExpectAndReturn( saved );
     BSP_LedSet_Ignore();
 
     const application_activity_t *activity = start_at( application_effects_advanced(), 1000 );
@@ -120,7 +125,7 @@ void test_advanced_blinker_runs_the_whole_show_and_then_restores_the_colour( voi
         TEST_ASSERT_TRUE( activity->poll() );
     }
 
-    BSP_LedSet_Expect( 7, 7, 7, 7 );
+    BSP_LedRestore_Expect( &saved );
     MOCK_BSP_TimeSetMs( 1000 + 18000u );
     TEST_ASSERT_FALSE( activity->poll() );
 
@@ -131,8 +136,10 @@ void test_advanced_blinker_runs_the_whole_show_and_then_restores_the_colour( voi
 
 void test_advanced_blinker_paints_each_phase_of_the_show( void )
 {
+    const bsp_led_state_t saved = led_state( 7, 7, 7, 7, true );
+
     BSP_FpgaIsReady_ExpectAndReturn( true );
-    BSP_LedGet_ExpectAndReturn( led_state( 7, 7, 7, 7 ) );
+    BSP_LedGet_ExpectAndReturn( saved );
 
     const application_activity_t *activity = start_at( application_effects_advanced(), 0 );
 
@@ -156,7 +163,7 @@ void test_advanced_blinker_paints_each_phase_of_the_show( void )
     MOCK_BSP_TimeSetMs( 10000 );
     TEST_ASSERT_TRUE( activity->poll() );
 
-    BSP_LedSet_Expect( 7, 7, 7, 7 );
+    BSP_LedRestore_Expect( &saved );
     activity->stop();
 }
 
@@ -175,13 +182,31 @@ void test_advanced_blinker_stops_immediately_without_the_fpga( void )
 void test_effects_mark_their_own_path_for_the_watchdog( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
-    BSP_LedGet_ExpectAndReturn( led_state( 1, 2, 3, 4 ) );
+    BSP_LedGet_ExpectAndReturn( led_state( 1, 2, 3, 4, true ) );
     BSP_LedSet_Ignore();
+    BSP_LedRestore_Ignore();
 
     const application_activity_t *activity = start_at( application_effects_blinker(), 1000 );
     TEST_ASSERT_TRUE( activity->poll() );
 
     TEST_ASSERT_TRUE( MOCK_BSP_WatchdogMarkerWasWritten( APPLICATION_DIAGNOSTICS_MARKER_EFFECT ) );
+    activity->stop();
+}
+
+
+/* The regression this whole change exists for: a state saved dark must come
+   back dark. BSP_LedSet always asserts the enable bit, so the old restore
+   re-lit an LED the user had off. */
+void test_effects_restore_puts_back_a_dark_led( void )
+{
+    const bsp_led_state_t saved = led_state( 9, 8, 7, 6, false );
+
+    BSP_FpgaIsReady_ExpectAndReturn( true );
+    BSP_LedGet_ExpectAndReturn( saved );
+
+    const application_activity_t *activity = start_at( application_effects_blinker(), 1000 );
+
+    BSP_LedRestore_Expect( &saved );
     activity->stop();
 }
 
@@ -195,10 +220,11 @@ void test_effects_mark_their_own_path_for_the_watchdog( void )
 ***************************************************************************************/
 
 
-static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness )
+static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness,
+                                  bool enabled )
 {
     bsp_led_state_t led = {
-        .red = red, .green = green, .blue = blue, .brightness = brightness, .enabled = true };
+        .red = red, .green = green, .blue = blue, .brightness = brightness, .enabled = enabled };
     return led;
 }
 
