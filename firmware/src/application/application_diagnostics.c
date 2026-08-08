@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -124,10 +125,6 @@ static diagnostics_state_t diagnostics;
 ***************************************************************************************/
 
 
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
-
-static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms );
-
 static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue );
 
 static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue );
@@ -219,8 +216,8 @@ void application_diagnostics_poll( void )
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
 
     uint32_t now_ms = BSP_TimeNowMs();
-    bool led_due = deadline_reached( now_ms, diagnostics.next_led_ms );
-    bool sample_due = deadline_reached( now_ms, diagnostics.next_sample_ms );
+    bool led_due = application_deadline_reached( now_ms, diagnostics.next_led_ms );
+    bool sample_due = application_deadline_reached( now_ms, diagnostics.next_sample_ms );
 
     /* Sampling first means the heartbeat color below reflects the health just
        read, and the single LED write is the one the FPGA check reads back. */
@@ -271,8 +268,8 @@ void application_diagnostics_print_report( void )
     BSP_ConsolePrintf(
         "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
         "fpga_fail=%lu fpga_reconfig=%lu\n",
-        (unsigned long) diagnostics.uptime_seconds, diagnostics.health.connected,
-        diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
+        (unsigned long) diagnostics.uptime_seconds, (unsigned) diagnostics.health.connected,
+        (unsigned) diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
         (unsigned long) diagnostics.health.activity_count,
         (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
         (unsigned long) diagnostics.fpga_reconfigures );
@@ -329,33 +326,6 @@ bsp_boot_reason application_diagnostics_boot_reason( void )
 **
 ***************************************************************************************/
 
-
-/// <summary>
-///     Subtracts and tests the sign rather than comparing the two values, so a
-///     deadline that straddles the 32-bit millisecond wrap still fires instead of
-///     parking the heartbeat for the next 49 days. A deadline exactly reached
-///     counts as due.
-/// </summary>
-/// <returns>
-///     True once now_ms has caught up with deadline_ms.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
-
-/// <summary>
-///     Elapsed-time test in the same wrap-safe signed form. The threshold is cast
-///     to signed as well, so it has to stay well under 2^31 ms; the two stall
-///     limits this serves are seconds, not days.
-/// </summary>
-/// <returns>
-///     True once threshold_ms has passed since since_ms.
-/// </returns>
-static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms )
-{
-    return (int32_t) ( now_ms - since_ms ) >= (int32_t) threshold_ms;
-}
 
 /* The USB-free image has no USB health to show, so its resting heartbeat carries
    the last boot reason instead. The blink code plays once and cannot be replayed
@@ -417,15 +387,16 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
         *blue = 255; /* blue: host has not asserted DTR */
     }
     else if ( diagnostics.health.suspended ||
-              stalled_since( now_ms, diagnostics.last_frame_ms,
-                             APPLICATION_DIAGNOSTICS_FRAME_STALL_MS ) )
+              application_stalled_since( now_ms, diagnostics.last_frame_ms,
+                                         APPLICATION_DIAGNOSTICS_FRAME_STALL_MS ) )
     {
         *red = 255;
         *green = 0;
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
     }
-    else if ( diagnostics.fifo_stalled && stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
-                                                         APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
+    else if ( diagnostics.fifo_stalled &&
+              application_stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
+                                         APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
     {
         /* red: every sample for the whole window saw the transmit FIFO full
            with no TX completion, measured from the first such sample. The flag

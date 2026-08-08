@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "application_ibit.h"
+#include "application_time.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"

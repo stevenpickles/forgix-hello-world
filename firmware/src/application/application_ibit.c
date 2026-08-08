@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "application_diagnostics.h"
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -137,8 +138,6 @@ static const char *const OUTCOME_TEXT[] = {
 
 
 static void mark_write( void );
-
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
 
 static uint32_t step_elapsed_ms( void );
 
@@ -406,20 +405,6 @@ void application_ibit_print_board_report( void )
 static void mark_write( void )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
-}
-
-
-/// <summary>
-///     Compares two millisecond stamps through a signed difference so the answer
-///     survives the 32-bit rollover, which a plain now >= deadline would get wrong
-///     for the whole wrap after it.
-/// </summary>
-/// <returns>
-///     True once now_ms has reached deadline_ms, for deadlines under about 24 days.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
 }
 
 
@@ -1012,7 +997,7 @@ static application_ibit_outcome_t step_button( char *detail, size_t capacity )
                            (unsigned long) ( APPLICATION_IBIT_BUTTON_TIMEOUT_MS / 1000u ) );
         return APPLICATION_IBIT_PENDING;
     }
-    if ( !deadline_reached( ibit.current_time_ms, ibit.next_poll_ms ) )
+    if ( !application_deadline_reached( ibit.current_time_ms, ibit.next_poll_ms ) )
     {
         return APPLICATION_IBIT_PENDING;
     }
@@ -1076,7 +1061,8 @@ static application_ibit_outcome_t step_fpga_clock( char *detail, size_t capacity
         ibit.phase = 1;
         return APPLICATION_IBIT_PENDING;
     }
-    if ( !deadline_reached( ibit.current_time_ms, ibit.fpga_tick_t0_ms + FPGA_CLOCK_SAMPLE_MS ) )
+    if ( !application_deadline_reached( ibit.current_time_ms,
+                                        ibit.fpga_tick_t0_ms + FPGA_CLOCK_SAMPLE_MS ) )
     {
         return APPLICATION_IBIT_PENDING;
     }
