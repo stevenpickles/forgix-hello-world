@@ -36,7 +36,6 @@ entity forgix_spi is
     reg_wdata  : out   byte_t;
     reg_rdata  : in    byte_t;
     reset_regs : out   std_ulogic;
-    activity   : out   std_ulogic;
     error      : out   std_ulogic
   );
 end entity forgix_spi;
@@ -103,7 +102,6 @@ begin
         rx_count <= 0;
         tx_count <= 0;
         oe       <= '0';
-        activity <= '0';
         error    <= '0';
         sdio_out <= '0';
       elsif cs_sync(2) = '1' then
@@ -111,10 +109,7 @@ begin
         rx_count <= 0;
         tx_count <= 0;
         oe       <= '0';
-        activity <= '0';
       else
-        activity <= '1';
-
         -- One cycle spent letting the register file answer. reg_read was asserted on
         -- the cycle that entered this state, so reg_rdata is only valid now.
         if state = read_wait_s then

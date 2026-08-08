@@ -362,6 +362,12 @@ begin
     assert result(2) = '1'
       report "button event was not latched"
       severity failure;
+    -- The full byte, not just the event bit: ready is always set, the button is back
+    -- up, and every other position -- 3, 5, 6 -- is reserved and must read zero. A
+    -- reserved bit that reads one is a register-map meaning nobody documented.
+    assert result = x"05"
+      report "STATUS reserved bits (3, 5, 6) must read zero"
+      severity failure;
     write_register(REG_BUTTON_COUNT, x"00");
     read_register(REG_BUTTON_COUNT, result);
     assert result = x"00"
@@ -499,6 +505,12 @@ begin
     read_register(REG_STATUS, result);
     assert result(7) = '1'
       report "invalid command did not set SPI error"
+      severity failure;
+    -- CMD_RESET above cleared the sticky event, the button is idle, and bits 3, 5
+    -- and 6 are reserved: error plus ready is the whole story, and any other bit
+    -- reading one is an undocumented signal leaking into the register map.
+    assert result = x"81"
+      report "STATUS after reset and an invalid command must be exactly error and ready"
       severity failure;
 
     report "SPI register checks passed"

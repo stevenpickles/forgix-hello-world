@@ -44,7 +44,6 @@ architecture rtl of forgix_hello_world is
   signal wr         : std_ulogic;
   signal rd         : std_ulogic;
   signal reset_regs : std_ulogic;
-  signal activity   : std_ulogic;
   signal spi_error  : std_ulogic;
   signal addr       : byte_t;
   signal wdata      : byte_t;
@@ -112,7 +111,6 @@ begin
       reg_wdata  => wdata,
       reg_rdata  => rdata,
       reset_regs => reset_regs,
-      activity   => activity,
       error      => spi_error
     );
 
@@ -294,14 +292,16 @@ begin
 
       -- Bit 0 is a constant '1'. It is not a flag about anything: it is the evidence
       -- that this multiplexer answered at all, which distinguishes a live design from
-      -- a floating bus reading back as all zeros.
+      -- a floating bus reading back as all zeros. Bits 3, 5 and 6 are reserved and
+      -- read zero. Bit 3 once mirrored the SPI engine's chip-select state, which is
+      -- necessarily asserted during any read of this register -- a bit that can only
+      -- ever be observed as one carries no information, so it was removed.
       when REG_STATUS =>
 
         rdata    <= (others => '0');
         rdata(0) <= '1';
         rdata(1) <= button;
         rdata(2) <= button_event;
-        rdata(3) <= activity;
         rdata(4) <= raw_button;
         rdata(7) <= spi_error;
 
