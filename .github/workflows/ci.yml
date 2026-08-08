@@ -1,9 +1,12 @@
 name: CI
 
 on:
-  # A documentation-only change cannot alter what any check produces: nothing in
-  # scripts/ or .github/ reads these files, they are only named in comments and
-  # help text. Without this, fixing a typo in a README costs a full
+  # A documentation-only change is very unlikely to alter what any check
+  # produces. One check does read docs: check_protocol_constants.py verifies
+  # docs/register-map.md and docs/ibit.md against forgix_pkg.vhd, so a
+  # docs-only drift is caught on the next non-docs run rather than
+  # immediately -- accepted, because real drift starts on the code side and
+  # always triggers CI. Without this, fixing a typo in a README costs a full
   # place-and-route and a multi-gigabyte image pull.
   #
   # Two things to know before touching this list. It skips the entire run rather
@@ -78,6 +81,11 @@ jobs:
 
       - name: Verify deterministic embedding
         run: python scripts/test_embed_image.py
+
+      - name: Verify protocol constants stay in sync
+        run: |
+          python scripts/check_protocol_constants.py
+          python scripts/test_check_protocol_constants.py
 
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
@@ -162,6 +170,11 @@ jobs:
 
       - name: Verify deterministic embedding
         run: python scripts/test_embed_image.py
+
+      - name: Verify protocol constants stay in sync
+        run: |
+          python scripts/check_protocol_constants.py
+          python scripts/test_check_protocol_constants.py
 
       - name: Enforce firmware layering
         run: python scripts/check_firmware_layers.py
