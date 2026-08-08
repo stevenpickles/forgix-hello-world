@@ -198,10 +198,8 @@ void application_diagnostics_start( void )
     diagnostics.led_on = true;
     diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
     diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-    /* Explicit seeds, not trust in static zero-init: module state persists
-       across activities and, in the test build, across tests in one binary. */
-    diagnostics.fifo_stalled = false;
-    diagnostics.last_tx_count = 0;
+    /* The stall run needs no seed: the wholesale zeroing above cleared the
+       flag, and the epoch is only ever read while the flag is set. */
     diagnostics.last_frame_ms = now_ms;
     apply_led( now_ms );
 
