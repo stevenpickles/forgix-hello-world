@@ -115,6 +115,10 @@ DESIGN_ID_DEFINE = re.compile(
 )
 DOC_HEX = re.compile(r"^0x([0-9A-Fa-f]{1,2})$")
 DOC_HEX_RANGE = re.compile(r"^0x([0-9A-Fa-f]{1,2})\.\.0x([0-9A-Fa-f]{1,2})$")
+# The Ping row's Transaction cell reads "Return design ID `0xb7`". The cell
+# parser strips a cell's outer backticks, which eats this phrase's closing one,
+# so the closing backtick is optional here.
+DOC_PING_DESIGN_ID = re.compile(r"design ID `0x([0-9A-Fa-f]{1,2})`?")
 IBIT_PING = re.compile(r"ping returns `0x([0-9A-Fa-f]{2})`")
 SCRIPT_ID = re.compile(r"id=([0-9A-Fa-f]{2}) ")
 SCRIPT_HELLO = re.compile(r"FPGA ([0-9A-Fa-f]{2})\$")
@@ -219,7 +223,10 @@ def check_design_id_header(vhdl: dict[str, int], errors: list[str]) -> None:
 
 
 def check_register_map(vhdl: dict[str, int], errors: list[str]) -> None:
-    text = REGISTER_MAP.read_text(encoding="utf-8")
+    check_register_map_text(REGISTER_MAP.read_text(encoding="utf-8"), vhdl, errors)
+
+
+def check_register_map_text(text: str, vhdl: dict[str, int], errors: list[str]) -> None:
     rows = parse_doc_tables(text)
 
     for label, vhdl_name in sorted(DOC_COMMANDS.items()):
@@ -259,15 +266,49 @@ def check_register_map(vhdl: dict[str, int], errors: list[str]) -> None:
                 f"{[f'0x{a:02x}' for a in expected_addresses]}"
             )
 
+    # Structural, not an occurrence count: the two places the document states
+    # the design ID are the Ping row's Transaction cell and the ID row's
+    # Meaning cell, and each is parsed and compared on its own. A count of
+    # matching mentions anywhere in the file would be satisfied by prose while
+    # both authoritative rows sat stale.
     design_id = vhdl.get("DESIGN_ID")
     if design_id is not None:
-        mentions = re.findall(r"`0x([0-9A-Fa-f]{2})`", text)
-        id_mentions = [value for value in mentions if int(value, 16) == design_id]
-        if len(id_mentions) < 2:
+        ping_cells = [row[2] for row in rows if row[0] == "Ping" and len(row) >= 3]
+        if len(ping_cells) != 1:
             errors.append(
-                f"{REGISTER_MAP.name}: design ID 0x{design_id:02x} must appear in both the "
-                "Ping row and the ID row"
+                f"{REGISTER_MAP.name}: expected exactly one Ping row with a Transaction cell"
             )
+        else:
+            stated = DOC_PING_DESIGN_ID.findall(ping_cells[0])
+            if len(stated) != 1:
+                errors.append(
+                    f"{REGISTER_MAP.name}: the Ping row must state 'design ID `0x..`' "
+                    f"exactly once; its Transaction cell is {ping_cells[0]!r}"
+                )
+            elif int(stated[0], 16) != design_id:
+                errors.append(
+                    f"{REGISTER_MAP.name}: the Ping row says the design ID is "
+                    f"0x{int(stated[0], 16):02x} but forgix_pkg.vhd says 0x{design_id:02x}"
+                )
+
+        id_cells = [row[3] for row in rows if len(row) >= 4 and row[1] == "ID"]
+        if len(id_cells) != 1:
+            errors.append(
+                f"{REGISTER_MAP.name}: expected exactly one ID register row with a Meaning cell"
+            )
+        else:
+            id_match = DOC_HEX.match(id_cells[0])
+            if not id_match:
+                errors.append(
+                    f"{REGISTER_MAP.name}: the ID row's Meaning cell must be the bare "
+                    f"design-ID value; it is {id_cells[0]!r}"
+                )
+            elif int(id_match.group(1), 16) != design_id:
+                errors.append(
+                    f"{REGISTER_MAP.name}: the ID row says the design ID is "
+                    f"0x{int(id_match.group(1), 16):02x} but forgix_pkg.vhd says "
+                    f"0x{design_id:02x}"
+                )
 
 
 def check_design_id_stragglers(vhdl: dict[str, int], errors: list[str]) -> None:
