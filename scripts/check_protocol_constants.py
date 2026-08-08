@@ -115,10 +115,15 @@ DESIGN_ID_DEFINE = re.compile(
 )
 DOC_HEX = re.compile(r"^0x([0-9A-Fa-f]{1,2})$")
 DOC_HEX_RANGE = re.compile(r"^0x([0-9A-Fa-f]{1,2})\.\.0x([0-9A-Fa-f]{1,2})$")
-# The Ping row's Transaction cell reads "Return design ID `0xb7`". The cell
-# parser strips a cell's outer backticks, which eats this phrase's closing one,
-# so the closing backtick is optional here.
-DOC_PING_DESIGN_ID = re.compile(r"design ID `0x([0-9A-Fa-f]{1,2})`?")
+# The Ping row's Transaction cell reads "Return design ID `0xb7`". This regex
+# runs against the NORMALIZED cell: parse_doc_tables strips a cell's outer
+# backticks, which eats this phrase's closing backtick exactly when the phrase
+# ends the cell -- so the accepted grammar is "design ID `0x" + exactly two hex
+# digits + (the closing backtick, or the end of the normalized cell). Exactly
+# two digits with a required boundary is the point: "0xb70" and "0xb7garbage"
+# must fail rather than be read as 0xb7, and "0xb" must fail rather than pass
+# as a one-digit value.
+DOC_PING_DESIGN_ID = re.compile(r"design ID `0x([0-9A-Fa-f]{2})(?:`|$)")
 IBIT_PING = re.compile(r"ping returns `0x([0-9A-Fa-f]{2})`")
 SCRIPT_ID = re.compile(r"id=([0-9A-Fa-f]{2}) ")
 SCRIPT_HELLO = re.compile(r"FPGA ([0-9A-Fa-f]{2})\$")

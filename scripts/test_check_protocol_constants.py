@@ -188,6 +188,45 @@ class DesignIdRows(unittest.TestCase):
         self.assertEqual(1, len(errors), errors)
         self.assertIn("must state 'design ID `0x..`' exactly once", errors[0])
 
+    def test_the_exact_current_ping_cell_passes(self) -> None:
+        """Pins the accepted grammar against the real document's spelling,
+        including the closing backtick the cell parser strips at cell end."""
+        self.assertEqual([], register_map_errors(doc_with(ping_cell="Return design ID `0xb7`")))
+
+    def test_an_overlong_ping_value_is_not_read_as_its_prefix(self) -> None:
+        """The old regex matched the first two digits of `0xb70` and reported
+        the correct-looking 0xb7, hiding a malformed document."""
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb70`"))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("exactly once", errors[0])
+
+    def test_a_ping_value_with_trailing_garbage_fails(self) -> None:
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb7garbage`"))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("exactly once", errors[0])
+
+    def test_a_one_digit_ping_value_fails(self) -> None:
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb`"))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("exactly once", errors[0])
+
+    def test_a_mid_cell_ping_value_needs_its_closing_backtick(self) -> None:
+        """Only at the end of the cell may the closing backtick be absent,
+        because that is where the cell parser strips it; mid-cell the value
+        must be properly delimited."""
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb7 as a byte"))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("exactly once", errors[0])
+        self.assertEqual(
+            [], register_map_errors(doc_with(ping_cell="Return design ID `0xb7` as a byte"))
+        )
+
+    def test_ping_value_case_is_handled_consistently(self) -> None:
+        self.assertEqual([], register_map_errors(doc_with(ping_cell="Return design ID `0xB7`")))
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xB6`"))
+        self.assertEqual(1, len(errors), errors)
+        self.assertIn("says the design ID is 0xb6", errors[0])
+
     def test_a_ping_row_stating_the_id_twice_fails(self) -> None:
         errors = register_map_errors(
             doc_with(ping_cell="Return design ID `0xb7` or design ID `0xb7`")
