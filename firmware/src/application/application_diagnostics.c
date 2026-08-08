@@ -87,7 +87,9 @@ typedef struct
 
     bsp_usb_health_t health;
     uint32_t last_activity_count;
-    uint32_t last_activity_ms;
+    /* When the transmit FIFO last had room or was seen draining. While the FIFO
+       is full and nothing moves, this stands still and its age is the stall. */
+    uint32_t fifo_full_since_ms;
     uint32_t last_frame_number;
     uint32_t last_frame_ms;
 
@@ -191,7 +193,7 @@ void application_diagnostics_start( void )
     diagnostics.led_on = true;
     diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
     diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-    diagnostics.last_activity_ms = now_ms;
+    diagnostics.fifo_full_since_ms = now_ms;
     diagnostics.last_frame_ms = now_ms;
     apply_led( now_ms );
 
@@ -417,12 +419,14 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
     }
     else if ( diagnostics.health.write_available == 0 &&
-              stalled_since( now_ms, diagnostics.last_activity_ms,
-                             APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS ) )
+              stalled_since( now_ms, diagnostics.fifo_full_since_ms,
+                             APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
     {
-        /* red: data is queued and the FIFO is not draining. A quiet link is not
-           a fault -- keying on the gap alone made this trip on the firmware's
-           own 10 s idle-status cadence, reporting a wedge every single cycle. */
+        /* red: data is queued and the FIFO has not drained for the whole stall
+           window, measured from when it stopped draining. Keying the window off
+           the last CDC traffic instead punished quiet links -- a connection
+           idle longer than the threshold went red on the first full sample,
+           with no wedge ever having lasted a single second. */
         *red = 255;
         *green = 0;
         *blue = 0;
@@ -541,20 +545,28 @@ static void check_fpga( uint32_t now_ms )
 }
 
 /// <summary>
-///     The two timestamps move only when their counter actually changed, which is
-///     what makes the stall thresholds measure a counter standing still rather
-///     than the time since the last sample. Nothing here judges health; it only
-///     records when progress was last seen.
+///     Each timestamp moves only while its condition holds, which is what makes
+///     the stall thresholds measure a state persisting rather than the time
+///     since the last sample. The FIFO clock restarts on room or on any CDC
+///     progress; the activity counter pools RX with TX, so inbound traffic also
+///     counts as draining -- deliberately coarse, erring toward not-red, which
+///     is the right direction for a fault lamp. Nothing here judges health; it
+///     only records when the fault condition last was not present.
 /// </summary>
 static void sample_usb( uint32_t now_ms )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT );
     diagnostics.health = BSP_UsbHealth();
 
-    if ( diagnostics.health.activity_count != diagnostics.last_activity_count )
+    const bool activity_moved =
+        diagnostics.health.activity_count != diagnostics.last_activity_count;
+    if ( activity_moved )
     {
         diagnostics.last_activity_count = diagnostics.health.activity_count;
-        diagnostics.last_activity_ms = now_ms;
+    }
+    if ( diagnostics.health.write_available > 0u || activity_moved )
+    {
+        diagnostics.fifo_full_since_ms = now_ms;
     }
     if ( diagnostics.health.frame_number != diagnostics.last_frame_number )
     {

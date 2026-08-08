@@ -64,11 +64,12 @@ enum
     /* Start-of-frame advances every millisecond while the host is framing, so a
        few seconds of silence is already decisive. */
     APPLICATION_DIAGNOSTICS_FRAME_STALL_MS = 5000,
-    /* CDC traffic is bursty and driven by whatever the host and the console
-       policy do, so a gap proves nothing on its own. This must stay well above
-       APPLICATION_IDLE_STATUS_PERIOD_MS, and is only consulted alongside a
-       backed-up transmit FIFO. */
-    APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS = 30000,
+    /* How long the transmit FIFO must stay full without draining before the
+       heartbeat calls it wedged. Measured from the moment the FIFO stopped
+       draining, not from the last CDC traffic: a link is allowed to be quiet
+       for any length of time, and quiet history must not count against a FIFO
+       that only just filled. */
+    APPLICATION_DIAGNOSTICS_FIFO_STALL_MS = 30000,
 };
 
 

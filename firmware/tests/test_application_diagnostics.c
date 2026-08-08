@@ -465,7 +465,7 @@ void test_heartbeat_turns_red_when_a_full_fifo_stops_draining( void )
     /* transmit FIFO full and nothing completing: a genuine endpoint wedge */
     MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 101 ) );
     expect_sample( 255, 0, 0 );
-    poll_at( 1000 + APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS );
+    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
 
     TEST_ASSERT_EQUAL_UINT32( 101u | ( 1u << 16 ) | ( 1u << 18 ), MOCK_BSP_WatchdogSnapshot( 2 ) );
 }
@@ -507,7 +507,168 @@ void test_a_quiet_link_with_room_in_the_fifo_stays_green( void )
        stuck; the frame counter keeps advancing so the host is still framing */
     MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 101 ) );
     expect_sample( 0, 255, 0 );
-    poll_at( 1000 + APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS + 5000 );
+    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS + 5000 );
+}
+
+
+/* Regression guard for the other half of the same fault: quiet history must not
+   count against a FIFO that only just filled. Measuring the stall from the last
+   CDC traffic made a link idle longer than the threshold go red on the first
+   full sample, with no wedge ever having lasted a single second. */
+void test_a_fifo_that_fills_after_a_quiet_spell_is_not_immediately_red( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+
+    /* a long quiet spell: no CDC traffic since t=1000, but the FIFO has room */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 135 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 35000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 35250 );
+
+    /* the FIFO fills one second later; the stall clock starts here, not 35 s ago */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 136 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 36000 );
+}
+
+
+void test_red_requires_the_fifo_to_stay_full_for_the_whole_stall_window( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+
+    /* full from here on; the FIFO was last seen with room at t=1000 */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 101 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
+
+    /* one second short of the window: still green */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 102 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 103 ) );
+    expect_sample( 255, 0, 0 );
+    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+}
+
+
+void test_a_draining_fifo_restarts_the_stall_measurement( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    /* full with no progress for 16 s -- more than half the window */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+
+    /* room appears: whatever was queued went out, so the measurement restarts */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 117 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 17000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 17250 );
+
+    /* full again for 29 s from the restart: green, because the earlier 16 s of
+       fullness must not be carried over into the fresh window */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 146 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 147 ) );
+    expect_sample( 255, 0, 0 );
+    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+}
+
+
+/* The activity counter pools RX with TX, so any CDC progress counts as the FIFO
+   draining even while it samples full -- deliberately coarse, erring toward
+   not-red, since data is demonstrably still moving. */
+void test_activity_while_the_fifo_is_full_counts_as_draining( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+
+    /* far beyond the window, but the activity counter moved: still green */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 6, 134 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 34000 );
+}
+
+
+/* Pins the wrap-safe signed-difference idiom: the stall window here spans the
+   32-bit millisecond rollover, and an unsigned comparison would either fire
+   early or park the verdict for 49 days. */
+void test_fifo_stall_measurement_survives_the_millisecond_wrap( void )
+{
+    const uint32_t start_ms = 0xffff8000u;
+
+    start_usb_at( start_ms );
+    BSP_LedOff_Expect();
+    poll_at( start_ms + 250u );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( start_ms + 1000u );
+
+    BSP_LedOff_Expect();
+    poll_at( start_ms + 1250u );
+
+    /* full from here; the window starts at start+1000, before the wrap */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 101 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( start_ms + 2000u );
+
+    BSP_LedOff_Expect();
+    poll_at( start_ms + 2250u );
+
+    /* 34 s after the FIFO was last seen draining, at a timestamp that has
+       wrapped past zero: the verdict must still fire */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 102 ) );
+    expect_sample( 255, 0, 0 );
+    poll_at( start_ms + 35000u );
 }
 
 

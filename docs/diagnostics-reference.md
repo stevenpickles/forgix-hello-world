@@ -225,11 +225,15 @@ firmware's own idle-status line goes out every 10 s, so a plain activity gap
 tripped the threshold on the firmware's own reporting cadence every cycle,
 regardless of whether anything was actually wrong. The code now requires two
 things together before it shows red: the transmit FIFO must be full (data is
-queued) **and** not draining for 30 s
-(`APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS`,
-`firmware/src/application/application_diagnostics.h`). That is what an
-endpoint wedge actually looks like; a quiet link on its own is not a fault.
-The frame-stall threshold behind magenta is unaffected and stays at 5 s
+queued) **and** it must have gone 30 s without draining, measured from the
+moment it stopped draining (`APPLICATION_DIAGNOSTICS_FIFO_STALL_MS`,
+`firmware/src/application/application_diagnostics.h`). The measurement point
+matters: an intermediate fix measured the 30 s from the last CDC traffic, so
+a link that had simply been quiet for longer than the threshold went red on
+the very first full sample -- quiet history counted against a FIFO that had
+only just filled. That is what an endpoint wedge actually looks like; a quiet
+link on its own is not a fault, before or after it fills the FIFO. The
+frame-stall threshold behind magenta is unaffected and stays at 5 s
 (`APPLICATION_DIAGNOSTICS_FRAME_STALL_MS`).
 
 In the USB-free image there is no USB health to show, so the resting color
