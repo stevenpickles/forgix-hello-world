@@ -334,8 +334,13 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
     identity.eid = response[ 6 ];
 
     /* _CsOperationSequence leaves XIP in the ROM's plain command mode. One
-       ordinary SDK call restores the faster boot2 configuration, since it does
-       that copyout internally. */
+       ordinary SDK call restores the faster boot2 configuration: on this flash
+       build, flash_do_cmd_cs ends by executing the boot2 image it copied out
+       of boot RAM on its first-ever call and cached. Its trailing hardware
+       restore also re-drives chip select 1 -- once psram_reinitialize has ever
+       run, the SDK holds psram_initialize_internal as a sticky CS1 setup
+       function -- which is harmless here because _ForcePsramFromDatasheet
+       rebuilds CS1 properly right after. */
     const uint8_t restore_tx[ 1 ] = { 0x9fu };
     uint8_t restore_rx[ 1 ] = { 0 };
     const uint32_t interrupts = save_and_disable_interrupts();
@@ -423,8 +428,9 @@ bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void )
     }
 
     /* Same restore pair as the identify path: one ordinary SDK call brings
-       back the faster boot2 XIP configuration, then QPI re-entry brings the
-       memory window back. */
+       back the faster boot2 XIP configuration (the cached boot2 copyout, plus
+       the same incidental CS1 re-drive described there), then QPI re-entry
+       brings the memory window back. */
     const uint8_t restore_tx[ 1 ] = { 0x9fu };
     uint8_t restore_rx[ 1 ] = { 0 };
     const uint32_t interrupts = save_and_disable_interrupts();
@@ -573,7 +579,24 @@ static bool _FlashReadsCoherently( const uint32_t flashBytes )
    stay asserted, and a deselect gap with margin over the specified minimum.
 
    psram_reinitialize is documented as unsafe against concurrent XIP, so it runs
-   with interrupts off -- handlers live in flash. */
+   with interrupts off -- handlers live in flash.
+
+   The CS1 FLASH_DEVINFO invariant, kept on every exit path because the SDK
+   reads recovery's success straight out of this metadata (psram_get_size
+   converts the devinfo size; psram_is_available is a sticky flag with no way
+   back down):
+   - success: GPIO = the board's CS1 pin, size = 2M, window mapped and proven
+     by the uncached probe;
+   - failure before any hardware effect (bad params, or a reinitialize
+     precondition): the GPIO and size found on entry are restored verbatim --
+     nothing changed, so the metadata claims nothing new;
+   - failure after the window is mapped (probe flunked): size = NONE, GPIO
+     left at the real pin (inert while the size is NONE). Restoring the entry
+     size here could re-advertise 2M from an earlier successful force; NONE
+     makes psram_get_size report 0, so every later report shows 0 bytes and
+     not-ok, and a retry fails reinitialize's size precondition cleanly. The
+     QMI window itself stays configured -- the SDK has no deinit -- but no SDK
+     size or availability query can reach it. */
 /// <summary>
 ///     Brings chip select 1 up from the datasheet rather than from what the device
 ///     claims to be, for a part that works but reports an unexpected vendor.
@@ -582,18 +605,24 @@ static bool _FlashReadsCoherently( const uint32_t flashBytes )
 ///     nothing: pico-sdk 2.3.0's psram_reinitialize fails only on its own
 ///     preconditions and never touches the device, and psram_get_size just reads
 ///     back the devinfo size this function wrote -- so success is only claimed
-///     after an uncached write/readback shows the window actually holds data.
+///     after an uncached write/readback shows the window actually holds data,
+///     and every failure exit leaves the metadata per the invariant above.
 /// </summary>
 /// <returns>
 ///     True if the device came up and a two-word uncached probe held.
 /// </returns>
 static bool _ForcePsramFromDatasheet( void )
 {
+    const uint previousGpio = flash_devinfo_get_cs_gpio( 1 );
+    const flash_devinfo_size_t previousSize = flash_devinfo_get_cs_size( 1 );
+
     flash_devinfo_set_cs_gpio( 1, FORGIX_QSPI_CS1_GPIO );
     flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_2M );
 
     if ( psram_configure_params( 84u * 1000u * 1000u, 3000u, 50u ) != PICO_OK )
     {
+        flash_devinfo_set_cs_gpio( 1, previousGpio );
+        flash_devinfo_set_cs_size( 1, previousSize );
         return false;
     }
 
@@ -606,16 +635,25 @@ static bool _ForcePsramFromDatasheet( void )
     if ( result != PICO_OK )
     {
         /* Both failure paths inside reinitialize return before touching the
-           hardware, so boot-flash XIP and the QMI are exactly as they were. */
+           hardware, so boot-flash XIP and the QMI are exactly as they were --
+           and the metadata goes back to exactly what was found. */
+        flash_devinfo_set_cs_gpio( 1, previousGpio );
+        flash_devinfo_set_cs_size( 1, previousSize );
         return false;
     }
 
     /* The window is mapped from here on even if verification fails, which is
-       what the forced latch records -- "brought up by forcing", not "verified".
-       A verify failure leaves XIP running (reinitialize's flash_start_xip
-       already ran) and the CS1 metadata as reinitialize left it. */
+       what the forced latch records -- "brought up by forcing", not
+       "verified". */
     _psramForced = true;
-    return _PsramWindowVerified( (uint32_t) psram_get_size() );
+    if ( !_PsramWindowVerified( (uint32_t) psram_get_size() ) )
+    {
+        /* XIP is running (reinitialize's flash_start_xip already ran), but the
+           window flunked its probe: advertise nothing, per the invariant. */
+        flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_NONE );
+        return false;
+    }
+    return true;
 }
 
 /* Deliberately separate from _PsramHoldsAPattern: that probe is destructive and
@@ -717,10 +755,13 @@ static bool _PsramHoldsAPattern( const uint32_t sizeBytes )
    restores the faster boot2 configuration with one ordinary flash_do_cmd_cs.
 
    The QSPI pad state the ROM leaves behind is not saved and restored here on
-   purpose: the caller's recovery path re-runs flash_do_cmd_cs (whose boot2
-   copyout restores chip-select-0 timing) and psram_reinitialize (which
-   rebuilds the chip-select-1 QMI window), so a save/restore would duplicate
-   what the re-entry path rebuilds anyway. */
+   purpose: the caller's recovery path re-runs flash_do_cmd_cs (which restores
+   both the pads and the fast chip-select-0 timing -- it executes the boot2
+   image it copied out of boot RAM on its first-ever call and cached, and its
+   trailing restore also re-drives chip select 1 through the SDK's sticky CS1
+   setup function once psram_reinitialize has ever run) and then
+   psram_reinitialize itself (which rebuilds the chip-select-1 QMI window), so
+   a save/restore here would duplicate what the re-entry path rebuilds. */
 /// <summary>
 ///     Runs a list of direct-mode transfers against the given chip select at
 ///     the given clock divisor inside a single XIP-down window, each with its
