@@ -56,6 +56,18 @@ def describe_uptime(seconds: int) -> str:
     return f"{seconds} s ({seconds // 60} min {seconds % 60} s) of foreground progress"
 
 
+def decode_health(health: int) -> dict[str, int | bool]:
+    """Unpack snapshot slot 2 exactly as application_diagnostics packs it."""
+    return {
+        "frame": health & 0xFFFF,
+        "connected": bool(health & (1 << 16)),
+        "suspended": bool(health & (1 << 17)),
+        "write_blocked": bool(health & (1 << 18)),
+        "fpga_failures": (health >> 19) & 0x7F,
+        "fpga_reconfigures": (health >> 26) & 0x3F,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -76,18 +88,15 @@ def main() -> int:
           f"{arguments.scratch2} completed transfers (always 0 in the USB-free image)")
 
     health = arguments.scratch3
-    frame = health & 0xFFFF
-    connected = bool(health & (1 << 16))
-    suspended = bool(health & (1 << 17))
-    write_blocked = bool(health & (1 << 18))
-    fpga_failures = (health >> 19) & 0x7F
-    fpga_reconfigures = (health >> 26) & 0x3F
+    fields = decode_health(health)
+    fpga_failures = fields["fpga_failures"]
+    fpga_reconfigures = fields["fpga_reconfigures"]
 
     print(f"  health        {health:#010x}")
-    print(f"    start-of-frame      {frame}")
-    print(f"    DTR asserted        {connected}")
-    print(f"    bus suspended       {suspended}")
-    print(f"    tx FIFO full        {write_blocked}")
+    print(f"    start-of-frame      {fields['frame']}")
+    print(f"    DTR asserted        {fields['connected']}")
+    print(f"    bus suspended       {fields['suspended']}")
+    print(f"    tx FIFO full        {fields['write_blocked']}")
     print(f"    FPGA failures       {fpga_failures}  (modulo 128)")
     print(f"    FPGA reconfigures   {fpga_reconfigures}  (modulo 64)")
 

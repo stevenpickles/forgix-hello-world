@@ -60,6 +60,7 @@ document](../docs/fpga-ci.md)).
 | Script | What it does |
 | --- | --- |
 | [test_check_protocol_constants.py](test_check_protocol_constants.py) | Unit tests for the protocol-constants checker, including a whole-repository consistency run |
+| [test_decode_scratch.py](test_decode_scratch.py) | Unit tests for the scratch-register decoder, pinning its half of the snapshot packing contract |
 | [test_efinity_tools.py](test_efinity_tools.py) | Unit tests for Efinity image conversion and build-report validation |
 | [test_embed_image.py](test_embed_image.py) | Regression checks for deterministic FPGA image embedding |
 | [test_render_coverage_summary.py](test_render_coverage_summary.py) | Unit tests for the GitHub coverage summary renderer |
