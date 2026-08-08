@@ -400,6 +400,42 @@ begin
       severity failure;
     write_register(REG_BUTTON_COUNT, x"00");
 
+    -- The same collision aimed at the other clear path: a zero write to
+    -- REG_BUTTON_COUNT landing on the identical clk_32m edge as a press. The clear
+    -- must still happen -- a count of two here would mean the write was swallowed --
+    -- but the coincident press postdates everything the host counted, so the count
+    -- restarts at one and the event stays latched. An ungated clear zeroes both and
+    -- the press never happened anywhere, which on hardware is a rare dropped press
+    -- with no disagreeing register to give it away.
+    button_n <= '0';
+    wait for 100 ns;
+    button_n <= '1';
+    wait for 100 ns;
+    begin_transaction(spi_cs_n);
+    send_byte(spi_sck, spi_sdio_in, CMD_WRITE);
+    send_byte(spi_sck, spi_sdio_in, REG_BUTTON_COUNT);
+    send_byte_with_press(spi_sck, spi_sdio_in, button_n, x"00");
+    end_transaction(spi_cs_n);
+    button_n <= '1';
+    wait for 100 ns;
+    read_register(REG_BUTTON_COUNT, result);
+    assert result = x"01"
+      report "press coincident with the count clear was lost or the clear skipped"
+      severity failure;
+    read_register(REG_STATUS, result);
+    assert result(2) = '1'
+      report "count clear collision dropped the button event"
+      severity failure;
+    write_register(REG_BUTTON_COUNT, x"00");
+    read_register(REG_BUTTON_COUNT, result);
+    assert result = x"00"
+      report "uncontested count clear failed"
+      severity failure;
+    read_register(REG_STATUS, result);
+    assert result(2) = '0'
+      report "uncontested count clear left the event latched"
+      severity failure;
+
     -- The tick counter's contract has three parts: a capture is atomic, reads do not
     -- re-sample, and the count advances at exactly one tick per clk cycle. The two
     -- captures below are byte-identical transactions, so the delay from each recorded
