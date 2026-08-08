@@ -99,6 +99,5 @@ void test_probe_held_is_false_for_a_plan_that_was_never_viable( void )
 
     /* Even observations that happen to match a non-viable plan's zeroed
        patterns must not pass: the probe never ran. */
-    TEST_ASSERT_FALSE(
-        BSP_MemoryVerdictProbeHeld( &plan, plan.first_pattern, plan.last_pattern ) );
+    TEST_ASSERT_FALSE( BSP_MemoryVerdictProbeHeld( &plan, plan.first_pattern, plan.last_pattern ) );
 }

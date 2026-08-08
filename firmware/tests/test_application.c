@@ -392,8 +392,7 @@ void test_memid_reports_a_failed_qpi_reentry( void )
     process( "memid" );
 
     TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(),
-                "error: qpi re-entry or readback verify failed" ) );
+        strstr( MOCK_BSP_ConsoleOutput(), "error: qpi re-entry or readback verify failed" ) );
 }
 
 
