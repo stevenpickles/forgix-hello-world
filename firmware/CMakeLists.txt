@@ -118,6 +118,7 @@ add_library(forgix_application STATIC
   src/application/application_effects.c
   src/application/application_ibit.c
   src/application/application_runner.c
+  src/application/application_time.c
   src/application/application_ui.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
