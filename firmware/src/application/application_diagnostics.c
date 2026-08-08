@@ -86,10 +86,15 @@ typedef struct
     bsp_led_state_t commanded;
 
     bsp_usb_health_t health;
-    uint32_t last_activity_count;
-    /* When the transmit FIFO last had room or was seen draining. While the FIFO
-       is full and nothing moves, this stands still and its age is the stall. */
-    uint32_t fifo_full_since_ms;
+    uint32_t last_tx_count;
+    /* True while an unbroken run of samples has seen the transmit FIFO full
+       with the TX completion counter unmoved. Cleared by observed room or by
+       TX progress; inbound traffic does not touch it. */
+    bool fifo_stalled;
+    /* The timestamp of the first sample of that run -- the stall is measured
+       from the moment fullness was first observed, not from the last sample
+       that had room. Meaningful only while fifo_stalled is set. */
+    uint32_t fifo_stall_epoch_ms;
     uint32_t last_frame_number;
     uint32_t last_frame_ms;
 
@@ -193,7 +198,10 @@ void application_diagnostics_start( void )
     diagnostics.led_on = true;
     diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
     diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-    diagnostics.fifo_full_since_ms = now_ms;
+    /* Explicit seeds, not trust in static zero-init: module state persists
+       across activities and, in the test build, across tests in one binary. */
+    diagnostics.fifo_stalled = false;
+    diagnostics.last_tx_count = 0;
     diagnostics.last_frame_ms = now_ms;
     apply_led( now_ms );
 
@@ -418,15 +426,17 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
         *green = 0;
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
     }
-    else if ( diagnostics.health.write_available == 0 &&
-              stalled_since( now_ms, diagnostics.fifo_full_since_ms,
+    else if ( diagnostics.fifo_stalled &&
+              stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
                              APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
     {
-        /* red: data is queued and the FIFO has not drained for the whole stall
-           window, measured from when it stopped draining. Keying the window off
-           the last CDC traffic instead punished quiet links -- a connection
-           idle longer than the threshold went red on the first full sample,
-           with no wedge ever having lasted a single second. */
+        /* red: every sample for the whole window saw the transmit FIFO full
+           with no TX completion, measured from the first such sample. The flag
+           already encodes "full at the last sample", so no separate
+           write_available test is needed here. Two earlier shapes of this
+           verdict were wrong: keying off the last CDC traffic punished quiet
+           links, and pooling RX with TX let inbound traffic conceal a wedged
+           transmit endpoint indefinitely. */
         *red = 255;
         *green = 0;
         *blue = 0;
@@ -545,28 +555,35 @@ static void check_fpga( uint32_t now_ms )
 }
 
 /// <summary>
-///     Each timestamp moves only while its condition holds, which is what makes
-///     the stall thresholds measure a state persisting rather than the time
-///     since the last sample. The FIFO clock restarts on room or on any CDC
-///     progress; the activity counter pools RX with TX, so inbound traffic also
-///     counts as draining -- deliberately coarse, erring toward not-red, which
-///     is the right direction for a fault lamp. Nothing here judges health; it
-///     only records when the fault condition last was not present.
+///     Tracks the transmit-stall run and the frame clock. The stall epoch is
+///     the first sample that saw the FIFO full with the TX completion counter
+///     unmoved, and the run breaks on observed room or on TX progress -- TX
+///     only, on purpose: inbound traffic proves nothing about a wedged
+///     transmit endpoint, and the pooled activity counter used to let RX
+///     conceal exactly that fault. A TX completion also clears a run whose
+///     FIFO drained and refilled between samples, since it proves the queued
+///     data moved. Nothing here judges health; it only records the run.
 /// </summary>
 static void sample_usb( uint32_t now_ms )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT );
     diagnostics.health = BSP_UsbHealth();
 
-    const bool activity_moved =
-        diagnostics.health.activity_count != diagnostics.last_activity_count;
-    if ( activity_moved )
+    /* != rather than an ordered compare, so the counter wrapping past zero
+       still reads as progress. */
+    const bool tx_moved = diagnostics.health.tx_complete_count != diagnostics.last_tx_count;
+    if ( tx_moved )
     {
-        diagnostics.last_activity_count = diagnostics.health.activity_count;
+        diagnostics.last_tx_count = diagnostics.health.tx_complete_count;
     }
-    if ( diagnostics.health.write_available > 0u || activity_moved )
+    if ( diagnostics.health.write_available > 0u || tx_moved )
     {
-        diagnostics.fifo_full_since_ms = now_ms;
+        diagnostics.fifo_stalled = false;
+    }
+    else if ( !diagnostics.fifo_stalled )
+    {
+        diagnostics.fifo_stalled = true;
+        diagnostics.fifo_stall_epoch_ms = now_ms;
     }
     if ( diagnostics.health.frame_number != diagnostics.last_frame_number )
     {

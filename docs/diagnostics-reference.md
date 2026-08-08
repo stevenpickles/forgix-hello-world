@@ -228,16 +228,22 @@ override the visual effect of `color` and `off`; the commands still answer
 as "no transfer completed for 5 s." That was an instrumentation defect: the
 firmware's own idle-status line goes out every 10 s, so a plain activity gap
 tripped the threshold on the firmware's own reporting cadence every cycle,
-regardless of whether anything was actually wrong. The code now requires two
-things together before it shows red: the transmit FIFO must be full (data is
-queued) **and** it must have gone 30 s without draining, measured from the
-moment it stopped draining (`APPLICATION_DIAGNOSTICS_FIFO_STALL_MS`,
-`firmware/src/application/application_diagnostics.h`). The measurement point
-matters: an intermediate fix measured the 30 s from the last CDC traffic, so
-a link that had simply been quiet for longer than the threshold went red on
-the very first full sample -- quiet history counted against a FIFO that had
-only just filled. That is what an endpoint wedge actually looks like; a quiet
-link on its own is not a fault, before or after it fills the FIFO. The
+regardless of whether anything was actually wrong. The current rule: red
+means every once-a-second sample across the whole 30 s window
+(`APPLICATION_DIAGNOSTICS_FIFO_STALL_MS`,
+`firmware/src/application/application_diagnostics.h`) saw the transmit FIFO
+full with no **outbound** transfer completing, measured from the first sample
+that observed that state. Two intermediate fixes fell short of this and both
+are worth recording: measuring the 30 s from the last CDC traffic made a
+link that had simply been quiet go red on the very first full sample (quiet
+history counted against a FIFO that had only just filled), and clearing the
+window on *any* CDC activity let inbound traffic conceal a wedged transmit
+endpoint indefinitely -- a host typing into a dead TX path kept the lamp
+green. Only observed FIFO room or an outbound completion clears the window
+now; RX traffic does not. The `diag:` line's `activity=` field still reports
+the pooled RX+TX counter -- it answers "is anything moving", not the stall
+question. That is what an endpoint wedge actually looks like; a quiet link
+on its own is not a fault, before or after it fills the FIFO. The
 frame-stall threshold behind magenta is unaffected and stays at 5 s
 (`APPLICATION_DIAGNOSTICS_FRAME_STALL_MS`).
 

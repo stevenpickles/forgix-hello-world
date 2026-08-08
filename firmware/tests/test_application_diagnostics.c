@@ -55,7 +55,8 @@ enum
 static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, bool enabled );
 
 static bsp_usb_health_t health_of( bool connected, bool suspended, uint32_t write_available,
-                                   uint32_t activity_count, uint32_t frame_number );
+                                   uint32_t activity_count, uint32_t tx_complete_count,
+                                   uint32_t frame_number );
 
 static void start_usb_at( uint32_t now_ms );
 
@@ -195,7 +196,7 @@ void test_recovery_is_skipped_when_auto_reconfigure_is_disabled( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
@@ -217,7 +218,7 @@ void test_every_failing_sample_marks_the_fpga_unavailable( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
@@ -322,7 +323,7 @@ void test_sample_shows_green_and_snapshots_health_while_traffic_advances( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
@@ -353,7 +354,7 @@ void test_released_led_is_left_alone_by_the_heartbeat( void )
        Any BSP_LedSet or BSP_LedOff here would fail as an unexpected call. */
     poll_at( 500 );
     poll_at( 750 );
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
     poll_at( 1000 );
@@ -369,7 +370,7 @@ void test_released_led_is_dropped_from_the_fpga_health_check( void )
     start_usb_at( 0 );
     application_diagnostics_release_led();
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
     poll_at( 1000 );
@@ -395,7 +396,7 @@ void test_reclaiming_the_led_repaints_it_at_once( void )
        beat that a watching eye is using to judge that the loop is alive. */
     BSP_LedOff_Expect();
     poll_at( 250 );
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 }
@@ -407,7 +408,7 @@ void test_heartbeat_stays_blue_while_the_host_has_not_asserted_dtr( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( false, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( false, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 0, 255 );
     poll_at( 1000 );
 
@@ -421,7 +422,7 @@ void test_heartbeat_turns_magenta_while_the_bus_is_suspended( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, true, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, true, 64, 5, 0, 100 ) );
     expect_sample( 255, 0, 255 );
     poll_at( 1000 );
 
@@ -435,7 +436,7 @@ void test_heartbeat_turns_magenta_when_the_frame_counter_freezes( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
@@ -443,7 +444,7 @@ void test_heartbeat_turns_magenta_when_the_frame_counter_freezes( void )
     poll_at( 1250 );
 
     /* transfers still complete, but the host has stopped sending start-of-frame */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 6, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 6, 0, 100 ) );
     expect_sample( 255, 0, 255 );
     poll_at( 6000 );
 }
@@ -455,31 +456,41 @@ void test_heartbeat_turns_red_when_a_full_fifo_stops_draining( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
     BSP_LedOff_Expect();
     poll_at( 1250 );
 
-    /* transmit FIFO full and nothing completing: a genuine endpoint wedge */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 101 ) );
-    expect_sample( 255, 0, 0 );
-    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+    /* transmit FIFO full and no outbound completion: the stall run and its
+       epoch start at this sample, not at the last sample that had room */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 101 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 2000 );
 
-    TEST_ASSERT_EQUAL_UINT32( 101u | ( 1u << 16 ) | ( 1u << 18 ), MOCK_BSP_WatchdogSnapshot( 2 ) );
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
+
+    /* a genuine endpoint wedge: the whole window elapsed from the first full sample */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 102 ) );
+    expect_sample( 255, 0, 0 );
+    poll_at( 2000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+
+    TEST_ASSERT_EQUAL_UINT32( 102u | ( 1u << 16 ) | ( 1u << 18 ), MOCK_BSP_WatchdogSnapshot( 2 ) );
 }
 
 
-/* A momentarily full FIFO is normal under load; it only means anything if it
-   also stops draining. */
+/* A momentarily full FIFO is normal under load; it only means anything if the
+   transmit path also stops completing transfers. */
 void test_a_full_fifo_that_is_still_draining_stays_green( void )
 {
     start_usb_at( 0 );
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 100 ) );
+    /* full, but an outbound completion since the last sample proves movement */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 7, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
@@ -496,7 +507,7 @@ void test_a_quiet_link_with_room_in_the_fifo_stays_green( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
@@ -505,7 +516,7 @@ void test_a_quiet_link_with_room_in_the_fifo_stays_green( void )
 
     /* far beyond the activity threshold, but the FIFO has room, so nothing is
        stuck; the frame counter keeps advancing so the host is still framing */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 101 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 101 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS + 5000 );
 }
@@ -521,7 +532,7 @@ void test_a_fifo_that_fills_after_a_quiet_spell_is_not_immediately_red( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
@@ -529,7 +540,7 @@ void test_a_fifo_that_fills_after_a_quiet_spell_is_not_immediately_red( void )
     poll_at( 1250 );
 
     /* a long quiet spell: no CDC traffic since t=1000, but the FIFO has room */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 135 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 135 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 35000 );
 
@@ -537,44 +548,48 @@ void test_a_fifo_that_fills_after_a_quiet_spell_is_not_immediately_red( void )
     poll_at( 35250 );
 
     /* the FIFO fills one second later; the stall clock starts here, not 35 s ago */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 136 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 136 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 36000 );
 }
 
 
+/* The threshold is measured from the first sample that saw the FIFO full with
+   no TX progress -- t=2000 here, not the t=1000 sample that still had room.
+   Anchoring on the last room sample fired after only 29 s of observed
+   fullness; this pins green at epoch+29 s and red exactly at epoch+30 s. */
 void test_red_requires_the_fifo_to_stay_full_for_the_whole_stall_window( void )
 {
     start_usb_at( 0 );
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
     BSP_LedOff_Expect();
     poll_at( 1250 );
 
-    /* full from here on; the FIFO was last seen with room at t=1000 */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 101 ) );
+    /* first sample observing the FIFO full with no TX progress: the epoch */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 101 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 2000 );
 
     BSP_LedOff_Expect();
     poll_at( 2250 );
 
-    /* one second short of the window: still green */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 102 ) );
+    /* one second short of the window measured from the epoch: still green */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 102 ) );
     expect_sample( 0, 255, 0 );
-    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
+    poll_at( 2000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
 
     BSP_LedOff_Expect();
-    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
+    poll_at( 2000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 103 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 103 ) );
     expect_sample( 255, 0, 0 );
-    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+    poll_at( 2000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
 }
 
 
@@ -585,56 +600,165 @@ void test_a_draining_fifo_restarts_the_stall_measurement( void )
     poll_at( 250 );
 
     /* full with no progress for 16 s -- more than half the window */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
     BSP_LedOff_Expect();
     poll_at( 1250 );
 
-    /* room appears: whatever was queued went out, so the measurement restarts */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 117 ) );
+    /* room appears: whatever was queued went out, so the run is broken */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 117 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 17000 );
 
     BSP_LedOff_Expect();
     poll_at( 17250 );
 
-    /* full again for 29 s from the restart: green, because the earlier 16 s of
-       fullness must not be carried over into the fresh window */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 146 ) );
+    /* full again: a fresh epoch starts at this sample */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 118 ) );
     expect_sample( 0, 255, 0 );
-    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
+    poll_at( 18000 );
 
     BSP_LedOff_Expect();
-    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
+    poll_at( 18250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 147 ) );
+    /* 29 s from the fresh epoch: green, because the earlier 16 s of fullness
+       must not be carried over into the new window */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 147 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 18000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 18000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 148 ) );
     expect_sample( 255, 0, 0 );
-    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+    poll_at( 18000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
 }
 
 
-/* The activity counter pools RX with TX, so any CDC progress counts as the FIFO
-   draining even while it samples full -- deliberately coarse, erring toward
-   not-red, since data is demonstrably still moving. */
-void test_activity_while_the_fifo_is_full_counts_as_draining( void )
+/* The regression this change exists for: only outbound completions may clear
+   the stall run. The pooled activity counter used to let a chatty host typing
+   into a wedged device keep the lamp green forever. */
+void test_rx_only_activity_cannot_conceal_a_stalled_tx_fifo( void )
 {
     start_usb_at( 0 );
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 100 ) );
+    /* full with no TX completion: the epoch starts here */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
 
     BSP_LedOff_Expect();
     poll_at( 1250 );
 
-    /* far beyond the window, but the activity counter moved: still green */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 6, 134 ) );
+    /* inbound traffic keeps the pooled counter moving; the TX counter does not */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 20, 0, 115 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 16000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 16250 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 40, 0, 130 ) );
+    expect_sample( 255, 0, 0 );
+    poll_at( 1000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+}
+
+
+void test_tx_completions_restart_the_stall_interval( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    /* full, but outbound transfers keep completing: never a stall run */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 7, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+
+    /* far beyond the window, and still green -- data demonstrably moved */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 8, 134 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 34000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 34250 );
+
+    /* the completions stop: a fresh epoch starts at this sample */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 8, 135 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 35000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 35250 );
+
+    /* one second short of the window from the fresh epoch: green */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 8, 164 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 35000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 35000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 750 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 8, 165 ) );
+    expect_sample( 255, 0, 0 );
+    poll_at( 35000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS );
+}
+
+
+/* An ordered comparison would read the counter wrapping past zero as "no
+   progress" and hold a stale epoch; the != comparison must treat it as
+   movement like any other change. */
+void test_tx_counter_wraparound_still_counts_as_progress( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    /* park the tracked TX count at the top of its range */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0xffffffffu, 100 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+
+    /* counter unmoved: a stall run begins here */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0xffffffffu, 101 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
+
+    /* the counter wraps to zero: progress, so the run breaks */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 115 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 16000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 16250 );
+
+    /* unmoved again: a fresh epoch at t=17000. Green at 46000 proves the wrap
+       reset the measurement -- a broken ordered compare would still be holding
+       the t=2000 epoch and have gone red at 32000. */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 116 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 17000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 17250 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 145 ) );
+    expect_sample( 0, 255, 0 );
+    poll_at( 17000 + APPLICATION_DIAGNOSTICS_FIFO_STALL_MS - 1000 );
 }
 
 
@@ -649,24 +773,24 @@ void test_fifo_stall_measurement_survives_the_millisecond_wrap( void )
     BSP_LedOff_Expect();
     poll_at( start_ms + 250u );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( start_ms + 1000u );
 
     BSP_LedOff_Expect();
     poll_at( start_ms + 1250u );
 
-    /* full from here; the window starts at start+1000, before the wrap */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 101 ) );
+    /* full from here; the epoch is this sample at start+2000, before the wrap */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 101 ) );
     expect_sample( 0, 255, 0 );
     poll_at( start_ms + 2000u );
 
     BSP_LedOff_Expect();
     poll_at( start_ms + 2250u );
 
-    /* 34 s after the FIFO was last seen draining, at a timestamp that has
-       wrapped past zero: the verdict must still fire */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 102 ) );
+    /* 33 s after the epoch, at a timestamp that has wrapped past zero: the
+       verdict must still fire */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 0, 5, 0, 102 ) );
     expect_sample( 255, 0, 0 );
     poll_at( start_ms + 35000u );
 }
@@ -679,7 +803,7 @@ void test_a_sample_without_a_heartbeat_toggle_still_refreshes_the_led( void )
     poll_at( 999 );
 
     /* 999 moved the heartbeat deadline to 1249, so only the sample is due here */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedOff_Expect();
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
@@ -696,7 +820,7 @@ void test_lost_configuration_reconfigures_and_flies_the_recovery_signature( void
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
@@ -748,7 +872,7 @@ void test_reconfiguration_while_the_led_is_released_writes_nothing( void )
 
     /* No LED expectation is queued here: a repaint on this path would fail the
        test as an unexpected BSP_LedSet call. */
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
     BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( true );
@@ -770,7 +894,7 @@ void test_a_wrong_design_id_reconfigures_without_reading_the_led_back( void )
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( 0x00 );
@@ -815,7 +939,7 @@ void test_diag_report_lists_the_previous_boot_and_the_live_counters( void )
     start_usb_at( 0 );
     BSP_LedOff_Expect();
     poll_at( 250 );
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 32, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 32, 5, 0, 100 ) );
     expect_sample( 0, 255, 0 );
     poll_at( 1000 );
     MOCK_BSP_ConsoleReset();
@@ -852,13 +976,15 @@ static bsp_led_state_t led_state( uint8_t red, uint8_t green, uint8_t blue, bool
 
 
 static bsp_usb_health_t health_of( bool connected, bool suspended, uint32_t write_available,
-                                   uint32_t activity_count, uint32_t frame_number )
+                                   uint32_t activity_count, uint32_t tx_complete_count,
+                                   uint32_t frame_number )
 {
     bsp_usb_health_t health = {
         .connected = connected,
         .suspended = suspended,
         .write_available = write_available,
         .activity_count = activity_count,
+        .tx_complete_count = tx_complete_count,
         .frame_number = frame_number,
     };
     return health;
@@ -930,7 +1056,7 @@ static void run_readback_mismatch( bsp_led_state_t readback, const char *field_n
     BSP_LedOff_Expect();
     poll_at( 250 );
 
-    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 100 ) );
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );

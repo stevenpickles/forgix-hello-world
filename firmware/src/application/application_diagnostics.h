@@ -64,11 +64,12 @@ enum
     /* Start-of-frame advances every millisecond while the host is framing, so a
        few seconds of silence is already decisive. */
     APPLICATION_DIAGNOSTICS_FRAME_STALL_MS = 5000,
-    /* How long the transmit FIFO must stay full without draining before the
-       heartbeat calls it wedged. Measured from the moment the FIFO stopped
-       draining, not from the last CDC traffic: a link is allowed to be quiet
-       for any length of time, and quiet history must not count against a FIFO
-       that only just filled. */
+    /* How long the transmit FIFO must be observed continuously full with no
+       outbound transfer completing before the heartbeat calls it wedged.
+       Measured from the first sample that saw the FIFO full with the TX
+       counter unmoved: quiet history never counts against a FIFO that only
+       just filled, and only TX progress -- not inbound traffic -- can clear
+       the run, because RX proves nothing about the transmit path. */
     APPLICATION_DIAGNOSTICS_FIFO_STALL_MS = 30000,
 };
 
