@@ -223,7 +223,7 @@ void test_hello_programs_and_verifies_the_expected_led_state( void )
 
     process( "hello" );
 
-    TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B6\n", MOCK_BSP_ConsoleOutput() );
+    TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B7\n", MOCK_BSP_ConsoleOutput() );
 }
 
 
@@ -288,7 +288,7 @@ void test_status_reports_fpga_and_button_state( void )
 
     process( "status" );
 
-    TEST_ASSERT_EQUAL_STRING( "id=B6 status=01 button=03 count=7 fpga_status=1\n",
+    TEST_ASSERT_EQUAL_STRING( "id=B7 status=01 button=03 count=7 fpga_status=1\n",
                               MOCK_BSP_ConsoleOutput() );
 }
 

@@ -16,7 +16,7 @@ package forgix_pkg is
 
   subtype byte_t is unsigned(7 downto 0);
 
-  constant DESIGN_ID        : byte_t := x"B6";
+  constant DESIGN_ID        : byte_t := x"B7";
   constant CMD_WRITE        : byte_t := x"02";
   constant CMD_READ         : byte_t := x"03";
   constant CMD_RESET        : byte_t := x"7F";
