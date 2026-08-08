@@ -48,7 +48,9 @@ typedef struct bsp_memory_report_t_tag
        claim the device started auto-detecting between two reports. Detection
        only checks the identity byte, so a device that reports an unexpected
        vendor can still be perfectly good memory -- identity and function are
-       separate questions. */
+       separate questions. Latched when the forced bring-up mapped the window,
+       even if the readback verification then failed: it records "brought up by
+       forcing", not "verified working". */
     bool psram_forced;
     /* Vendor known-good-die and device-ID bytes as the chip reported them over
        QSPI. Captured during the SDK's own detection at boot, and refreshed by
@@ -64,14 +66,18 @@ typedef struct bsp_memory_report_t_tag
 
 /* The identity bytes read in the one window the datasheet allows: straight
    after a global reset. The read tears the device out of QPI, so the same call
-   re-enters it before returning -- restored is whether that re-entry worked. */
+   re-enters it before returning -- restored is whether that re-entry worked
+   AND an uncached two-word write/readback in the re-entered window held. The
+   SDK call succeeding alone proves nothing about the device. */
 typedef struct bsp_memory_psram_identity_t_tag
 {
     uint8_t kgd; /* byte 5 of the Read-ID response */
     uint8_t eid; /* byte 6 */
-    /* False means the memory window is down until the next successful call;
-       nothing else in the firmware stores data there, so the failure is inert,
-       but the caller should say so rather than report a working memory. */
+    /* False means the window is unusable until the next successful call --
+       either re-entry failed and the window is down, or it is mapped but
+       flunked the readback verification. Nothing else in the firmware stores
+       data there, so the failure is inert, but the caller should say so rather
+       than report a working memory. */
     bool restored;
 } bsp_memory_psram_identity_t;
 
@@ -115,8 +121,9 @@ typedef struct bsp_memory_identity_dump_t_tag
     bool psram_probed;
     uint32_t probe_hz[ BSP_MEMORY_IDENTITY_PROBE_RATES ];
     uint8_t psram_response[ BSP_MEMORY_IDENTITY_PROBE_RATES ][ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ];
-    /* False means the memory window is down until the next successful
-       identify, exactly as bsp_memory_psram_identity_t reports it. */
+    /* False means the window is unusable until the next successful identify --
+       re-entry failed or the readback verification did not hold, exactly as
+       bsp_memory_psram_identity_t reports it. */
     bool restored;
 } bsp_memory_identity_dump_t;
 

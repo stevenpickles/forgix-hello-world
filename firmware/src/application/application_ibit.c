@@ -730,7 +730,7 @@ static application_ibit_outcome_t step_psram( char *detail, size_t capacity )
         ibit.psram_identity = BSP_MemoryPsramIdentify();
         if ( !ibit.psram_identity.restored )
         {
-            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry failed",
+            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry/verify failed",
                       ibit.psram_identity.kgd, ibit.psram_identity.eid );
             return APPLICATION_IBIT_FAIL;
         }

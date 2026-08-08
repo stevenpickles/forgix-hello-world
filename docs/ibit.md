@@ -92,6 +92,10 @@ boot-time capture cannot be trusted for this — it is only legal on a cold star
 and after a warm reboot the device is still in QPI from the previous session, so
 the serial Read-ID the SDK issues returns nonsense. The per-run read is what
 makes the reported bytes meaningful whichever way the board arrived at the menu.
+The re-entry is proven, not assumed: the SDK's re-initialisation call never
+probes the device, so the step writes and reads back two words at opposite ends
+of the window through the uncached alias before claiming the window is back. A
+failed re-entry or a failed readback both fail the step before any sweep runs.
 
 ## What it does not check, and why
 

@@ -441,7 +441,7 @@ void test_psram_fails_when_qpi_reentry_fails_and_never_sweeps( void )
     const char *output = run_step( STEP_PSRAM );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B eid=43 read but QPI re-entry failed" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B eid=43 read but QPI re-entry/verify failed" ) );
 }
 
 

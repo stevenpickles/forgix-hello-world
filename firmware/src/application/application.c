@@ -401,8 +401,9 @@ static void print_identity_dump( void )
     }
 
     BSP_ConsolePuts( dump.restored
-                         ? "qpi re-entry: ok"
-                         : "error: qpi re-entry failed; psram is down until the next check" );
+                         ? "qpi re-entry: ok (readback verified)"
+                         : "error: qpi re-entry or readback verify failed; psram is unusable "
+                           "until the next successful check" );
 }
 
 

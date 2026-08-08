@@ -377,7 +377,8 @@ void test_memid_dumps_every_response_byte_without_consulting_the_fpga( void )
     TEST_ASSERT_NOT_NULL(
         strstr( MOCK_BSP_ConsoleOutput(),
                 "cs1 psram 9F @1000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FF" ) );
-    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok (readback verified)" ) );
 }
 
 
@@ -392,7 +393,7 @@ void test_memid_reports_a_failed_qpi_reentry( void )
 
     TEST_ASSERT_NOT_NULL(
         strstr( MOCK_BSP_ConsoleOutput(),
-                "error: qpi re-entry failed; psram is down until the next check" ) );
+                "error: qpi re-entry or readback verify failed" ) );
 }
 
 

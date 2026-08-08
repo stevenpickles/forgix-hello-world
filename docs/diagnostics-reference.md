@@ -91,9 +91,14 @@ device keeps driving, repeats its ID, or goes quiet):
 - `cs1 psram: not probed; this image was built without PSRAM support` when
   the image has `FORGIX_QSPI_PSRAM` off; no chip-select-1 transaction is
   attempted.
-- A closing `qpi re-entry: ok` or `error: qpi re-entry failed; psram is down
-  until the next check` line, since every read tears the device out of QPI
-  and the same call re-enters it before returning.
+- A closing `qpi re-entry: ok (readback verified)` or `error: qpi re-entry or
+  readback verify failed; psram is unusable until the next successful check`
+  line, since every read tears the device out of QPI and the same call
+  re-enters it before returning. The `ok` is earned, not assumed: the SDK's
+  re-initialisation call can only fail on its own preconditions and never
+  probes the device, so after it succeeds the firmware writes two words at
+  opposite ends of the window through the uncached alias, reads them back,
+  and restores what it displaced -- only a readback that held reports `ok`.
 
 Two method facts worth keeping from the investigation that built this:
 

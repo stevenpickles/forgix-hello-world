@@ -7,6 +7,7 @@
 
 #include "bsp_memory.h"
 
+#include "bsp_memory_verdict.h"
 #include "hardware/flash.h"
 #include "hardware/regs/addressmap.h"
 #include "hardware/sync.h"
@@ -150,6 +151,7 @@ static bool _psramForced;
 static bool _FlashReadsCoherently( const uint32_t flashBytes );
 #if FORGIX_QSPI_PSRAM
 static bool _ForcePsramFromDatasheet( void );
+static bool _PsramWindowVerified( const uint32_t sizeBytes );
 static bool _PsramHoldsAPattern( const uint32_t sizeBytes );
 /* The attributes ride the prototype so the definition reads plainly. The
    function must run from RAM: it suspends chip-select-0 XIP to use the bus,
@@ -576,10 +578,14 @@ static bool _FlashReadsCoherently( const uint32_t flashBytes )
 ///     Brings chip select 1 up from the datasheet rather than from what the device
 ///     claims to be, for a part that works but reports an unexpected vendor.
 ///     Runs with interrupts off because psram_reinitialize is unsafe against
-///     concurrent XIP and handlers live in flash.
+///     concurrent XIP and handlers live in flash. The SDK call alone proves
+///     nothing: pico-sdk 2.3.0's psram_reinitialize fails only on its own
+///     preconditions and never touches the device, and psram_get_size just reads
+///     back the devinfo size this function wrote -- so success is only claimed
+///     after an uncached write/readback shows the window actually holds data.
 /// </summary>
 /// <returns>
-///     True if the device came up and reports a non-zero size.
+///     True if the device came up and a two-word uncached probe held.
 /// </returns>
 static bool _ForcePsramFromDatasheet( void )
 {
@@ -597,12 +603,57 @@ static bool _ForcePsramFromDatasheet( void )
     const int result = psram_reinitialize();
     restore_interrupts( interrupts );
 
-    const bool forced = result == PICO_OK && psram_get_size() > 0u;
-    if ( forced )
+    if ( result != PICO_OK )
     {
-        _psramForced = true;
+        /* Both failure paths inside reinitialize return before touching the
+           hardware, so boot-flash XIP and the QMI are exactly as they were. */
+        return false;
     }
-    return forced;
+
+    /* The window is mapped from here on even if verification fails, which is
+       what the forced latch records -- "brought up by forcing", not "verified".
+       A verify failure leaves XIP running (reinitialize's flash_start_xip
+       already ran) and the CS1 metadata as reinitialize left it. */
+    _psramForced = true;
+    return _PsramWindowVerified( (uint32_t) psram_get_size() );
+}
+
+/* Deliberately separate from _PsramHoldsAPattern: that probe is destructive and
+   feeds BSP_MemoryCheck's own verdict, while this one must save and put back
+   what it touches -- restoration runs against a window a future caller may be
+   trusting -- and reusing the sweep probe here would double-probe on the check
+   path that calls both. */
+/// <summary>
+///     Proves a freshly re-entered window by writing the planned patterns to its
+///     first and last words through the uncached alias, reading them back, and
+///     restoring the words it displaced. The plan and the verdict come from
+///     bsp_memory_verdict, so the decision logic is host-tested; only the bus
+///     access lives here.
+/// </summary>
+/// <returns>
+///     True when both probe words read back exactly what was written.
+/// </returns>
+static bool _PsramWindowVerified( const uint32_t sizeBytes )
+{
+    const bsp_memory_probe_plan_t plan = BSP_MemoryVerdictProbePlan( sizeBytes );
+    if ( !plan.viable )
+    {
+        return false;
+    }
+
+    volatile uint32_t *const ptr_window = (volatile uint32_t *) PSRAM_NOCACHE_BASE;
+    const uint32_t savedFirst = ptr_window[ plan.first_word_index ];
+    const uint32_t savedLast = ptr_window[ plan.last_word_index ];
+
+    ptr_window[ plan.first_word_index ] = plan.first_pattern;
+    ptr_window[ plan.last_word_index ] = plan.last_pattern;
+    const uint32_t observedFirst = ptr_window[ plan.first_word_index ];
+    const uint32_t observedLast = ptr_window[ plan.last_word_index ];
+
+    ptr_window[ plan.first_word_index ] = savedFirst;
+    ptr_window[ plan.last_word_index ] = savedLast;
+
+    return BSP_MemoryVerdictProbeHeld( &plan, observedFirst, observedLast );
 }
 
 /* Writes every pattern before reading any of them back. Checking each write
