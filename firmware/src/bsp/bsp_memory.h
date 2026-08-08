@@ -73,11 +73,12 @@ typedef struct bsp_memory_psram_identity_t_tag
 {
     uint8_t kgd; /* byte 5 of the Read-ID response */
     uint8_t eid; /* byte 6 */
-    /* False means the window is unusable until the next successful call --
-       either re-entry failed and the window is down, or it is mapped but
-       flunked the readback verification. Nothing else in the firmware stores
-       data there, so the failure is inert, but the caller should say so rather
-       than report a working memory. */
+    /* False means no verified window is advertised until the next successful
+       call -- either re-entry failed before mapping anything, or the mapped
+       window flunked the readback verification and its advertised size was
+       zeroed. Nothing else in the firmware stores data there, so the failure
+       costs the rest of the firmware nothing, but the caller should say so
+       rather than report a working memory. */
     bool restored;
 } bsp_memory_psram_identity_t;
 
@@ -144,9 +145,9 @@ typedef enum bsp_memory_sweep_op_tag
 typedef struct bsp_memory_sweep_result_t_tag
 {
     /* Write chunks pass when the chunk exists; verify chunks report the
-       check. A chunk index past the device's size, or any chunk while the
-       PSRAM is unavailable, fails with fail_address 0 rather than touching
-       an unbacked window. */
+       check. A chunk index past the advertised size, or any chunk while no
+       PSRAM size is advertised at all, fails with fail_address 0 rather than
+       touching an unbacked window. */
     bool ok;
     uint32_t fail_address; /* uncached-alias address of the first mismatch, else 0 */
 } bsp_memory_sweep_result_t;

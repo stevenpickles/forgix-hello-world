@@ -350,8 +350,12 @@ bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
     flash_devinfo_set_cs_size( 1, previous );
 
     /* The reset tore the device out of QPI; bring it back the same way boot
-       does. restored=false leaves the window down, which is inert -- nothing
-       stores data there -- but must be reported rather than papered over. */
+       does. restored=false means no verified window is advertised -- either
+       re-entry failed before mapping anything, or the mapped window flunked
+       its probe and its size was zeroed. Nothing stores data there, so the
+       failure costs the rest of the firmware nothing, but it must be reported
+       rather than papered over -- and calling this again retries the whole
+       bring-up. */
     identity.restored = _ForcePsramFromDatasheet();
 
     /* Later reports now show bytes read in the legal window rather than
@@ -483,7 +487,8 @@ bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uin
        trusted here: a stale count, or a device reporting more than the 16 MB
        window maps, would send the loop below writing into an unbacked alias
        and reporting whatever it read back as a fault at a fabricated address.
-       A size of zero -- the window never came up -- refuses every chunk. */
+       A size of zero -- the window never came up, or it flunked verification
+       and its advertised size was zeroed -- refuses every chunk. */
     const uint32_t available_chunks =
         (uint32_t) psram_get_size() / (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
     if ( chunk_index >= available_chunks )
@@ -581,22 +586,30 @@ static bool _FlashReadsCoherently( const uint32_t flashBytes )
    psram_reinitialize is documented as unsafe against concurrent XIP, so it runs
    with interrupts off -- handlers live in flash.
 
-   The CS1 FLASH_DEVINFO invariant, kept on every exit path because the SDK
-   reads recovery's success straight out of this metadata (psram_get_size
-   converts the devinfo size; psram_is_available is a sticky flag with no way
-   back down):
+   The CS1 FLASH_DEVINFO invariant, kept on every exit path because the BSP
+   reads recovery's success out of this metadata (psram_get_size converts the
+   devinfo size):
    - success: GPIO = the board's CS1 pin, size = 2M, window mapped and proven
      by the uncached probe;
    - failure before any hardware effect (bad params, or a reinitialize
      precondition): the GPIO and size found on entry are restored verbatim --
      nothing changed, so the metadata claims nothing new;
    - failure after the window is mapped (probe flunked): size = NONE, GPIO
-     left at the real pin (inert while the size is NONE). Restoring the entry
-     size here could re-advertise 2M from an earlier successful force; NONE
-     makes psram_get_size report 0, so every later report shows 0 bytes and
-     not-ok, and a retry fails reinitialize's size precondition cleanly. The
-     QMI window itself stays configured -- the SDK has no deinit -- but no SDK
-     size or availability query can reach it. */
+     left at the real board pin. Restoring the entry size here could
+     re-advertise 2M from an earlier successful force; NONE makes
+     psram_get_size report 0, which is the whole containment -- every BSP
+     consumer derives its bounds from that size, so BSP_MemoryCheck reports 0
+     bytes with psram_ok false and the sweep refuses every chunk. What NONE
+     does NOT undo, because the SDK offers no way to: psram_is_available stays
+     true (psram_initialized is sticky), the CS1 setup callback that
+     psram_reinitialize registered stays installed and may reconfigure the
+     physical QMI window during later flash operations, and the QMI window
+     configuration itself persists. That is why no BSP code treats
+     psram_is_available alone as proof of a usable window. A retry lands back
+     in this function -- the identify and dump paths call it every time -- and
+     it reinstalls the candidate metadata first, so the retry does not fail
+     the reinitialize precondition; it simply runs bring-up and verification
+     again. */
 /// <summary>
 ///     Brings chip select 1 up from the datasheet rather than from what the device
 ///     claims to be, for a part that works but reports an unexpected vendor.
@@ -649,7 +662,9 @@ static bool _ForcePsramFromDatasheet( void )
     if ( !_PsramWindowVerified( (uint32_t) psram_get_size() ) )
     {
         /* XIP is running (reinitialize's flash_start_xip already ran), but the
-           window flunked its probe: advertise nothing, per the invariant. */
+           window flunked its probe: advertise no size, per the invariant
+           above. The SDK's availability flag and CS1 callback remain set --
+           containment rests entirely on the zero size. */
         flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_NONE );
         return false;
     }
