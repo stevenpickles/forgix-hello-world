@@ -503,11 +503,11 @@ static application_ibit_outcome_t verdict( bool ok )
 
 
 /* Asked of the FPGA itself, every time, rather than read from BSP_FpgaIsReady.
-   That flag records what bring-up found and is only rewritten by a
-   reconfiguration, so an FPGA that died after boot still reports ready and the
-   steps that sit behind it would run and produce failures of their own instead
-   of standing down. Three extra pings across a sequence is a cheap price for a
-   skip decision made on this run's evidence. */
+   That latch is written by bring-up and cleared by the once-a-second health
+   check, so it can lag a fresh fault by up to a second -- and a built-in test
+   is exactly the tool someone reaches for when they suspect the latch is
+   wrong. Three extra pings across a sequence is a cheap price for a skip
+   decision made on this run's evidence. */
 /// <summary>
 ///     Requires both the configuration pin and a correct design ID before it will
 ///     call the FPGA reachable: the pin alone would pass a part that is configured

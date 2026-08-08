@@ -509,6 +509,14 @@ static void check_fpga( uint32_t now_ms )
 
     ++diagnostics.fpga_failures;
 
+    /* This is what pulls the menu line and the command gate down when the FPGA
+       dies at runtime. Without it the readiness latch keeps its boot-time value
+       and the shell would go on offering commands to a part that stopped
+       answering. A later passing sample does not set it back -- only a
+       successful reconfiguration rewrites the latch, through the same bring-up
+       that set it at boot. */
+    BSP_FpgaMarkUnresponsive();
+
     /* Recovery is opt-in. Reloading the bitstream drives CRESET_N and rewrites
        173 KB on every failing sample, which is itself a disturbance; keeping it
        off establishes what the fault does when left alone. */

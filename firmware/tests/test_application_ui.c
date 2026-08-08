@@ -178,6 +178,24 @@ void test_menu_names_an_unavailable_fpga( void )
 }
 
 
+/* The FPGA line is sampled at draw time, so a redraw after a runtime loss must
+   show the loss -- a menu that kept saying "ready" from a boot-time answer is
+   the bug this pins. */
+void test_menu_redraw_reflects_a_readiness_change( void )
+{
+    start_at( 0 );
+
+    BSP_FpgaIsReady_ExpectAndReturn( true );
+    key_at( ' ', 0 );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "FPGA ready" ) );
+
+    MOCK_BSP_ConsoleReset();
+    BSP_FpgaIsReady_ExpectAndReturn( false );
+    key_at( '?', 100 );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "FPGA UNAVAILABLE" ) );
+}
+
+
 void test_unknown_menu_key_redraws_rather_than_complaining( void )
 {
     open_menu_at( 0 );

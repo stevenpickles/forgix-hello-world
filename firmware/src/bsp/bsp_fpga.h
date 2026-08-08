@@ -63,7 +63,15 @@ typedef struct bsp_fpga_init_result_t_tag
 
 bsp_fpga_init_result_t BSP_FpgaInit( void );
 
+/* True after a successful bring-up and while no runtime failure has been
+   reported since. Read from a latch, not the bus, so the foreground loop can
+   ask every pass. */
 bool BSP_FpgaIsReady( void );
+
+/* The diagnostics layer's channel for reporting that the FPGA stopped
+   answering its runtime health check. Clears readiness; only a successful
+   reconfiguration or bring-up sets it again. */
+void BSP_FpgaMarkUnresponsive( void );
 
 /* Configuration-done pin. Low at runtime means the FPGA lost its configuration,
    which the diagnostics layer treats as a recoverable hardware fault. */
