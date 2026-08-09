@@ -115,6 +115,7 @@ target_link_libraries(forgix_bsp_usb_stub PUBLIC pico_stdlib)
 add_library(forgix_application STATIC
   src/application/application.c
   src/application/application_console.c
+  src/application/application_console_status.c
   src/application/application_diagnostics.c
   src/application/application_effects.c
   src/application/application_ibit.c
