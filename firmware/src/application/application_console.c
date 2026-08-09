@@ -14,6 +14,7 @@
 
 #include "application.h"
 #include "application_diagnostics.h"
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -82,8 +83,6 @@ static console_state_t console;
 **
 ***************************************************************************************/
 
-
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
 
 static void mark_write( void );
 
@@ -165,7 +164,7 @@ void application_console_idle( void )
        opened is the firmware's only unbounded, self-inflicted trip through the
        untimed stdio flush loop. */
     if ( console.quiet || console.used || console.status_mode == STATUS_DISABLED ||
-         !deadline_reached( console.current_time_ms, console.next_status_ms ) ||
+         !application_deadline_reached( console.current_time_ms, console.next_status_ms ) ||
          !BSP_UsbConnected() )
     {
         return;
@@ -257,21 +256,6 @@ void application_console_disable_watch( void )
 ** Private Function Definitions
 **
 ***************************************************************************************/
-
-
-/// <summary>
-///     Compares by signed difference rather than by magnitude, which is what
-///     makes the millisecond clock's 49-day rollover a non-event: a plain
-///     now >= deadline would answer "not yet" for half the counter's range once
-///     it has wrapped, stalling every timer in the shell at once.
-/// </summary>
-/// <returns>
-///     True once now is at or past the deadline, wrap included.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
 
 
 /* Every console write reaches the untimed Pico SDK stdio flush loop, so the

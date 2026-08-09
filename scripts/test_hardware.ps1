@@ -169,14 +169,19 @@ try {
     # firmware boots into a banner, any key opens the menu, and 'c' opens the
     # shell -- but this script cannot know whether a previous run already moved
     # it on, and the board is not reset by opening the port. So: CR dismisses the
-    # banner, aborts a running test, or is an ignored empty line; 'c' then opens
-    # the shell from the menu, or is a harmless invalid command if the shell is
-    # already up. Sending "quiet" first would not survive this -- the 'q' would
-    # be eaten as the banner-dismissing keypress and "uiet" read as menu keys.
+    # banner, aborts a running test, or is an ignored empty line; "c" + CR then
+    # opens the shell from the menu (the menu acts on the bare keypress and the
+    # shell ignores the trailing empty line), or is an invalid command the shell
+    # answers and discards. The CR is what makes the shell case harmless: a bare
+    # 'c' is not a command until terminated, so it would sit in the line buffer
+    # and corrupt the next command into "cquiet" -- exactly what made every
+    # second consecutive run fail. Sending "quiet" first would not survive this
+    # either -- the 'q' would be eaten as the banner-dismissing keypress and
+    # "uiet" read as menu keys.
     Write-Step "Reaching the command shell from whatever state the board is in"
     $serial.Write("`r")
     Start-Sleep -Milliseconds 250
-    $serial.Write("c")
+    $serial.Write("c`r")
     Start-Sleep -Milliseconds 250
     $serial.DiscardInBuffer()
 
@@ -186,16 +191,16 @@ try {
 
     Write-Step "Checking command shell and FPGA identity"
     $help = Invoke-ForgixCommand $serial "help"
-    Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| diag \| menu \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
+    Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| diag \| memid \| menu \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
 
     $initialStatus = Invoke-ForgixCommand $serial "status"
-    Assert-Response $initialStatus '^id=B6 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "FPGA status"
+    Assert-Response $initialStatus '^id=B7 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "FPGA status"
     $null = $initialStatus -match ' count=([0-9]+) '
     $initialCount = [int]$Matches[1]
     Write-Host "    $initialStatus" -ForegroundColor Green
 
     $hello = Invoke-ForgixCommand $serial "hello"
-    Assert-Response $hello '^Hello from RP2354 -> FPGA B6$' "Hello readback"
+    Assert-Response $hello '^Hello from RP2354 -> FPGA B7$' "Hello readback"
     Write-Host "    $hello" -ForegroundColor Green
 
     if (-not $NoDazzle) {
@@ -210,7 +215,7 @@ try {
     }
 
     $finalStatus = Invoke-ForgixCommand $serial "status"
-    Assert-Response $finalStatus '^id=B6 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "Final FPGA status"
+    Assert-Response $finalStatus '^id=B7 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "Final FPGA status"
     $null = $finalStatus -match ' count=([0-9]+) '
     $finalCount = [int]$Matches[1]
     Write-Host "    $finalStatus" -ForegroundColor Green

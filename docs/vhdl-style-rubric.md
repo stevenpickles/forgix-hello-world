@@ -26,8 +26,10 @@ This rubric standardizes and extends what is there; it does not import an alien 
 **Status: applied.** All eight files are at **zero violations** under `fpga/vsg.yaml`, and
 all three testbenches pass — stopping at 2830 ns, 2577 ns and 45140 ns, the same simulated
 times they reached before any of this, which is the evidence that none of it changed the
-design. It went in as the three commits the Adoption section describes: the 588 mechanical
-fixes, then the 65 hand repairs, then section D.
+design. (Those are adoption-time figures. Functional commits since then have added stimulus
+to the benches, so their current stop times are later; the neutrality claim is about the
+formatting commits only.) It went in as the three commits the Adoption section describes:
+the 588 mechanical fixes, then the 65 hand repairs, then section D.
 
 Two things worth knowing for the next pass. `--fix` rejects `-ap` outright, so the flag
 belongs on the check run that verifies the fix and not on the fix itself. And adding a
@@ -152,7 +154,7 @@ after that there is no reason to reorder them anyway.
 -- BAD: what is the eleventh signal bound to?
 spi : entity work.forgix_spi port map (
   clk_32m, rst, spi_cs_n, spi_sck, spi_sdio_in, spi_sdio_out, spi_sdio_oe,
-  wr, rd, addr, wdata, rdata, reset_regs, activity, spi_error);
+  wr, addr, wdata, rdata, reset_regs, spi_error);
 
 -- GOOD
 spi : entity work.forgix_spi

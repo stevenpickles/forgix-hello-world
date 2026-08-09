@@ -15,6 +15,7 @@
 #include "application.h"
 #include "application_console.h"
 #include "application_diagnostics.h"
+#include "application_time.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
@@ -223,7 +224,7 @@ void test_hello_programs_and_verifies_the_expected_led_state( void )
 
     process( "hello" );
 
-    TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B6\n", MOCK_BSP_ConsoleOutput() );
+    TEST_ASSERT_EQUAL_STRING( "Hello from RP2354 -> FPGA B7\n", MOCK_BSP_ConsoleOutput() );
 }
 
 
@@ -288,7 +289,7 @@ void test_status_reports_fpga_and_button_state( void )
 
     process( "status" );
 
-    TEST_ASSERT_EQUAL_STRING( "id=B6 status=01 button=03 count=7 fpga_status=1\n",
+    TEST_ASSERT_EQUAL_STRING( "id=B7 status=01 button=03 count=7 fpga_status=1\n",
                               MOCK_BSP_ConsoleOutput() );
 }
 
@@ -377,7 +378,8 @@ void test_memid_dumps_every_response_byte_without_consulting_the_fpga( void )
     TEST_ASSERT_NOT_NULL(
         strstr( MOCK_BSP_ConsoleOutput(),
                 "cs1 psram 9F @1000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FF" ) );
-    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok" ) );
+    TEST_ASSERT_NOT_NULL(
+        strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok (readback verified)" ) );
 }
 
 
@@ -391,8 +393,7 @@ void test_memid_reports_a_failed_qpi_reentry( void )
     process( "memid" );
 
     TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(),
-                "error: qpi re-entry failed; psram is down until the next check" ) );
+        strstr( MOCK_BSP_ConsoleOutput(), "error: qpi re-entry or readback verify failed" ) );
 }
 
 

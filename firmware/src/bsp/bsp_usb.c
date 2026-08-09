@@ -25,6 +25,12 @@
    callbacks below, so the reader gets a snapshot rather than a stable count. */
 static volatile uint32_t _cdcActivityCount;
 
+/* Completed outbound transfers only. The pooled count above answers "is
+   anything moving"; this one answers "is the transmit path moving", which is
+   the question the FIFO-stall verdict asks -- inbound traffic proves nothing
+   about a wedged transmit endpoint. */
+static volatile uint32_t _cdcTxCompleteCount;
+
 
 
 
@@ -50,14 +56,17 @@ void tud_cdc_rx_cb( const uint8_t interface )
 }
 
 /// <summary>
-///     Counts a completed outbound CDC transfer, into the same counter as the
-///     receive callback. Direction is not distinguished because the question
-///     being asked is whether anything is moving at all.
+///     Counts a completed outbound CDC transfer twice over: into the pooled
+///     counter, which reports whether anything is moving at all, and into the
+///     transmit-only counter, which is the sole evidence the stall verdict may
+///     accept -- a full FIFO with inbound traffic still flowing is exactly the
+///     wedge the pooled count used to hide.
 /// </summary>
 void tud_cdc_tx_complete_cb( const uint8_t interface )
 {
     (void) interface;
     ++_cdcActivityCount;
+    ++_cdcTxCompleteCount;
 }
 
 
@@ -105,6 +114,7 @@ bsp_usb_health_t BSP_UsbHealth( void )
         .suspended = tud_suspended(),
         .write_available = tud_cdc_write_available(),
         .activity_count = _cdcActivityCount,
+        .tx_complete_count = _cdcTxCompleteCount,
         .frame_number = usb_hw->sof_rd & USB_SOF_RD_BITS,
     };
     return health;

@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "application_diagnostics.h"
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -110,8 +111,6 @@ static const uint8_t AURORA[][ 3 ] = {
 ***************************************************************************************/
 
 
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
-
 static bool update_due( void );
 
 static uint8_t channel( level_t behaviour, uint8_t rising );
@@ -199,19 +198,6 @@ const application_activity_t *application_effects_advanced( void )
 
 
 /// <summary>
-///     Subtracts and tests the sign instead of comparing the values, so an effect
-///     started shortly before the 32-bit millisecond wrap keeps updating rather
-///     than freezing on its current frame until the counter comes round again.
-/// </summary>
-/// <returns>
-///     True once now_ms has reached deadline_ms.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
-
-/// <summary>
 ///     Consumes the deadline as well as testing it, so a second call in the same
 ///     pass answers false and the caller must act on the first. The next deadline
 ///     is measured from now rather than from the one just met, so a pass that ran
@@ -222,7 +208,7 @@ static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
 /// </returns>
 static bool update_due( void )
 {
-    if ( !deadline_reached( effects.current_time_ms, effects.next_update_ms ) )
+    if ( !application_deadline_reached( effects.current_time_ms, effects.next_update_ms ) )
     {
         return false;
     }
@@ -287,16 +273,15 @@ static void begin( uint32_t update_ms )
 
 /// <summary>
 ///     Clears the saved flag on its way out, so the stop() the UI calls after a
-///     poll that already restored does not write the LED a second time. Only the
-///     colour and brightness come back -- BSP_LedSet latches the enable bit, so
-///     an LED caught dark when it was saved returns lit until its owner writes it.
+///     poll that already restored does not write the LED a second time. The
+///     whole captured state comes back, including the enable bit -- an LED
+///     caught dark when it was saved returns dark.
 /// </summary>
 static void restore( void )
 {
     if ( effects.saved )
     {
-        BSP_LedSet( effects.before.red, effects.before.green, effects.before.blue,
-                    effects.before.brightness );
+        BSP_LedRestore( &effects.before );
         effects.saved = false;
     }
 }

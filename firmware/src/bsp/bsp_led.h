@@ -53,6 +53,11 @@ void BSP_LedOff( void );
 
 bsp_led_state_t BSP_LedGet( void );
 
+/* Puts back everything BSP_LedGet captured, including whether the LED was lit.
+   BSP_LedSet cannot do this: it always asserts the enable bit, so a state saved
+   dark would come back lit. Not atomic -- five bus transactions. */
+void BSP_LedRestore( const bsp_led_state_t *const ptr_state );
+
 #ifdef __cplusplus
 }
 #endif

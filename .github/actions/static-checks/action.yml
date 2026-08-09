@@ -1,0 +1,47 @@
+# The tool-free verification prefix shared by the verify and fork-verify jobs.
+# Everything here runs on stock python + bash, so it is identical inside the
+# forgix-build container and on a bare fork runner -- and keeping it in one
+# place ends the drift hazard of maintaining the same step list twice. Steps
+# needing pinned tools (clang-format, VSG, GHDL, Ceedling) stay in the jobs,
+# because how those tools are obtained is exactly where the two jobs differ.
+name: Static checks
+description: Script syntax, metadata, protocol, layering, and style gates.
+
+runs:
+  using: composite
+  steps:
+    - name: Validate scripts and Efinity metadata
+      shell: bash
+      run: |
+        for script in scripts/*.sh; do
+          bash -n "$script"
+        done
+        python -m compileall -q scripts
+        python scripts/check_repository.py
+        python scripts/test_efinity_tools.py
+
+    - name: Verify deterministic embedding
+      shell: bash
+      run: python scripts/test_embed_image.py
+
+    - name: Verify the scratch-register decoder
+      shell: bash
+      run: python scripts/test_decode_scratch.py
+
+    - name: Verify protocol constants stay in sync
+      shell: bash
+      run: |
+        python scripts/check_protocol_constants.py
+        python scripts/test_check_protocol_constants.py
+
+    - name: Verify coverage summary rendering
+      shell: bash
+      run: python scripts/test_render_coverage_summary.py
+
+    - name: Enforce firmware layering
+      shell: bash
+      run: python scripts/check_firmware_layers.py
+
+    - name: Enforce firmware style
+      shell: bash
+      run: python scripts/check_firmware_style.py --strict

@@ -31,12 +31,10 @@ entity forgix_spi is
     sdio_out   : out   std_ulogic;
     sdio_oe    : out   std_ulogic;
     reg_write  : out   std_ulogic;
-    reg_read   : out   std_ulogic;
     reg_addr   : out   byte_t;
     reg_wdata  : out   byte_t;
     reg_rdata  : in    byte_t;
     reset_regs : out   std_ulogic;
-    activity   : out   std_ulogic;
     error      : out   std_ulogic
   );
 end entity forgix_spi;
@@ -95,7 +93,6 @@ begin
       rise       := sck_sync(2 downto 1) = "01";
       fall       := sck_sync(2 downto 1) = "10";
       reg_write  <= '0';
-      reg_read   <= '0';
       reset_regs <= '0';
 
       if rst = '1' then
@@ -103,7 +100,6 @@ begin
         rx_count <= 0;
         tx_count <= 0;
         oe       <= '0';
-        activity <= '0';
         error    <= '0';
         sdio_out <= '0';
       elsif cs_sync(2) = '1' then
@@ -111,12 +107,10 @@ begin
         rx_count <= 0;
         tx_count <= 0;
         oe       <= '0';
-        activity <= '0';
       else
-        activity <= '1';
-
-        -- One cycle spent letting the register file answer. reg_read was asserted on
-        -- the cycle that entered this state, so reg_rdata is only valid now.
+        -- One cycle spent letting the register file answer. The address was
+        -- registered on the cycle that entered this state, so reg_rdata -- a
+        -- combinational function of it -- is only valid now.
         if state = read_wait_s then
           tx_shift <= reg_rdata;
           tx_count <= 0;
@@ -191,8 +185,7 @@ begin
 
                 address <= received;
                 if command = CMD_READ then
-                  reg_read <= '1';
-                  state    <= read_wait_s;
+                  state <= read_wait_s;
                 else
                   state <= data_s;
                 end if;

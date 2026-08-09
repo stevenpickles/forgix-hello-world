@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -86,12 +87,29 @@ typedef struct
     bsp_led_state_t commanded;
 
     bsp_usb_health_t health;
-    uint32_t last_activity_count;
-    uint32_t last_activity_ms;
+    uint32_t last_tx_count;
+    /* True while an unbroken run of samples has seen the transmit FIFO full
+       with the TX completion counter unmoved. Cleared by observed room or by
+       TX progress; inbound traffic does not touch it. */
+    bool fifo_stalled;
+    /* The timestamp of the first sample of that run -- the stall is measured
+       from the moment fullness was first observed, not from the last sample
+       that had room. Meaningful only while fifo_stalled is set. */
+    uint32_t fifo_stall_epoch_ms;
     uint32_t last_frame_number;
     uint32_t last_frame_ms;
 
     uint32_t fpga_failures;
+    /* Exactly one of the three below moves with every fpga_failures increment,
+       naming the first term that failed: the configuration pin, the design-ID
+       ping, or the LED register readback. The split is what turns "the check
+       failed once a boot" from a mystery into a measurement. */
+    uint32_t fpga_cdone_failures;
+    uint32_t fpga_ping_failures;
+    uint32_t fpga_readback_failures;
+    /* Failing samples since the last passing one -- the debounce that keeps a
+       single bus misread from revoking readiness for the rest of the boot. */
+    uint32_t fpga_consecutive_failures;
     uint32_t fpga_reconfigures;
 } diagnostics_state_t;
 
@@ -116,10 +134,6 @@ static diagnostics_state_t diagnostics;
 **
 ***************************************************************************************/
 
-
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
-
-static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms );
 
 static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue );
 
@@ -191,7 +205,8 @@ void application_diagnostics_start( void )
     diagnostics.led_on = true;
     diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
     diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-    diagnostics.last_activity_ms = now_ms;
+    /* The stall run needs no seed: the wholesale zeroing above cleared the
+       flag, and the epoch is only ever read while the flag is set. */
     diagnostics.last_frame_ms = now_ms;
     apply_led( now_ms );
 
@@ -211,8 +226,8 @@ void application_diagnostics_poll( void )
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
 
     uint32_t now_ms = BSP_TimeNowMs();
-    bool led_due = deadline_reached( now_ms, diagnostics.next_led_ms );
-    bool sample_due = deadline_reached( now_ms, diagnostics.next_sample_ms );
+    bool led_due = application_deadline_reached( now_ms, diagnostics.next_led_ms );
+    bool sample_due = application_deadline_reached( now_ms, diagnostics.next_sample_ms );
 
     /* Sampling first means the heartbeat color below reflects the health just
        read, and the single LED write is the one the FPGA check reads back. */
@@ -262,11 +277,14 @@ void application_diagnostics_print_report( void )
     print_boot_report();
     BSP_ConsolePrintf(
         "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
-        "fpga_fail=%lu fpga_reconfig=%lu\n",
-        (unsigned long) diagnostics.uptime_seconds, diagnostics.health.connected,
-        diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
+        "fpga_fail=%lu fpga_cdone=%lu fpga_ping=%lu fpga_led=%lu fpga_reconfig=%lu\n",
+        (unsigned long) diagnostics.uptime_seconds, (unsigned) diagnostics.health.connected,
+        (unsigned) diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
         (unsigned long) diagnostics.health.activity_count,
         (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
+        (unsigned long) diagnostics.fpga_cdone_failures,
+        (unsigned long) diagnostics.fpga_ping_failures,
+        (unsigned long) diagnostics.fpga_readback_failures,
         (unsigned long) diagnostics.fpga_reconfigures );
 }
 
@@ -321,33 +339,6 @@ bsp_boot_reason application_diagnostics_boot_reason( void )
 **
 ***************************************************************************************/
 
-
-/// <summary>
-///     Subtracts and tests the sign rather than comparing the two values, so a
-///     deadline that straddles the 32-bit millisecond wrap still fires instead of
-///     parking the heartbeat for the next 49 days. A deadline exactly reached
-///     counts as due.
-/// </summary>
-/// <returns>
-///     True once now_ms has caught up with deadline_ms.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
-
-/// <summary>
-///     Elapsed-time test in the same wrap-safe signed form. The threshold is cast
-///     to signed as well, so it has to stay well under 2^31 ms; the two stall
-///     limits this serves are seconds, not days.
-/// </summary>
-/// <returns>
-///     True once threshold_ms has passed since since_ms.
-/// </returns>
-static bool stalled_since( uint32_t now_ms, uint32_t since_ms, uint32_t threshold_ms )
-{
-    return (int32_t) ( now_ms - since_ms ) >= (int32_t) threshold_ms;
-}
 
 /* The USB-free image has no USB health to show, so its resting heartbeat carries
    the last boot reason instead. The blink code plays once and cannot be replayed
@@ -409,20 +400,24 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
         *blue = 255; /* blue: host has not asserted DTR */
     }
     else if ( diagnostics.health.suspended ||
-              stalled_since( now_ms, diagnostics.last_frame_ms,
-                             APPLICATION_DIAGNOSTICS_FRAME_STALL_MS ) )
+              application_stalled_since( now_ms, diagnostics.last_frame_ms,
+                                         APPLICATION_DIAGNOSTICS_FRAME_STALL_MS ) )
     {
         *red = 255;
         *green = 0;
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
     }
-    else if ( diagnostics.health.write_available == 0 &&
-              stalled_since( now_ms, diagnostics.last_activity_ms,
-                             APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS ) )
+    else if ( diagnostics.fifo_stalled &&
+              application_stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
+                                         APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
     {
-        /* red: data is queued and the FIFO is not draining. A quiet link is not
-           a fault -- keying on the gap alone made this trip on the firmware's
-           own 10 s idle-status cadence, reporting a wedge every single cycle. */
+        /* red: every sample for the whole window saw the transmit FIFO full
+           with no TX completion, measured from the first such sample. The flag
+           already encodes "full at the last sample", so no separate
+           write_available test is needed here. Two earlier shapes of this
+           verdict were wrong: keying off the last CDC traffic punished quiet
+           links, and pooling RX with TX let inbound traffic conceal a wedged
+           transmit endpoint indefinitely. */
         *red = 255;
         *green = 0;
         *blue = 0;
@@ -488,8 +483,11 @@ static bool led_readback_matches( void )
    FPGA bus rather than whatever a `color` command left behind between polls. */
 /// <summary>
 ///     Charges at most one failure per sample however many of the three checks
-///     went wrong, so fpga_failures counts seconds spent in fault rather than
-///     tallying symptoms. Leaves its own marker standing on return, so a hang
+///     went wrong, attributed to the first term that failed -- the pin before
+///     the ping, because pinging an unconfigured part proves nothing, and the
+///     ping before the readback, because the readback needs a design to answer.
+///     Acting on the fault is debounced behind consecutive failing samples; the
+///     counting is not. Leaves its own marker standing on return, so a hang
 ///     inside the bus access is attributed here and not to the caller.
 /// </summary>
 static void check_fpga( uint32_t now_ms )
@@ -501,17 +499,49 @@ static void check_fpga( uint32_t now_ms )
        whoever holds it, and comparing it against a stale command would report an
        FPGA fault once a second for the length of every light show. CDONE and the
        design-ID ping still answer for the FPGA. */
-    if ( BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID &&
-         ( diagnostics.led_released || led_readback_matches() ) )
+    if ( !BSP_FpgaCdone() )
     {
+        ++diagnostics.fpga_cdone_failures;
+    }
+    else if ( BSP_FpgaPing() != BSP_FPGA_DESIGN_ID )
+    {
+        ++diagnostics.fpga_ping_failures;
+    }
+    else if ( !diagnostics.led_released && !led_readback_matches() )
+    {
+        ++diagnostics.fpga_readback_failures;
+    }
+    else
+    {
+        diagnostics.fpga_consecutive_failures = 0;
         return;
     }
 
     ++diagnostics.fpga_failures;
+    ++diagnostics.fpga_consecutive_failures;
+
+    /* The debounce. Bench evidence: this bus misreads about one sample per
+       boot session, and a misread does not repeat, while a real fault fails
+       every sample. Revoking on the first failure turned each transient into a
+       shell gated until reboot; three in a row costs two seconds of latency on
+       a genuine fault and nothing on a misread. */
+    if ( diagnostics.fpga_consecutive_failures < APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES )
+    {
+        return;
+    }
+
+    /* This is what pulls the menu line and the command gate down when the FPGA
+       dies at runtime. Without it the readiness latch keeps its boot-time value
+       and the shell would go on offering commands to a part that stopped
+       answering. A later passing sample does not set it back -- only a
+       successful reconfiguration rewrites the latch, through the same bring-up
+       that set it at boot. */
+    BSP_FpgaMarkUnresponsive();
 
     /* Recovery is opt-in. Reloading the bitstream drives CRESET_N and rewrites
-       173 KB on every failing sample, which is itself a disturbance; keeping it
-       off establishes what the fault does when left alone. */
+       173 KB on every failing sample past the debounce, which is itself a
+       disturbance; keeping it off establishes what the fault does when left
+       alone. */
     if ( !BSP_FpgaAutoReconfigureEnabled() )
     {
         return;
@@ -520,11 +550,12 @@ static void check_fpga( uint32_t now_ms )
     {
         ++diagnostics.fpga_reconfigures;
         diagnostics.recovery_toggles = RECOVERY_TOGGLES;
-        /* The fresh configuration comes up with its registers cleared, so the
-           commanded heartbeat state has to be written again -- but only while
-           the heartbeat owns the LED. Released, those registers are the new
-           owner's to fill, and reclaim repaints unconditionally when the
-           handover ends. */
+        /* The fresh configuration starts a fresh verdict: its registers are
+           cleared, so the commanded heartbeat state has to be written again --
+           but only while the heartbeat owns the LED. Released, those registers
+           are the new owner's to fill, and reclaim repaints unconditionally
+           when the handover ends. */
+        diagnostics.fpga_consecutive_failures = 0;
         if ( !diagnostics.led_released )
         {
             apply_led( now_ms );
@@ -533,20 +564,35 @@ static void check_fpga( uint32_t now_ms )
 }
 
 /// <summary>
-///     The two timestamps move only when their counter actually changed, which is
-///     what makes the stall thresholds measure a counter standing still rather
-///     than the time since the last sample. Nothing here judges health; it only
-///     records when progress was last seen.
+///     Tracks the transmit-stall run and the frame clock. The stall epoch is
+///     the first sample that saw the FIFO full with the TX completion counter
+///     unmoved, and the run breaks on observed room or on TX progress -- TX
+///     only, on purpose: inbound traffic proves nothing about a wedged
+///     transmit endpoint, and the pooled activity counter used to let RX
+///     conceal exactly that fault. A TX completion also clears a run whose
+///     FIFO drained and refilled between samples, since it proves the queued
+///     data moved. Nothing here judges health; it only records the run.
 /// </summary>
 static void sample_usb( uint32_t now_ms )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT );
     diagnostics.health = BSP_UsbHealth();
 
-    if ( diagnostics.health.activity_count != diagnostics.last_activity_count )
+    /* != rather than an ordered compare, so the counter wrapping past zero
+       still reads as progress. */
+    const bool tx_moved = diagnostics.health.tx_complete_count != diagnostics.last_tx_count;
+    if ( tx_moved )
     {
-        diagnostics.last_activity_count = diagnostics.health.activity_count;
-        diagnostics.last_activity_ms = now_ms;
+        diagnostics.last_tx_count = diagnostics.health.tx_complete_count;
+    }
+    if ( diagnostics.health.write_available > 0u || tx_moved )
+    {
+        diagnostics.fifo_stalled = false;
+    }
+    else if ( !diagnostics.fifo_stalled )
+    {
+        diagnostics.fifo_stalled = true;
+        diagnostics.fifo_stall_epoch_ms = now_ms;
     }
     if ( diagnostics.health.frame_number != diagnostics.last_frame_number )
     {

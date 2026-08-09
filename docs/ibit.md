@@ -52,7 +52,7 @@ which one is the actual fault.
 | 8 | Die temperature | Between −20 °C and +85 °C | The ADC or its reference is dead. A reading pinned at a rail is the fault worth catching; the absolute figure is several degrees out uncalibrated |
 | 9 | USB link | DTR asserted, not suspended, the host's start-of-frame counter advanced between two samples 20 ms apart, transmit FIFO not full | The host stopped framing, or the transmit path is backed up |
 | 10 | Watchdog and boot reason | The scratch marker round-trips, and the previous boot was not a watchdog reset | A prior watchdog reset means something stopped feeding the loop; the retained marker names where. A failed round-trip means the register the whole diagnosis rests on does not hold |
-| 11 | FPGA configuration | `CDONE` high and a ping returns `0xB6` | The bitstream did not load, or the design is not the expected one |
+| 11 | FPGA configuration | `CDONE` high and a ping returns `0xB7` | The bitstream did not load, or the design is not the expected one |
 | 12 | FPGA register bus | A walking pattern `5A A5 3C C3` written to the LED registers reads back byte for byte | The three-wire runtime link. `0x00` and `0xFF` are deliberately not used: they are what a bus stuck low or high returns |
 | 13 | RGB LED | Red, green, blue, white and off each read back from the FPGA | A colour channel, or the register path to it |
 | 14 | Button SW1 | The debounced level **and** the press counter both change within 15 s | Either alone could be a stuck event line or a pin held low; requiring both separates a real press from a fault that resembles one |
@@ -92,6 +92,10 @@ boot-time capture cannot be trusted for this — it is only legal on a cold star
 and after a warm reboot the device is still in QPI from the previous session, so
 the serial Read-ID the SDK issues returns nonsense. The per-run read is what
 makes the reported bytes meaningful whichever way the board arrived at the menu.
+The re-entry is proven, not assumed: the SDK's re-initialisation call never
+probes the device, so the step writes and reads back two words at opposite ends
+of the window through the uncached alias before claiming the window is back. A
+failed re-entry or a failed readback both fail the step before any sweep runs.
 
 ## What it does not check, and why
 
@@ -133,7 +137,8 @@ leaves nothing that the next run or a power cycle is needed to repair.
 - **`r`** reboots; **`b`** enters BOOTSEL for reflashing without unplugging.
 
 Any key aborts a running test or show and returns to the menu. Anything that
-changed the LED puts it back first, including on an abort.
+changed the LED puts the whole captured state back first -- colour, brightness,
+and whether it was lit at all -- including on an abort.
 
 ## When something hangs
 

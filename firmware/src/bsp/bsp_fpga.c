@@ -7,6 +7,7 @@
 
 #include "bsp_fpga.h"
 
+#include "bsp_fpga_health.h"
 #include "fpga_image.h"
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
@@ -78,21 +79,6 @@ typedef enum bsp_fpga_command_tag
 
 /***************************************************************************************
 **
-** Private Variable Declarations
-**
-***************************************************************************************/
-
-
-/* Whether the last configuration attempt ended with the FPGA answering a ping
-   with the expected design ID. Cached so callers can ask without clocking the
-   bus, which matters in the foreground loop. */
-static bool _fpgaReady;
-
-
-
-
-/***************************************************************************************
-**
 ** Private Function Declarations
 **
 ***************************************************************************************/
@@ -145,10 +131,10 @@ bsp_fpga_init_result_t BSP_FpgaInit( void )
     {
         result.design_id = 0;
     }
-    result.ready = result.configured && result.design_id == BSP_FPGA_DESIGN_ID;
+    result.ready = BSP_FpgaHealthReadyVerdict( result.configured, result.design_id );
     result.cdone = gpio_get( PIN_CDONE );
     result.status_pin = gpio_get( PIN_STATUS );
-    _fpgaReady = result.ready;
+    BSP_FpgaHealthSetReady( result.ready );
     return result;
 }
 
@@ -184,16 +170,31 @@ bool BSP_FpgaAutoReconfigureEnabled( void )
 }
 
 /// <summary>
-///     The cached result of the last bring-up, not a live probe. Cheap enough for
-///     the foreground loop, which is the point -- asking the FPGA directly every
-///     iteration would clock the bit-banged bus for no new information.
+///     The readiness latch, not a live probe. Cheap enough for the foreground
+///     loop, which is the point -- asking the FPGA directly every iteration
+///     would clock the bit-banged bus for no new information. Bring-up writes
+///     it with its verdict and the diagnostics health check clears it on a
+///     runtime failure, so it tracks current usability rather than boot history.
 /// </summary>
 /// <returns>
-///     True if the last configuration attempt ended with the expected design ID.
+///     True while the last bring-up succeeded and no runtime failure has been
+///     reported since.
 /// </returns>
 bool BSP_FpgaIsReady( void )
 {
-    return _fpgaReady;
+    return BSP_FpgaHealthIsReady();
+}
+
+/// <summary>
+///     Reports a runtime failure -- CDONE low, a wrong ping, or a register
+///     readback mismatch, as judged by the diagnostics layer's once-a-second
+///     check. Clear-only on purpose: a later passing sample proves that probe
+///     worked, not that the failed configuration healed, so only a successful
+///     reconfiguration or bring-up restores readiness.
+/// </summary>
+void BSP_FpgaMarkUnresponsive( void )
+{
+    BSP_FpgaHealthSetReady( false );
 }
 
 /// <summary>

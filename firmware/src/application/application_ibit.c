@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "application_diagnostics.h"
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -137,8 +138,6 @@ static const char *const OUTCOME_TEXT[] = {
 
 
 static void mark_write( void );
-
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
 
 static uint32_t step_elapsed_ms( void );
 
@@ -410,20 +409,6 @@ static void mark_write( void )
 
 
 /// <summary>
-///     Compares two millisecond stamps through a signed difference so the answer
-///     survives the 32-bit rollover, which a plain now >= deadline would get wrong
-///     for the whole wrap after it.
-/// </summary>
-/// <returns>
-///     True once now_ms has reached deadline_ms, for deadlines under about 24 days.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
-
-
-/// <summary>
 ///     Time in the current step, measured from begin_step and against the stamp
 ///     advance() cached at the top of this pass -- so every deadline a step tests
 ///     within one pass is judged from the same instant, however long the pass took.
@@ -503,11 +488,11 @@ static application_ibit_outcome_t verdict( bool ok )
 
 
 /* Asked of the FPGA itself, every time, rather than read from BSP_FpgaIsReady.
-   That flag records what bring-up found and is only rewritten by a
-   reconfiguration, so an FPGA that died after boot still reports ready and the
-   steps that sit behind it would run and produce failures of their own instead
-   of standing down. Three extra pings across a sequence is a cheap price for a
-   skip decision made on this run's evidence. */
+   That latch is written by bring-up and cleared by the once-a-second health
+   check, so it can lag a fresh fault by up to a second -- and a built-in test
+   is exactly the tool someone reaches for when they suspect the latch is
+   wrong. Three extra pings across a sequence is a cheap price for a skip
+   decision made on this run's evidence. */
 /// <summary>
 ///     Requires both the configuration pin and a correct design ID before it will
 ///     call the FPGA reachable: the pin alone would pass a part that is configured
@@ -730,7 +715,7 @@ static application_ibit_outcome_t step_psram( char *detail, size_t capacity )
         ibit.psram_identity = BSP_MemoryPsramIdentify();
         if ( !ibit.psram_identity.restored )
         {
-            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry failed",
+            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry/verify failed",
                       ibit.psram_identity.kgd, ibit.psram_identity.eid );
             return APPLICATION_IBIT_FAIL;
         }
@@ -914,7 +899,7 @@ static application_ibit_outcome_t step_fpga_registers( char *detail, size_t capa
        stuck low or high returns, and either would pass a test that wrote them. */
     BSP_LedSet( 0x5au, 0xa5u, 0x3cu, 0xc3u );
     const bsp_led_state_t readback = BSP_LedGet();
-    BSP_LedSet( before.red, before.green, before.blue, before.brightness );
+    BSP_LedRestore( &before );
 
     const bool ok = readback.red == 0x5au && readback.green == 0xa5u && readback.blue == 0x3cu &&
                     readback.brightness == 0xc3u;
@@ -965,16 +950,14 @@ static application_ibit_outcome_t step_led( char *detail, size_t capacity )
         {
             snprintf( detail, capacity, "readback mismatch at step %lu: %u,%u,%u",
                       (unsigned long) ibit.phase, readback.red, readback.green, readback.blue );
-            BSP_LedSet( ibit.led_before.red, ibit.led_before.green, ibit.led_before.blue,
-                        ibit.led_before.brightness );
+            BSP_LedRestore( &ibit.led_before );
             return APPLICATION_IBIT_FAIL;
         }
         ++ibit.phase;
         return APPLICATION_IBIT_PENDING;
     }
 
-    BSP_LedSet( ibit.led_before.red, ibit.led_before.green, ibit.led_before.blue,
-                ibit.led_before.brightness );
+    BSP_LedRestore( &ibit.led_before );
     snprintf( detail, capacity,
               "red, green, blue and white all read back; previous colour restored" );
     return APPLICATION_IBIT_PASS;
@@ -1014,7 +997,7 @@ static application_ibit_outcome_t step_button( char *detail, size_t capacity )
                            (unsigned long) ( APPLICATION_IBIT_BUTTON_TIMEOUT_MS / 1000u ) );
         return APPLICATION_IBIT_PENDING;
     }
-    if ( !deadline_reached( ibit.current_time_ms, ibit.next_poll_ms ) )
+    if ( !application_deadline_reached( ibit.current_time_ms, ibit.next_poll_ms ) )
     {
         return APPLICATION_IBIT_PENDING;
     }
@@ -1078,7 +1061,8 @@ static application_ibit_outcome_t step_fpga_clock( char *detail, size_t capacity
         ibit.phase = 1;
         return APPLICATION_IBIT_PENDING;
     }
-    if ( !deadline_reached( ibit.current_time_ms, ibit.fpga_tick_t0_ms + FPGA_CLOCK_SAMPLE_MS ) )
+    if ( !application_deadline_reached( ibit.current_time_ms,
+                                        ibit.fpga_tick_t0_ms + FPGA_CLOCK_SAMPLE_MS ) )
     {
         return APPLICATION_IBIT_PENDING;
     }
@@ -1265,8 +1249,7 @@ static void restore( void )
 {
     if ( ibit.led_saved )
     {
-        BSP_LedSet( ibit.led_before.red, ibit.led_before.green, ibit.led_before.blue,
-                    ibit.led_before.brightness );
+        BSP_LedRestore( &ibit.led_before );
         ibit.led_saved = false;
     }
 }

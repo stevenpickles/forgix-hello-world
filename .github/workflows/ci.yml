@@ -1,9 +1,12 @@
 name: CI
 
 on:
-  # A documentation-only change cannot alter what any check produces: nothing in
-  # scripts/ or .github/ reads these files, they are only named in comments and
-  # help text. Without this, fixing a typo in a README costs a full
+  # A documentation-only change is very unlikely to alter what any check
+  # produces. One check does read docs: check_protocol_constants.py verifies
+  # docs/register-map.md and docs/ibit.md against forgix_pkg.vhd, so a
+  # docs-only drift is caught on the next non-docs run rather than
+  # immediately -- accepted, because real drift starts on the code side and
+  # always triggers CI. Without this, fixing a typo in a README costs a full
   # place-and-route and a multi-gigabyte image pull.
   #
   # Two things to know before touching this list. It skips the entire run rather
@@ -67,23 +70,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Validate scripts and Efinity metadata
-        run: |
-          for script in scripts/*.sh; do
-            bash -n "$script"
-          done
-          python -m compileall -q scripts
-          python scripts/check_repository.py
-          python scripts/test_efinity_tools.py
-
-      - name: Verify deterministic embedding
-        run: python scripts/test_embed_image.py
-
-      - name: Enforce firmware layering
-        run: python scripts/check_firmware_layers.py
-
-      - name: Enforce firmware style
-        run: python scripts/check_firmware_style.py --strict
+      # The tool-free prefix lives in one composite action shared with
+      # fork-verify, so a new check is added in one place instead of two.
+      - name: Run the shared static checks
+        uses: ./.github/actions/static-checks
 
       # Both formatters gate here for the same reason: their versions are
       # pinned in the image, so option-spelling drift cannot fail the build
@@ -99,9 +89,6 @@ jobs:
 
       - name: Analyze, elaborate, and simulate
         run: bash ./scripts/test.sh
-
-      - name: Verify coverage summary rendering
-        run: python scripts/test_render_coverage_summary.py
 
       - name: Exercise application behavior and enforce coverage
         run: bash scripts/test_ceedling.sh
@@ -151,23 +138,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Validate scripts and Efinity metadata
-        run: |
-          for script in scripts/*.sh; do
-            bash -n "$script"
-          done
-          python -m compileall -q scripts
-          python scripts/check_repository.py
-          python scripts/test_efinity_tools.py
-
-      - name: Verify deterministic embedding
-        run: python scripts/test_embed_image.py
-
-      - name: Enforce firmware layering
-        run: python scripts/check_firmware_layers.py
-
-      - name: Enforce firmware style
-        run: python scripts/check_firmware_style.py --strict
+      # Same composite prefix as verify -- the point is that these two jobs
+      # can no longer drift apart on the checks that need no pinned tools.
+      - name: Run the shared static checks
+        uses: ./.github/actions/static-checks
 
       - name: Enforce VHDL style
         run: |
@@ -182,9 +156,6 @@ jobs:
 
       - name: Analyze, elaborate, and simulate
         run: bash ./scripts/test.sh
-
-      - name: Verify coverage summary rendering
-        run: python scripts/test_render_coverage_summary.py
 
   bitstream:
     name: FPGA bitstream
@@ -311,3 +282,45 @@ jobs:
             build/firmware-ci/forgix_hello_world.bin
           if-no-files-found: error
           retention-days: 7
+
+  # The two supported non-default configurations compile against the fixture
+  # bitstream. Without this, a change breaking a conditional arm -- the
+  # no-PSRAM half of bsp_memory.c, or the auto-reconfigure path -- lands green
+  # and fails only when someone remembers the variant build locally. A
+  # compile-and-link proof is the whole point, so there is no bitstream
+  # dependency, no size budget, and no artifact.
+  firmware-variants:
+    name: RP2354 firmware variant compile
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ vars.FORGIX_BUILD_IMAGE || 'ghcr.io/stevenpickles/forgix-build:20260804' }}
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GHCR_TOKEN }}
+    # sh is the container-job default and lacks [[ and (( )) -- see verify.
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: psram-off
+            cmake_args: -DFORGIX_QSPI_PSRAM=OFF
+          - variant: auto-reconfigure-on
+            cmake_args: -DFORGIX_FPGA_AUTO_RECONFIGURE=ON
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure ${{ matrix.variant }}
+        run: |
+          cmake -S firmware -B "build/firmware-${{ matrix.variant }}" -G Ninja \
+            -DPICO_SDK_PATH="$PICO_SDK_PATH" \
+            -DFPGA_IMAGE="$GITHUB_WORKSPACE/tests/fixtures/fpga-test.bin" \
+            -DPICO_NO_PICOTOOL=1 \
+            ${{ matrix.cmake_args }}
+
+      - name: Compile and link ${{ matrix.variant }}
+        run: cmake --build "build/firmware-${{ matrix.variant }}" --parallel

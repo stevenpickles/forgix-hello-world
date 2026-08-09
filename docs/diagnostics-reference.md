@@ -33,7 +33,7 @@ CMake options that shape the diagnostics (defaults as configured in
 | Option | Default | Effect |
 | --- | --- | --- |
 | `FORGIX_FOREGROUND_USB_SERVICE` | `OFF` | Moves TinyUSB servicing into the foreground loop via `BSP_UsbService()` and disables the SDK's background IRQ task. Never enable one without the other: two owners of `tud_task()` corrupt stack state |
-| `FORGIX_FPGA_AUTO_RECONFIGURE` | `OFF` | Lets the runtime FPGA health check attempt a reconfiguration after a failure. Off by default because reloading the bitstream drives `CRESET_N` and rewrites 173 KB on every failing sample, which is itself a disturbance; turn it on to observe the recovery signature |
+| `FORGIX_FPGA_AUTO_RECONFIGURE` | `OFF` | Lets the runtime FPGA health check attempt a reconfiguration once a fault is confirmed (three consecutive failing samples -- see the `diag` counters below). Off by default because reloading the bitstream drives `CRESET_N` and rewrites 173 KB per failing sample past that threshold, which is itself a disturbance; turn it on to observe the recovery signature |
 | `FORGIX_DIAGNOSTIC_UART` | `OFF` | Routes the USB-free image's diagnostics report over UART stdio instead of only the LED. Useful because the report survives the FPGA dying, and the LED cannot |
 | `FORGIX_QSPI_PSRAM` | `ON` | Brings up the DRAM on QSPI chip select 1 (GPIO 0). Either way, the pad's power-up pull-down is swapped for a pull-up, which is the firmware's substitute for the 10K resistor this board has no footprint for |
 
@@ -57,7 +57,20 @@ Running `diag` prints three lines:
    `watchdog`, or `other`.
 3. A live counters line: `diag: uptime=<seconds>s connected=<0|1>
    suspended=<0|1> write=<n> activity=<n> sof=<n> fpga_fail=<n>
-   fpga_reconfig=<n>`.
+   fpga_cdone=<n> fpga_ping=<n> fpga_led=<n> fpga_reconfig=<n>`.
+   `fpga_fail` counts failing 1 Hz health-check samples, and exactly one of
+   the three counters after it moves with each: the first term that failed,
+   in check order -- the `CDONE` pin, the design-ID ping, or the LED register
+   readback. The split exists because the bench showed the bit-banged bus
+   misreading about one sample per boot session, and a bare total cannot say
+   which transaction to distrust.
+
+   A failing sample is counted immediately but acted on only after
+   `APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES` (3) consecutive failures:
+   a real fault fails every sample and is acted on two seconds late, while a
+   single misread never repeats and no longer revokes readiness -- or, with
+   recovery enabled, no longer triggers a bitstream reload -- for the rest of
+   the boot. A passing sample restarts the count.
 
 The boot report line is unchanged by time: it always describes the previous
 boot, so it reads the same the first time and hours later. The live line is
@@ -91,9 +104,14 @@ device keeps driving, repeats its ID, or goes quiet):
 - `cs1 psram: not probed; this image was built without PSRAM support` when
   the image has `FORGIX_QSPI_PSRAM` off; no chip-select-1 transaction is
   attempted.
-- A closing `qpi re-entry: ok` or `error: qpi re-entry failed; psram is down
-  until the next check` line, since every read tears the device out of QPI
-  and the same call re-enters it before returning.
+- A closing `qpi re-entry: ok (readback verified)` or `error: qpi re-entry or
+  readback verify failed; psram is unusable until the next successful check`
+  line, since every read tears the device out of QPI and the same call
+  re-enters it before returning. The `ok` is earned, not assumed: the SDK's
+  re-initialisation call can only fail on its own preconditions and never
+  probes the device, so after it succeeds the firmware writes two words at
+  opposite ends of the window through the uncached alias, reads them back,
+  and restores what it displaced -- only a readback that held reports `ok`.
 
 Two method facts worth keeping from the investigation that built this:
 
@@ -223,13 +241,23 @@ override the visual effect of `color` and `off`; the commands still answer
 as "no transfer completed for 5 s." That was an instrumentation defect: the
 firmware's own idle-status line goes out every 10 s, so a plain activity gap
 tripped the threshold on the firmware's own reporting cadence every cycle,
-regardless of whether anything was actually wrong. The code now requires two
-things together before it shows red: the transmit FIFO must be full (data is
-queued) **and** not draining for 30 s
-(`APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS`,
-`firmware/src/application/application_diagnostics.h`). That is what an
-endpoint wedge actually looks like; a quiet link on its own is not a fault.
-The frame-stall threshold behind magenta is unaffected and stays at 5 s
+regardless of whether anything was actually wrong. The current rule: red
+means every once-a-second sample across the whole 30 s window
+(`APPLICATION_DIAGNOSTICS_FIFO_STALL_MS`,
+`firmware/src/application/application_diagnostics.h`) saw the transmit FIFO
+full with no **outbound** transfer completing, measured from the first sample
+that observed that state. Two intermediate fixes fell short of this and both
+are worth recording: measuring the 30 s from the last CDC traffic made a
+link that had simply been quiet go red on the very first full sample (quiet
+history counted against a FIFO that had only just filled), and clearing the
+window on *any* CDC activity let inbound traffic conceal a wedged transmit
+endpoint indefinitely -- a host typing into a dead TX path kept the lamp
+green. Only observed FIFO room or an outbound completion clears the window
+now; RX traffic does not. The `diag:` line's `activity=` field still reports
+the pooled RX+TX counter -- it answers "is anything moving", not the stall
+question. That is what an endpoint wedge actually looks like; a quiet link
+on its own is not a fault, before or after it fills the FIFO. The
+frame-stall threshold behind magenta is unaffected and stays at 5 s
 (`APPLICATION_DIAGNOSTICS_FRAME_STALL_MS`).
 
 In the USB-free image there is no USB health to show, so the resting color

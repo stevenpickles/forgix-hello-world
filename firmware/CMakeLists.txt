@@ -60,9 +60,11 @@ add_library(forgix_bsp STATIC
   src/bsp/bsp_clocks.c
   src/bsp/bsp_console.c
   src/bsp/bsp_fpga.c
+  src/bsp/bsp_fpga_health.c
   src/bsp/bsp_led.c
   src/bsp/bsp_mcu.c
   src/bsp/bsp_memory.c
+  src/bsp/bsp_memory_verdict.c
   src/bsp/bsp_time.c
   src/bsp/bsp_watchdog.c
   ${GENERATED_C})
@@ -116,6 +118,7 @@ add_library(forgix_application STATIC
   src/application/application_effects.c
   src/application/application_ibit.c
   src/application/application_runner.c
+  src/application/application_time.c
   src/application/application_ui.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)

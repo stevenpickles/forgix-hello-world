@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "application_ibit.h"
+#include "application_time.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
@@ -441,7 +442,7 @@ void test_psram_fails_when_qpi_reentry_fails_and_never_sweeps( void )
     const char *output = run_step( STEP_PSRAM );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "FAIL" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B eid=43 read but QPI re-entry failed" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "kgd=0B eid=43 read but QPI re-entry/verify failed" ) );
 }
 
 
@@ -603,7 +604,7 @@ void test_fpga_configuration_passes_and_implies_the_oscillator( void )
     const char *output = run_step( STEP_FPGA_CONFIGURATION );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
-    TEST_ASSERT_NOT_NULL( strstr( output, "cdone=1 id=B6" ) );
+    TEST_ASSERT_NOT_NULL( strstr( output, "cdone=1 id=B7" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "32MHz oscillator implied" ) );
 }
 
@@ -622,18 +623,40 @@ void test_fpga_configuration_fails_on_a_wrong_design_id( void )
    returns and either would pass a test that wrote them. */
 void test_fpga_register_bus_round_trips_a_walking_pattern_and_restores_the_colour( void )
 {
+    const bsp_led_state_t saved = led_state( 1, 2, 3, 4 );
+
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
     BSP_FpgaReadStatus_ExpectAndReturn( 0x01u );
-    BSP_LedGet_ExpectAndReturn( led_state( 1, 2, 3, 4 ) );
+    BSP_LedGet_ExpectAndReturn( saved );
     BSP_LedSet_Expect( 0x5au, 0xa5u, 0x3cu, 0xc3u );
     BSP_LedGet_ExpectAndReturn( led_state( 0x5au, 0xa5u, 0x3cu, 0xc3u ) );
-    BSP_LedSet_Expect( 1, 2, 3, 4 );
+    BSP_LedRestore_Expect( &saved );
 
     const char *output = run_step( STEP_FPGA_REGISTERS );
 
     TEST_ASSERT_NOT_NULL( strstr( output, "PASS" ) );
     TEST_ASSERT_NOT_NULL( strstr( output, "wrote 5A,A5,3C,C3 read 5A,A5,3C,C3" ) );
+}
+
+
+/* The register-bus step runs against whatever the user had showing, including
+   an LED they had turned off -- and its walking pattern lights the LED, so the
+   restore is the only thing standing between the step and leaving it lit. */
+void test_the_register_bus_step_restores_an_led_the_user_had_off( void )
+{
+    bsp_led_state_t saved = led_state( 1, 2, 3, 4 );
+    saved.enabled = false;
+
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_FpgaReadStatus_ExpectAndReturn( 0x01u );
+    BSP_LedGet_ExpectAndReturn( saved );
+    BSP_LedSet_Expect( 0x5au, 0xa5u, 0x3cu, 0xc3u );
+    BSP_LedGet_ExpectAndReturn( led_state( 0x5au, 0xa5u, 0x3cu, 0xc3u ) );
+    BSP_LedRestore_Expect( &saved );
+
+    TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_FPGA_REGISTERS ), "PASS" ) );
 }
 
 
@@ -648,15 +671,17 @@ void test_fpga_register_bus_fails_when_any_single_register_misreads( void )
         led_state( 0x5au, 0xa5u, 0x3cu, 0x00u ),
     };
 
+    const bsp_led_state_t saved = led_state( 1, 2, 3, 4 );
+
     for ( uint32_t index = 0; index < 4u; ++index )
     {
         BSP_FpgaCdone_ExpectAndReturn( true );
         BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
         BSP_FpgaReadStatus_ExpectAndReturn( 0x01u );
-        BSP_LedGet_ExpectAndReturn( led_state( 1, 2, 3, 4 ) );
+        BSP_LedGet_ExpectAndReturn( saved );
         BSP_LedSet_Expect( 0x5au, 0xa5u, 0x3cu, 0xc3u );
         BSP_LedGet_ExpectAndReturn( corrupted[ index ] );
-        BSP_LedSet_Expect( 1, 2, 3, 4 );
+        BSP_LedRestore_Expect( &saved );
 
         TEST_ASSERT_NOT_NULL( strstr( run_step( STEP_FPGA_REGISTERS ), "FAIL" ) );
     }
@@ -696,15 +721,17 @@ void test_steps_behind_the_fpga_are_skipped_when_it_is_unreachable( void )
 
 void test_led_drives_each_channel_in_turn_and_restores_the_previous_colour( void )
 {
+    const bsp_led_state_t saved = led_state( 9, 8, 7, 6 );
+
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
-    BSP_LedGet_ExpectAndReturn( led_state( 9, 8, 7, 6 ) );
+    BSP_LedGet_ExpectAndReturn( saved );
     expect_led_phase( 255, 0, 0 );
     expect_led_phase( 0, 255, 0 );
     expect_led_phase( 0, 0, 255 );
     expect_led_phase( 255, 255, 255 );
     expect_led_phase( 0, 0, 0 );
-    BSP_LedSet_Expect( 9, 8, 7, 6 );
+    BSP_LedRestore_Expect( &saved );
 
     MOCK_BSP_TimeSetMs( 1000 );
     const application_activity_t *activity = application_ibit_single( STEP_LED );
@@ -738,14 +765,16 @@ void test_led_fails_and_restores_the_colour_when_any_channel_does_not_read_back(
         led_state( 255, 0, 99, 128 ),
     };
 
+    const bsp_led_state_t saved = led_state( 9, 8, 7, 6 );
+
     for ( uint32_t index = 0; index < 3u; ++index )
     {
         BSP_FpgaCdone_ExpectAndReturn( true );
         BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
-        BSP_LedGet_ExpectAndReturn( led_state( 9, 8, 7, 6 ) );
+        BSP_LedGet_ExpectAndReturn( saved );
         BSP_LedSet_Expect( 255, 0, 0, 128 );
         BSP_LedGet_ExpectAndReturn( corrupted[ index ] );
-        BSP_LedSet_Expect( 9, 8, 7, 6 );
+        BSP_LedRestore_Expect( &saved );
 
         const char *output = run_step( STEP_LED );
 
@@ -980,9 +1009,11 @@ void test_the_soak_tallies_across_iterations_and_starts_the_next_run( void )
 
 void test_aborting_after_the_led_step_puts_the_previous_colour_back( void )
 {
+    const bsp_led_state_t saved = led_state( 9, 8, 7, 6 );
+
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
-    BSP_LedGet_ExpectAndReturn( led_state( 9, 8, 7, 6 ) );
+    BSP_LedGet_ExpectAndReturn( saved );
     expect_led_phase( 255, 0, 0 );
 
     MOCK_BSP_TimeSetMs( 1000 );
@@ -990,10 +1021,32 @@ void test_aborting_after_the_led_step_puts_the_previous_colour_back( void )
     activity->start();
     TEST_ASSERT_TRUE( activity->poll() );
 
-    BSP_LedSet_Expect( 9, 8, 7, 6 );
+    BSP_LedRestore_Expect( &saved );
     activity->stop();
 
     /* A second stop must not write again; there is nothing left saved. */
+    activity->stop();
+}
+
+
+/* The abort path with the LED saved dark: the whole state comes back, including
+   the enable bit the walking colours forced on. */
+void test_aborting_the_led_step_puts_back_an_led_the_user_had_off( void )
+{
+    bsp_led_state_t saved = led_state( 9, 8, 7, 6 );
+    saved.enabled = false;
+
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_LedGet_ExpectAndReturn( saved );
+    expect_led_phase( 255, 0, 0 );
+
+    MOCK_BSP_TimeSetMs( 1000 );
+    const application_activity_t *activity = application_ibit_single( STEP_LED );
+    activity->start();
+    TEST_ASSERT_TRUE( activity->poll() );
+
+    BSP_LedRestore_Expect( &saved );
     activity->stop();
 }
 
@@ -1379,6 +1432,7 @@ static void ignore_a_healthy_board( void )
     BSP_FpgaStatusPin_IgnoreAndReturn( true );
     BSP_FpgaReadStatus_IgnoreAndReturn( 0x01u );
     BSP_LedSet_Ignore();
+    BSP_LedRestore_Ignore();
     BSP_LedGet_StubWithCallback( led_get_callback );
     BSP_ButtonClearCount_Ignore();
     BSP_ButtonGetState_StubWithCallback( button_callback );

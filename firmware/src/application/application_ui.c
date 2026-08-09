@@ -15,6 +15,7 @@
 #include "application_diagnostics.h"
 #include "application_effects.h"
 #include "application_ibit.h"
+#include "application_time.h"
 #include "bsp.h"
 
 
@@ -77,8 +78,6 @@ static ui_state_t ui;
 **
 ***************************************************************************************/
 
-
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms );
 
 static void mark_write( void );
 
@@ -247,7 +246,8 @@ void application_ui_poll( void )
         return;
     }
 
-    if ( ui.mode != UI_MODE_BANNER || !deadline_reached( ui.current_time_ms, ui.next_banner_ms ) )
+    if ( ui.mode != UI_MODE_BANNER ||
+         !application_deadline_reached( ui.current_time_ms, ui.next_banner_ms ) )
     {
         return;
     }
@@ -273,20 +273,6 @@ void application_ui_poll( void )
 ** Private Function Definitions
 **
 ***************************************************************************************/
-
-
-/// <summary>
-///     Compares millisecond stamps through a signed difference, so the banner keeps
-///     its cadence across the 32-bit rollover instead of falling silent for the
-///     remainder of the wrap.
-/// </summary>
-/// <returns>
-///     True once now_ms has reached deadline_ms.
-/// </returns>
-static bool deadline_reached( uint32_t now_ms, uint32_t deadline_ms )
-{
-    return (int32_t) ( now_ms - deadline_ms ) >= 0;
-}
 
 
 /* Every console write reaches the untimed Pico SDK stdio flush loop, so the

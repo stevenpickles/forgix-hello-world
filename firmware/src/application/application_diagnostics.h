@@ -64,11 +64,21 @@ enum
     /* Start-of-frame advances every millisecond while the host is framing, so a
        few seconds of silence is already decisive. */
     APPLICATION_DIAGNOSTICS_FRAME_STALL_MS = 5000,
-    /* CDC traffic is bursty and driven by whatever the host and the console
-       policy do, so a gap proves nothing on its own. This must stay well above
-       APPLICATION_IDLE_STATUS_PERIOD_MS, and is only consulted alongside a
-       backed-up transmit FIFO. */
-    APPLICATION_DIAGNOSTICS_ACTIVITY_STALL_MS = 30000,
+    /* How many consecutive failing 1 Hz samples the FPGA check needs before it
+       revokes readiness and, when recovery is enabled, attempts to
+       reconfigure. Bench evidence (2026-08): the bit-banged bus misreads
+       roughly once per boot session -- a single-sample transient that never
+       repeats -- while a real fault fails every sample. Three in a row
+       separates the two at a cost of two extra seconds of detection latency;
+       every failing sample is still counted and attributed regardless. */
+    APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES = 3,
+    /* How long the transmit FIFO must be observed continuously full with no
+       outbound transfer completing before the heartbeat calls it wedged.
+       Measured from the first sample that saw the FIFO full with the TX
+       counter unmoved: quiet history never counts against a FIFO that only
+       just filled, and only TX progress -- not inbound traffic -- can clear
+       the run, because RX proves nothing about the transmit path. */
+    APPLICATION_DIAGNOSTICS_FIFO_STALL_MS = 30000,
 };
 
 
