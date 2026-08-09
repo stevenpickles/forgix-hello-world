@@ -64,6 +64,7 @@ add_library(forgix_bsp STATIC
   src/bsp/bsp_led.c
   src/bsp/bsp_mcu.c
   src/bsp/bsp_memory.c
+  src/bsp/bsp_memory_identity.c
   src/bsp/bsp_memory_verdict.c
   src/bsp/bsp_time.c
   src/bsp/bsp_watchdog.c
