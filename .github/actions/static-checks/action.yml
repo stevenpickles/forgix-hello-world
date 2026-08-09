@@ -40,7 +40,9 @@ runs:
 
     - name: Enforce firmware layering
       shell: bash
-      run: python scripts/check_firmware_layers.py
+      run: |
+        python scripts/check_firmware_layers.py
+        python scripts/test_check_firmware_layers.py
 
     - name: Enforce firmware style
       shell: bash
