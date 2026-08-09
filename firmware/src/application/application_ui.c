@@ -13,49 +13,10 @@
 
 #include "application_console.h"
 #include "application_diagnostics.h"
-#include "application_effects.h"
-#include "application_ibit.h"
 #include "application_time.h"
+#include "application_ui_internal.h"
+#include "application_ui_menu.h"
 #include "bsp.h"
-
-
-
-
-/***************************************************************************************
-**
-** Enumerated Values, Type Definitions
-**
-***************************************************************************************/
-
-
-typedef enum
-{
-    UI_MODE_BANNER,
-    UI_MODE_MENU,
-    UI_MODE_STEPS,
-    UI_MODE_ACTIVITY,
-    UI_MODE_SHELL,
-} ui_mode_t;
-
-
-typedef struct
-{
-    ui_mode_t mode;
-    uint32_t current_time_ms;
-    uint32_t next_banner_ms;
-    uint32_t banner_count;
-    uint32_t started_ms;
-    const application_activity_t *activity;
-} ui_state_t;
-
-
-typedef struct
-{
-    char key;
-    const char *label;
-    const char *detail;
-    void ( *action )( void );
-} menu_entry_t;
 
 
 
@@ -67,7 +28,11 @@ typedef struct
 ***************************************************************************************/
 
 
-static ui_state_t ui;
+/* Not static: application_ui_menu.c writes the mode it is switching into and
+   reads the clock this pass cached, and it does so through the extern in
+   application_ui_internal.h. The two files are one module split by concern, so
+   they share the singleton rather than each keeping half of it. */
+ui_state_t ui;
 
 
 
@@ -79,66 +44,11 @@ static ui_state_t ui;
 ***************************************************************************************/
 
 
-static void mark_write( void );
-
-static uint32_t uptime_seconds( void );
-
 static void print_banner( void );
-
-static void print_menu( void );
-
-static char step_key( uint32_t index );
-
-static void print_steps( void );
 
 static void enter_menu( void );
 
-static void start_activity( const application_activity_t *activity );
-
 static void finish_activity( void );
-
-static void action_redraw( void );
-
-static void action_ibit( void );
-
-static void action_soak( void );
-
-static void action_steps( void );
-
-static void action_report( void );
-
-static void action_blinker( void );
-
-static void action_advanced( void );
-
-static void action_shell( void );
-
-static void action_reboot( void );
-
-static void action_bootsel( void );
-
-static void select_entry( int16_t character );
-
-static void select_step( int16_t character );
-
-/* Takes the address of the ten action_* handlers above; C requires a
-   function be declared before its address is taken, so this table follows
-   the prototypes it binds instead of sitting under Private Variable
-   Declarations with the rest of the module's data. One table drives both
-   the rendering and the dispatch, so a key can never be offered without
-   doing something or do something without being offered. */
-static const menu_entry_t MENU[] = {
-    { '1', "Built-in test", "the whole sequence, once", action_ibit },
-    { '2', "Built-in test soak", "repeat with a tally until a key is pressed", action_soak },
-    { '3', "One test at a time", "re-run a single step without the other fourteen", action_steps },
-    { '4', "Board report", "what this board is, without judging it", action_report },
-    { '5', "Blinker", "red, green, blue at 1 Hz until a key is pressed", action_blinker },
-    { '6', "Advanced blinker", "heartbeat, colour wheel, aurora", action_advanced },
-    { 'c', "Command shell", "the forgix> prompt; `menu` returns here", action_shell },
-    { 'r', "Reboot", "restart the board and reconfigure the FPGA", action_reboot },
-    { 'b', "Reboot to BOOTSEL", "hand the board to the USB loader for reflashing", action_bootsel },
-    { '?', "Redraw this menu", "", action_redraw },
-};
 
 
 
@@ -158,7 +68,7 @@ static const menu_entry_t MENU[] = {
 /// </summary>
 void application_ui_start( void )
 {
-    ui = ( ui_state_t ){ .mode = UI_MODE_BANNER };
+    ui = ( ui_state_t ){ .mode = APPLICATION_UI_MODE_BANNER };
     ui.current_time_ms = BSP_TimeNowMs();
     ui.started_ms = ui.current_time_ms;
     ui.next_banner_ms = ui.current_time_ms;
@@ -193,7 +103,7 @@ void application_ui_poll( void )
        negative. Testing against the sentinel alone would let any other
        negative SDK error code impersonate a keystroke -- and a phantom
        keystroke aborts activities and dismisses banners. */
-    if ( ui.mode == UI_MODE_SHELL )
+    if ( ui.mode == APPLICATION_UI_MODE_SHELL )
     {
         if ( character >= 0 )
         {
@@ -206,14 +116,14 @@ void application_ui_poll( void )
         return;
     }
 
-    if ( ui.mode == UI_MODE_ACTIVITY )
+    if ( ui.mode == APPLICATION_UI_MODE_ACTIVITY )
     {
         /* Any key aborts. A user watching a test they no longer want should not
            have to remember which key means stop. */
         if ( character >= 0 )
         {
             ui.activity->stop();
-            mark_write();
+            application_ui_mark_write();
             BSP_ConsolePrintf( "\naborted\n" );
             finish_activity();
         }
@@ -228,25 +138,25 @@ void application_ui_poll( void )
 
     if ( character >= 0 )
     {
-        if ( ui.mode == UI_MODE_BANNER )
+        if ( ui.mode == APPLICATION_UI_MODE_BANNER )
         {
             /* The key that ends the banner is consumed by ending it. Treating it
                as a selection as well would fire whichever item the user happened
                to hit while reaching for any key at all. */
             enter_menu();
         }
-        else if ( ui.mode == UI_MODE_STEPS )
+        else if ( ui.mode == APPLICATION_UI_MODE_STEPS )
         {
-            select_step( character );
+            application_ui_menu_select_step( character );
         }
         else
         {
-            select_entry( character );
+            application_ui_menu_select_entry( character );
         }
         return;
     }
 
-    if ( ui.mode != UI_MODE_BANNER ||
+    if ( ui.mode != APPLICATION_UI_MODE_BANNER ||
          !application_deadline_reached( ui.current_time_ms, ui.next_banner_ms ) )
     {
         return;
@@ -266,23 +176,15 @@ void application_ui_poll( void )
 }
 
 
-
-
-/***************************************************************************************
-**
-** Private Function Definitions
-**
-***************************************************************************************/
-
-
 /* Every console write reaches the untimed Pico SDK stdio flush loop, so the
    marker is set immediately before the call, exactly as the shell does. */
 /// <summary>
 ///     Claims the console-write marker for the line about to be printed, per call
 ///     rather than per function, so a board that stops inside the flush leaves a
-///     marker naming the individual write rather than the menu as a whole.
+///     marker naming the individual write rather than the menu as a whole. Shared
+///     with application_ui_menu.c, which does the bulk of the writing.
 /// </summary>
-static void mark_write( void )
+void application_ui_mark_write( void )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_WRITE );
 }
@@ -296,10 +198,38 @@ static void mark_write( void )
 /// <returns>
 ///     Whole seconds, truncated.
 /// </returns>
-static uint32_t uptime_seconds( void )
+uint32_t application_ui_uptime_seconds( void )
 {
     return ( ui.current_time_ms - ui.started_ms ) / 1000u;
 }
+
+
+/* An activity owns the LED for its whole run, not just the parts that paint it.
+   The heartbeat is a 2 Hz writer and every activity here holds a colour for
+   longer than that, so sharing the LED means the heartbeat showing through the
+   middle of whatever the activity was trying to display. */
+/// <summary>
+///     Hands over the LED and the terminal in one move, then runs the activity's
+///     start() inline: anything it prints appears before this returns, and the first
+///     poll() does not come until the next pass of the loop. The menu entries are
+///     the only callers, which is why this leaves the file the mode machine is in.
+/// </summary>
+void application_ui_start_activity( const application_activity_t *activity )
+{
+    application_diagnostics_release_led();
+    ui.mode = APPLICATION_UI_MODE_ACTIVITY;
+    ui.activity = activity;
+    activity->start();
+}
+
+
+
+
+/***************************************************************************************
+**
+** Private Function Definitions
+**
+***************************************************************************************/
 
 
 /// <summary>
@@ -309,67 +239,8 @@ static uint32_t uptime_seconds( void )
 /// </summary>
 static void print_banner( void )
 {
-    mark_write();
+    application_ui_mark_write();
     BSP_ConsolePrintf( "hello world - %lu - press any key\n", (unsigned long) ui.banner_count );
-}
-
-
-/// <summary>
-///     Draws from the MENU table and leaves the cursor sitting after "select> " with
-///     no newline, so the terminal stays the menu's until a key arrives. The FPGA
-///     line is sampled at draw time, which is why redrawing is how it is refreshed.
-/// </summary>
-static void print_menu( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "\n=== Forgix menu ===   up %lus   FPGA %s\n\n",
-                       (unsigned long) uptime_seconds(),
-                       BSP_FpgaIsReady() ? "ready" : "UNAVAILABLE" );
-    for ( size_t index = 0; index < sizeof MENU / sizeof MENU[ 0 ]; ++index )
-    {
-        mark_write();
-        BSP_ConsolePrintf( "  %c  %-22s %s\n", MENU[ index ].key, MENU[ index ].label,
-                           MENU[ index ].detail );
-    }
-    mark_write();
-    BSP_ConsolePrintf( "\nselect> " );
-}
-
-
-/* Steps are offered as 1..9 then a..f, because a single keypress is the whole
-   input method and fifteen of them will not fit in the digits. */
-/// <summary>
-///     Maps a step index onto the single key that selects it. Nothing bounds the
-///     index: one past the table yields the next letter, which select_step then
-///     fails to match, so an over-long list would quietly lose its tail rather than
-///     dispatch the wrong step.
-/// </summary>
-/// <returns>
-///     The key character offered for this step.
-/// </returns>
-static char step_key( uint32_t index )
-{
-    return index < 9u ? (char) ( '1' + index ) : (char) ( 'a' + ( index - 9u ) );
-}
-
-
-/// <summary>
-///     Lists the steps from the built-in test's own count, so this menu cannot
-///     offer a step that does not exist, and leaves the same open prompt the main
-///     menu does. The "x" line is why select_step reserves that key ahead of the
-///     table.
-/// </summary>
-static void print_steps( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "\n=== One test at a time ===\n\n" );
-    for ( uint32_t index = 0; index < application_ibit_step_count(); ++index )
-    {
-        mark_write();
-        BSP_ConsolePrintf( "  %c  %s\n", step_key( index ), application_ibit_step_name( index ) );
-    }
-    mark_write();
-    BSP_ConsolePrintf( "  x  back to the menu\n\nselect> " );
 }
 
 
@@ -384,201 +255,20 @@ static void enter_menu( void )
        `menu` command reaches here from inside command dispatch, and the shell
        would otherwise print one last prompt after the menu that replaced it. */
     application_console_release();
-    ui.mode = UI_MODE_MENU;
-    print_menu();
-}
-
-
-/* An activity owns the LED for its whole run, not just the parts that paint it.
-   The heartbeat is a 2 Hz writer and every activity here holds a colour for
-   longer than that, so sharing the LED means the heartbeat showing through the
-   middle of whatever the activity was trying to display. */
-/// <summary>
-///     Hands over the LED and the terminal in one move, then runs the activity's
-///     start() inline: anything it prints appears before this returns, and the first
-///     poll() does not come until the next pass of the loop.
-/// </summary>
-static void start_activity( const application_activity_t *activity )
-{
-    application_diagnostics_release_led();
-    ui.mode = UI_MODE_ACTIVITY;
-    ui.activity = activity;
-    activity->start();
+    ui.mode = APPLICATION_UI_MODE_MENU;
+    application_ui_menu_print();
 }
 
 
 /// <summary>
-///     The mirror of start_activity -- drops the activity, takes the LED back and
-///     redraws. It deliberately does not call stop(): an activity that ended of its
-///     own accord has already tidied up, and the abort path calls stop() before
-///     reaching here, so calling it would run cleanup twice.
+///     The mirror of application_ui_start_activity -- drops the activity, takes the
+///     LED back and redraws. It deliberately does not call stop(): an activity that
+///     ended of its own accord has already tidied up, and the abort path calls stop()
+///     before reaching here, so calling it would run cleanup twice.
 /// </summary>
 static void finish_activity( void )
 {
     ui.activity = NULL;
     application_diagnostics_reclaim_led();
     enter_menu();
-}
-
-
-/// <summary>
-///     Reprints the menu once an activity's output has scrolled it away. Routed
-///     through enter_menu rather than print_menu so a redraw is exactly the same
-///     operation as arriving at the menu, with no second path to keep in step.
-/// </summary>
-static void action_redraw( void )
-{
-    enter_menu();
-}
-
-
-/// <summary>
-///     Starts the full built-in test. From here the UI holds it as it holds any
-///     other activity, so the any-key abort and the LED handover behave exactly as
-///     they do for the blinkers.
-/// </summary>
-static void action_ibit( void )
-{
-    start_activity( application_ibit_sequence() );
-}
-
-
-/// <summary>
-///     Starts the repeating built-in test. It is the one activity whose poll never
-///     returns false, so the abort branch is the only path by which this entry is
-///     ever left.
-/// </summary>
-static void action_soak( void )
-{
-    start_activity( application_ibit_soak() );
-}
-
-
-/// <summary>
-///     The one entry that starts nothing. It switches the UI into a second menu
-///     whose keys are steps, which is why the poll routes UI_MODE_STEPS to
-///     select_step instead of select_entry.
-/// </summary>
-static void action_steps( void )
-{
-    ui.mode = UI_MODE_STEPS;
-    print_steps();
-}
-
-
-/// <summary>
-///     Prints inside the caller's own pass and redraws immediately, so the report is
-///     not an activity: there is no window during which a keypress could abort it,
-///     and the watchdog is not fed until it finishes.
-/// </summary>
-static void action_report( void )
-{
-    application_ibit_print_board_report();
-    enter_menu();
-}
-
-
-/// <summary>
-///     Starts the plain blinker. It is held as an activity purely so that the LED
-///     handover and the any-key abort apply to it, not because it has any result to
-///     report.
-/// </summary>
-static void action_blinker( void )
-{
-    start_activity( application_effects_blinker() );
-}
-
-
-/// <summary>
-///     Starts the effects activity that works through heartbeat, colour wheel and
-///     aurora. It paints the LED continuously for its whole run, which is why the
-///     diagnostics heartbeat is released rather than left to compete with it.
-/// </summary>
-static void action_advanced( void )
-{
-    start_activity( application_effects_advanced() );
-}
-
-
-/// <summary>
-///     Hands the terminal to the command shell, the one mode that is not an
-///     activity: no stop(), no LED handover, and it keeps the terminal until the
-///     shell's own `menu` command hands it back through application_ui_enter_menu.
-/// </summary>
-static void action_shell( void )
-{
-    ui.mode = UI_MODE_SHELL;
-    application_console_start();
-}
-
-
-/// <summary>
-///     Prints before rebooting because the call does not return. Without the line
-///     the serial port would simply disappear, which is indistinguishable from a
-///     crash at the far end.
-/// </summary>
-static void action_reboot( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "rebooting\n" );
-    BSP_McuReboot();
-}
-
-
-/// <summary>
-///     Warns before handing the board to the USB loader, because that call does not
-///     return either and the board comes back as a mass-storage drive rather than a
-///     serial port. Only reflashing brings this firmware back.
-/// </summary>
-static void action_bootsel( void )
-{
-    mark_write();
-    BSP_ConsolePrintf( "entering BOOTSEL; the serial port will disappear\n" );
-    BSP_McuRebootToBootsel();
-}
-
-
-/* An unrecognized key redraws rather than complaining. The menu is the only
-   thing on screen that says which keys exist, so showing it again is both the
-   error message and the fix. */
-/// <summary>
-///     Scans MENU in order, so a duplicated key would be resolved by table position
-///     and by nothing else. The value is narrowed to a char here, which is only safe
-///     because the caller has already filtered out the timeout sentinel.
-/// </summary>
-static void select_entry( int16_t character )
-{
-    for ( size_t index = 0; index < sizeof MENU / sizeof MENU[ 0 ]; ++index )
-    {
-        if ( MENU[ index ].key == (char) character )
-        {
-            MENU[ index ].action();
-            return;
-        }
-    }
-    enter_menu();
-}
-
-
-/// <summary>
-///     Checks "x" ahead of the table, so no step key can ever shadow the way back,
-///     and reprints the step list rather than the main menu on an unknown key -- a
-///     stray keypress should not throw the user out of the submenu they chose.
-/// </summary>
-static void select_step( int16_t character )
-{
-    if ( (char) character == 'x' )
-    {
-        enter_menu();
-        return;
-    }
-    for ( uint32_t index = 0; index < application_ibit_step_count(); ++index )
-    {
-        if ( step_key( index ) == (char) character )
-        {
-            start_activity( application_ibit_single( index ) );
-            return;
-        }
-    }
-    print_steps();
 }

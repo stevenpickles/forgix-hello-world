@@ -120,7 +120,8 @@ add_library(forgix_application STATIC
   src/application/application_ibit.c
   src/application/application_runner.c
   src/application/application_time.c
-  src/application/application_ui.c)
+  src/application/application_ui.c
+  src/application/application_ui_menu.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
 target_link_libraries(forgix_application PUBLIC forgix_bsp)
