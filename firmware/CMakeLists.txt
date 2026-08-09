@@ -121,6 +121,8 @@ add_library(forgix_application STATIC
   src/application/application_diagnostics_report.c
   src/application/application_effects.c
   src/application/application_ibit.c
+  src/application/application_ibit_steps_board.c
+  src/application/application_ibit_steps_fpga.c
   src/application/application_runner.c
   src/application/application_time.c
   src/application/application_ui.c
