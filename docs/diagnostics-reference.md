@@ -33,7 +33,7 @@ CMake options that shape the diagnostics (defaults as configured in
 | Option | Default | Effect |
 | --- | --- | --- |
 | `FORGIX_FOREGROUND_USB_SERVICE` | `OFF` | Moves TinyUSB servicing into the foreground loop via `BSP_UsbService()` and disables the SDK's background IRQ task. Never enable one without the other: two owners of `tud_task()` corrupt stack state |
-| `FORGIX_FPGA_AUTO_RECONFIGURE` | `OFF` | Lets the runtime FPGA health check attempt a reconfiguration after a failure. Off by default because reloading the bitstream drives `CRESET_N` and rewrites 173 KB on every failing sample, which is itself a disturbance; turn it on to observe the recovery signature |
+| `FORGIX_FPGA_AUTO_RECONFIGURE` | `OFF` | Lets the runtime FPGA health check attempt a reconfiguration once a fault is confirmed (three consecutive failing samples -- see the `diag` counters below). Off by default because reloading the bitstream drives `CRESET_N` and rewrites 173 KB per failing sample past that threshold, which is itself a disturbance; turn it on to observe the recovery signature |
 | `FORGIX_DIAGNOSTIC_UART` | `OFF` | Routes the USB-free image's diagnostics report over UART stdio instead of only the LED. Useful because the report survives the FPGA dying, and the LED cannot |
 | `FORGIX_QSPI_PSRAM` | `ON` | Brings up the DRAM on QSPI chip select 1 (GPIO 0). Either way, the pad's power-up pull-down is swapped for a pull-up, which is the firmware's substitute for the 10K resistor this board has no footprint for |
 
@@ -57,7 +57,20 @@ Running `diag` prints three lines:
    `watchdog`, or `other`.
 3. A live counters line: `diag: uptime=<seconds>s connected=<0|1>
    suspended=<0|1> write=<n> activity=<n> sof=<n> fpga_fail=<n>
-   fpga_reconfig=<n>`.
+   fpga_cdone=<n> fpga_ping=<n> fpga_led=<n> fpga_reconfig=<n>`.
+   `fpga_fail` counts failing 1 Hz health-check samples, and exactly one of
+   the three counters after it moves with each: the first term that failed,
+   in check order -- the `CDONE` pin, the design-ID ping, or the LED register
+   readback. The split exists because the bench showed the bit-banged bus
+   misreading about one sample per boot session, and a bare total cannot say
+   which transaction to distrust.
+
+   A failing sample is counted immediately but acted on only after
+   `APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES` (3) consecutive failures:
+   a real fault fails every sample and is acted on two seconds late, while a
+   single misread never repeats and no longer revokes readiness -- or, with
+   recovery enabled, no longer triggers a bitstream reload -- for the rest of
+   the boot. A passing sample restarts the count.
 
 The boot report line is unchanged by time: it always describes the previous
 boot, so it reads the same the first time and hours later. The live line is

@@ -100,6 +100,16 @@ typedef struct
     uint32_t last_frame_ms;
 
     uint32_t fpga_failures;
+    /* Exactly one of the three below moves with every fpga_failures increment,
+       naming the first term that failed: the configuration pin, the design-ID
+       ping, or the LED register readback. The split is what turns "the check
+       failed once a boot" from a mystery into a measurement. */
+    uint32_t fpga_cdone_failures;
+    uint32_t fpga_ping_failures;
+    uint32_t fpga_readback_failures;
+    /* Failing samples since the last passing one -- the debounce that keeps a
+       single bus misread from revoking readiness for the rest of the boot. */
+    uint32_t fpga_consecutive_failures;
     uint32_t fpga_reconfigures;
 } diagnostics_state_t;
 
@@ -267,11 +277,14 @@ void application_diagnostics_print_report( void )
     print_boot_report();
     BSP_ConsolePrintf(
         "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
-        "fpga_fail=%lu fpga_reconfig=%lu\n",
+        "fpga_fail=%lu fpga_cdone=%lu fpga_ping=%lu fpga_led=%lu fpga_reconfig=%lu\n",
         (unsigned long) diagnostics.uptime_seconds, (unsigned) diagnostics.health.connected,
         (unsigned) diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
         (unsigned long) diagnostics.health.activity_count,
         (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
+        (unsigned long) diagnostics.fpga_cdone_failures,
+        (unsigned long) diagnostics.fpga_ping_failures,
+        (unsigned long) diagnostics.fpga_readback_failures,
         (unsigned long) diagnostics.fpga_reconfigures );
 }
 
@@ -470,8 +483,11 @@ static bool led_readback_matches( void )
    FPGA bus rather than whatever a `color` command left behind between polls. */
 /// <summary>
 ///     Charges at most one failure per sample however many of the three checks
-///     went wrong, so fpga_failures counts seconds spent in fault rather than
-///     tallying symptoms. Leaves its own marker standing on return, so a hang
+///     went wrong, attributed to the first term that failed -- the pin before
+///     the ping, because pinging an unconfigured part proves nothing, and the
+///     ping before the readback, because the readback needs a design to answer.
+///     Acting on the fault is debounced behind consecutive failing samples; the
+///     counting is not. Leaves its own marker standing on return, so a hang
 ///     inside the bus access is attributed here and not to the caller.
 /// </summary>
 static void check_fpga( uint32_t now_ms )
@@ -483,13 +499,36 @@ static void check_fpga( uint32_t now_ms )
        whoever holds it, and comparing it against a stale command would report an
        FPGA fault once a second for the length of every light show. CDONE and the
        design-ID ping still answer for the FPGA. */
-    if ( BSP_FpgaCdone() && BSP_FpgaPing() == BSP_FPGA_DESIGN_ID &&
-         ( diagnostics.led_released || led_readback_matches() ) )
+    if ( !BSP_FpgaCdone() )
     {
+        ++diagnostics.fpga_cdone_failures;
+    }
+    else if ( BSP_FpgaPing() != BSP_FPGA_DESIGN_ID )
+    {
+        ++diagnostics.fpga_ping_failures;
+    }
+    else if ( !diagnostics.led_released && !led_readback_matches() )
+    {
+        ++diagnostics.fpga_readback_failures;
+    }
+    else
+    {
+        diagnostics.fpga_consecutive_failures = 0;
         return;
     }
 
     ++diagnostics.fpga_failures;
+    ++diagnostics.fpga_consecutive_failures;
+
+    /* The debounce. Bench evidence: this bus misreads about one sample per
+       boot session, and a misread does not repeat, while a real fault fails
+       every sample. Revoking on the first failure turned each transient into a
+       shell gated until reboot; three in a row costs two seconds of latency on
+       a genuine fault and nothing on a misread. */
+    if ( diagnostics.fpga_consecutive_failures < APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES )
+    {
+        return;
+    }
 
     /* This is what pulls the menu line and the command gate down when the FPGA
        dies at runtime. Without it the readiness latch keeps its boot-time value
@@ -500,8 +539,9 @@ static void check_fpga( uint32_t now_ms )
     BSP_FpgaMarkUnresponsive();
 
     /* Recovery is opt-in. Reloading the bitstream drives CRESET_N and rewrites
-       173 KB on every failing sample, which is itself a disturbance; keeping it
-       off establishes what the fault does when left alone. */
+       173 KB on every failing sample past the debounce, which is itself a
+       disturbance; keeping it off establishes what the fault does when left
+       alone. */
     if ( !BSP_FpgaAutoReconfigureEnabled() )
     {
         return;
@@ -510,11 +550,12 @@ static void check_fpga( uint32_t now_ms )
     {
         ++diagnostics.fpga_reconfigures;
         diagnostics.recovery_toggles = RECOVERY_TOGGLES;
-        /* The fresh configuration comes up with its registers cleared, so the
-           commanded heartbeat state has to be written again -- but only while
-           the heartbeat owns the LED. Released, those registers are the new
-           owner's to fill, and reclaim repaints unconditionally when the
-           handover ends. */
+        /* The fresh configuration starts a fresh verdict: its registers are
+           cleared, so the commanded heartbeat state has to be written again --
+           but only while the heartbeat owns the LED. Released, those registers
+           are the new owner's to fill, and reclaim repaints unconditionally
+           when the handover ends. */
+        diagnostics.fpga_consecutive_failures = 0;
         if ( !diagnostics.led_released )
         {
             apply_led( now_ms );

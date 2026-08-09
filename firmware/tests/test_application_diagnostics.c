@@ -191,7 +191,11 @@ void test_usb_free_image_logs_a_line_every_second( void )
 }
 
 
-void test_recovery_is_skipped_when_auto_reconfigure_is_disabled( void )
+/* The bench regression this debounce exists for: the bit-banged bus misreads
+   about one sample per boot, and revoking on the first failure gated the shell
+   until reboot every time. A lone failing sample is counted but not acted on:
+   the strict mock proves neither the latch nor recovery was touched. */
+void test_a_single_failing_sample_is_counted_but_not_acted_on( void )
 {
     start_usb_at( 0 );
     BSP_LedOff_Expect();
@@ -200,8 +204,6 @@ void test_recovery_is_skipped_when_auto_reconfigure_is_disabled( void )
     MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
-    BSP_FpgaMarkUnresponsive_Expect();
-    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( false );
     poll_at( 1000 );
 
     /* the fault is still counted, so a run records it without disturbing it */
@@ -210,10 +212,9 @@ void test_recovery_is_skipped_when_auto_reconfigure_is_disabled( void )
 }
 
 
-/* Guards against "only falsify once" regressions: the latch must be written on
-   every failing sample, not just the first, since a reconfiguration between
-   samples could have set it true again in the meantime. */
-void test_every_failing_sample_marks_the_fpga_unavailable( void )
+/* A passing sample between failures restarts the debounce, so scattered
+   transients never accumulate into a revocation however many a boot collects. */
+void test_a_passing_sample_between_failures_restarts_the_debounce( void )
 {
     start_usb_at( 0 );
     BSP_LedOff_Expect();
@@ -222,23 +223,78 @@ void test_every_failing_sample_marks_the_fpga_unavailable( void )
     MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
-    BSP_FpgaMarkUnresponsive_Expect();
-    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( false );
     poll_at( 1000 );
 
     BSP_LedOff_Expect();
     poll_at( 1250 );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
-    poll_at( 1500 );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 2000 );
+
     BSP_LedOff_Expect();
-    poll_at( 1750 );
+    poll_at( 2250 );
+    expect_sample( 0, 255, 0 );
+    poll_at( 3000 );
+
+    /* two more failures after the pass: still below three consecutive */
+    BSP_LedOff_Expect();
+    poll_at( 3250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 4000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 4250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 5000 );
+
+    TEST_ASSERT_EQUAL_UINT32( 4u << 19, MOCK_BSP_WatchdogSnapshot( 2 ) & ( 0x7fu << 19 ) );
+}
+
+
+/* Guards against "only falsify once" regressions: the latch must be written on
+   every failing sample, not just the first, since a reconfiguration between
+   samples could have set it true again in the meantime. */
+/* The third consecutive failure is where the fault becomes actionable: a real
+   fault fails every sample, so it reaches three in two extra seconds, while a
+   misread never does. Marking then continues on every failing sample past the
+   threshold, since a reconfiguration between samples could have restored the
+   latch in the meantime. */
+void test_the_third_consecutive_failure_revokes_readiness_and_marking_continues( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
     BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( false );
-    poll_at( 2000 );
+    poll_at( 3000 );
 
-    TEST_ASSERT_EQUAL_UINT32( 2u << 19, MOCK_BSP_WatchdogSnapshot( 2 ) & ( 0x7fu << 19 ) );
+    BSP_LedOff_Expect();
+    poll_at( 3250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    BSP_FpgaMarkUnresponsive_Expect();
+    BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( false );
+    poll_at( 4000 );
+
+    TEST_ASSERT_EQUAL_UINT32( 4u << 19, MOCK_BSP_WatchdogSnapshot( 2 ) & ( 0x7fu << 19 ) );
 }
 
 
@@ -821,38 +877,51 @@ void test_lost_configuration_reconfigures_and_flies_the_recovery_signature( void
     BSP_LedOff_Expect();
     poll_at( 250 );
 
+    /* two failing samples ride out the debounce; recovery acts on the third */
     MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
     BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( true );
     BSP_FpgaReconfigure_ExpectAndReturn( true );
     BSP_LedSet_Expect( 255, 255, 255, BRIGHTNESS );
-    poll_at( 1000 );
+    poll_at( 3000 );
 
-    TEST_ASSERT_EQUAL_UINT32( 100u | ( 1u << 16 ) | ( 1u << 19 ) | ( 1u << 26 ),
+    TEST_ASSERT_EQUAL_UINT32( 100u | ( 1u << 16 ) | ( 3u << 19 ) | ( 1u << 26 ),
                               MOCK_BSP_WatchdogSnapshot( 2 ) );
 
     /* the signature survives the following toggles, then healthy color resumes */
     BSP_LedOff_Expect();
-    poll_at( 1250 );
+    poll_at( 3250 );
     BSP_LedSet_Expect( 255, 255, 255, BRIGHTNESS );
-    poll_at( 1500 );
+    poll_at( 3500 );
     BSP_LedOff_Expect();
-    poll_at( 1750 );
+    poll_at( 3750 );
     BSP_LedSet_Expect( 255, 255, 255, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
     BSP_LedGet_ExpectAndReturn( led_state( 255, 255, 255, true ) );
-    poll_at( 2000 );
+    poll_at( 4000 );
     BSP_LedOff_Expect();
-    poll_at( 2250 );
+    poll_at( 4250 );
     BSP_LedSet_Expect( 255, 255, 255, BRIGHTNESS );
-    poll_at( 2500 );
+    poll_at( 4500 );
     BSP_LedOff_Expect();
-    poll_at( 2750 );
+    poll_at( 4750 );
     expect_sample( 0, 255, 0 );
-    poll_at( 3000 );
+    poll_at( 5000 );
 }
 
 
@@ -871,16 +940,21 @@ void test_reconfiguration_while_the_led_is_released_writes_nothing( void )
     poll_at( 500 );
     poll_at( 750 );
 
-    /* No LED expectation is queued here: a repaint on this path would fail the
-       test as an unexpected BSP_LedSet call. */
+    /* No LED expectation is queued anywhere here: a repaint on this path would
+       fail the test as an unexpected BSP_LedSet call. Two failing samples ride
+       out the debounce first. */
     MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 1000 );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 2000 );
     BSP_FpgaCdone_ExpectAndReturn( false );
     BSP_FpgaMarkUnresponsive_Expect();
     BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( true );
     BSP_FpgaReconfigure_ExpectAndReturn( true );
-    poll_at( 1000 );
+    poll_at( 3000 );
 
-    TEST_ASSERT_EQUAL_UINT32( 100u | ( 1u << 16 ) | ( 1u << 19 ) | ( 1u << 26 ),
+    TEST_ASSERT_EQUAL_UINT32( 100u | ( 1u << 16 ) | ( 3u << 19 ) | ( 1u << 26 ),
                               MOCK_BSP_WatchdogSnapshot( 2 ) );
 
     /* The recovery signature flies from the reclaim onward. */
@@ -899,13 +973,27 @@ void test_a_wrong_design_id_reconfigures_without_reading_the_led_back( void )
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( 0x00 );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( 0x00 );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( 0x00 );
     BSP_FpgaMarkUnresponsive_Expect();
     BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( true );
     BSP_FpgaReconfigure_ExpectAndReturn( true );
     BSP_LedSet_Expect( 255, 255, 255, BRIGHTNESS );
-    poll_at( 1000 );
+    poll_at( 3000 );
 
-    TEST_ASSERT_EQUAL_UINT32( ( 1u << 19 ) | ( 1u << 26 ),
+    TEST_ASSERT_EQUAL_UINT32( ( 3u << 19 ) | ( 1u << 26 ),
                               MOCK_BSP_WatchdogSnapshot( 2 ) &
                                   ( ( 0x7fu << 19 ) | ( 0x3fu << 26 ) ) );
 }
@@ -949,8 +1037,59 @@ void test_diag_report_lists_the_previous_boot_and_the_live_counters( void )
 
     TEST_ASSERT_EQUAL_STRING( "diag: boot=brownout marker=2 loop=7 usb=8 health=00000009\n"
                               "diag: uptime=1s connected=1 suspended=0 write=32 activity=5 sof=100 "
-                              "fpga_fail=0 fpga_reconfig=0\n",
+                              "fpga_fail=0 fpga_cdone=0 fpga_ping=0 fpga_led=0 fpga_reconfig=0\n",
                               MOCK_BSP_ConsoleOutput() );
+}
+
+
+/* The attribution is what turned "the check failed once a boot" into a
+   measurement: each failing sample charges exactly one of the three term
+   counters, named after the first term that failed, and the report is where a
+   bench session reads them back. */
+void test_diag_report_attributes_each_failure_to_the_term_that_failed( void )
+{
+    start_usb_at( 0 );
+    BSP_LedOff_Expect();
+    poll_at( 250 );
+
+    /* one CDONE failure, then a ping failure, then a readback failure --
+       scattered across passing samples so the debounce never engages */
+    MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( false );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+    expect_sample( 0, 255, 0 );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( 0x00 );
+    poll_at( 3000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 3250 );
+    expect_sample( 0, 255, 0 );
+    poll_at( 4000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 4250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_LedGet_ExpectAndReturn( led_state( 1, 2, 3, true ) );
+    poll_at( 5000 );
+    MOCK_BSP_ConsoleReset();
+
+    application_diagnostics_print_report();
+
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(),
+                                  "fpga_fail=3 fpga_cdone=1 fpga_ping=1 fpga_led=1 "
+                                  "fpga_reconfig=0" ) );
 }
 
 
@@ -1057,7 +1196,25 @@ static void run_readback_mismatch( bsp_led_state_t readback, const char *field_n
     BSP_LedOff_Expect();
     poll_at( 250 );
 
+    /* three consecutive mismatching samples, so the debounced recovery runs
+       and fails; each sample rewrites and re-reads the heartbeat color */
     MOCK_BSP_UsbSetHealth( health_of( true, false, 64, 5, 0, 100 ) );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_LedGet_ExpectAndReturn( readback );
+    poll_at( 1000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 1250 );
+    BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
+    BSP_FpgaCdone_ExpectAndReturn( true );
+    BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
+    BSP_LedGet_ExpectAndReturn( readback );
+    poll_at( 2000 );
+
+    BSP_LedOff_Expect();
+    poll_at( 2250 );
     BSP_LedSet_Expect( 0, 255, 0, BRIGHTNESS );
     BSP_FpgaCdone_ExpectAndReturn( true );
     BSP_FpgaPing_ExpectAndReturn( BSP_FPGA_DESIGN_ID );
@@ -1065,9 +1222,9 @@ static void run_readback_mismatch( bsp_led_state_t readback, const char *field_n
     BSP_FpgaMarkUnresponsive_Expect();
     BSP_FpgaAutoReconfigureEnabled_ExpectAndReturn( true );
     BSP_FpgaReconfigure_ExpectAndReturn( false );
-    poll_at( 1000 );
+    poll_at( 3000 );
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE( 1u << 19, MOCK_BSP_WatchdogSnapshot( 2 ) & ( 0x7fu << 19 ),
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE( 3u << 19, MOCK_BSP_WatchdogSnapshot( 2 ) & ( 0x7fu << 19 ),
                                       field_name );
     TEST_ASSERT_EQUAL_UINT32_MESSAGE( 0, MOCK_BSP_WatchdogSnapshot( 2 ) & ( 0x3fu << 26 ),
                                       field_name );
