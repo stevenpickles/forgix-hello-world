@@ -81,7 +81,7 @@ board must not depend on the board working.
 ## The memid command
 
 `memid` reads out the raw identity bytes of both QSPI memories on the shared
-bus, via `BSP_MemoryIdentityDump` (`firmware/src/bsp/bsp_memory.c`) and
+bus, via `BSP_MemoryIdentityDump` (`firmware/src/bsp/bsp_memory_identity.c`) and
 `print_identity_dump` (`firmware/src/application/application.c`). It is
 gate-free for the same reason as `diag`: the memories share nothing with the
 FPGA, and the identity investigation is most needed exactly when the board is
@@ -134,7 +134,7 @@ Two method facts worth keeping from the investigation that built this:
   `connect_internal_flash`, which resets QMI `DIRECT_CSR` state and discards
   any divisor or delay written beforehand, so a delay set ahead of a call
   through that helper never reaches the transfer. That is why
-  `_CsOperationSequence` in `bsp_memory.c` is a reimplementation of the
+  `_CsOperationSequence` in `bsp_memory_identity.c` is a reimplementation of the
   direct-mode transfer rather than a wrapper around the SDK's helper: it is
   the only way to hold a clock divisor across the whole sequence of resets and
   reads that this file needs.

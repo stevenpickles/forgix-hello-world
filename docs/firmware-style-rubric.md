@@ -24,8 +24,8 @@ carry the most drift. This document is the written form.
 > to apply or check this rubric. `scripts/check_firmware_style.py` is self-contained and reads
 > nothing outside this repository.
 
-**Status: applied to all three profiles.** All 55 files in the firmware tree score 100% on the
-automated rules — 34 in **bsp**, 15 in **application**, 6 in **tests**. `scripts/check_firmware_style.py
+**Status: applied to all three profiles.** All 90 files in the firmware tree score 100% on the
+automated rules — 40 in **bsp**, 35 in **application**, 15 in **tests**. `scripts/check_firmware_style.py
 --strict` runs in CI over all of them by default, so a regression in any layer fails the build.
 Reproduce the formatter half with `scripts/format_firmware.sh`, or `--check` to verify without
 writing.
@@ -412,7 +412,7 @@ the majority form and the reformat fixes the outlier.
 | A8 include grouping | own header, C standard, project (E5) | `"unity.h"`, C standard, project (E5) |
 | B1 public functions | `application_` + snake_case, plus `main` | `test_*`, `setUp`, `tearDown` (E2) |
 | B2 subsystem before verb | as written: `application_console_set_echo`, not `application_set_console_echo` | n/a |
-| B3 private functions | bare snake_case — `parse_byte`, `mark_write`, `step_psram` | bare snake_case — `poll_at`, `open_menu_at` |
+| B3 private functions | bare snake_case — `parse_byte`, `print_memory_report`, `memory_report` | bare snake_case — `poll_at`, `open_menu_at` |
 | B4 file-scope variables | bare snake_case when mutable, SCREAMING_SNAKE when `static const` (E3) | same |
 | B5 struct typedefs | `<name>_t`, **anonymous tag** (E4) | n/a — tests declare no types |
 | B6 enum typedefs | `<name>_t`, **anonymous tag** (E4) | n/a |
@@ -554,7 +554,7 @@ The BSP never had occasion to need this, which is why A5 does not mention it. Wh
 |---|---|
 | `application_effects.c` | `BLINKER`, `ADVANCED` |
 | `application_ibit.c` | `STEPS`, `SEQUENCE`, `SOAK`, `SINGLE` |
-| `application_ui.c` | `MENU` |
+| `application_ui_menu.c` | `MENU` |
 | `test_application_ui.c` | `FAKE_ACTIVITY` |
 
 A table that binds nothing — `WHEEL`, `HEARTBEAT`, `AURORA`, `OUTCOME_TEXT` — is ordinary file-scope
@@ -570,7 +570,7 @@ existed.
 
 | Deviation | Reason |
 |---|---|
-| Flat `firmware/src/bsp/` rather than `bsp/include/` + `bsp/source/` | `scripts/check_firmware_layers.py:44-49` globs `bsp_*.h` in one directory and `firmware/CMakeLists.txt:56-65` lists sources by path |
+| Flat `firmware/src/bsp/` rather than `bsp/include/` + `bsp/source/` | `scripts/check_firmware_layers.py:44-49` globs `bsp_*.h` in one directory and `firmware/CMakeLists.txt:56-71` lists sources by path |
 | `FORGIX_BSP_LED_H` guards (B11) | `__bsp_led_h__` uses identifiers reserved by C11 §7.1.3 |
 | The `me` idiom is not required | Found in `bsp_uarts.c` only — 1 of the reference's 3 stateful modules. A file habit, not house style. A module may use it; nothing checks for it |
 | `BSP_ASSERT` / `BSP_DEFINE_THIS_MODULE` are not rubric rules | Functional, not formatting. forgix has no assert facility, and adding one is a design decision with its own tradeoffs, not a reformat. See below |
