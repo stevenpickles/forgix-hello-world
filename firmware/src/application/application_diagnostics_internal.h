@@ -88,7 +88,7 @@ typedef struct
 } diagnostics_state_t;
 
 
-extern diagnostics_state_t diagnostics;
+extern diagnostics_state_t application_diagnostics_state;
 
 #ifdef __cplusplus
 }

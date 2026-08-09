@@ -82,14 +82,17 @@ void application_diagnostics_print_report( void )
     BSP_ConsolePrintf(
         "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
         "fpga_fail=%lu fpga_cdone=%lu fpga_ping=%lu fpga_led=%lu fpga_reconfig=%lu\n",
-        (unsigned long) diagnostics.uptime_seconds, (unsigned) diagnostics.health.connected,
-        (unsigned) diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
-        (unsigned long) diagnostics.health.activity_count,
-        (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
-        (unsigned long) diagnostics.fpga_cdone_failures,
-        (unsigned long) diagnostics.fpga_ping_failures,
-        (unsigned long) diagnostics.fpga_readback_failures,
-        (unsigned long) diagnostics.fpga_reconfigures );
+        (unsigned long) application_diagnostics_state.uptime_seconds,
+        (unsigned) application_diagnostics_state.health.connected,
+        (unsigned) application_diagnostics_state.health.suspended,
+        (unsigned long) application_diagnostics_state.health.write_available,
+        (unsigned long) application_diagnostics_state.health.activity_count,
+        (unsigned long) application_diagnostics_state.health.frame_number,
+        (unsigned long) application_diagnostics_state.fpga_failures,
+        (unsigned long) application_diagnostics_state.fpga_cdone_failures,
+        (unsigned long) application_diagnostics_state.fpga_ping_failures,
+        (unsigned long) application_diagnostics_state.fpga_readback_failures,
+        (unsigned long) application_diagnostics_state.fpga_reconfigures );
 }
 
 /// <summary>
@@ -101,10 +104,11 @@ void application_diagnostics_print_report( void )
 void application_diagnostics_report_boot( void )
 {
     BSP_ConsolePrintf( "diag: boot=%s marker=%lu loop=%lu usb=%lu health=%08lX\n",
-                       boot_reason_name(), (unsigned long) diagnostics.boot_marker,
-                       (unsigned long) diagnostics.boot_snapshot[ 0 ],
-                       (unsigned long) diagnostics.boot_snapshot[ 1 ],
-                       (unsigned long) diagnostics.boot_snapshot[ 2 ] );
+                       boot_reason_name(),
+                       (unsigned long) application_diagnostics_state.boot_marker,
+                       (unsigned long) application_diagnostics_state.boot_snapshot[ 0 ],
+                       (unsigned long) application_diagnostics_state.boot_snapshot[ 1 ],
+                       (unsigned long) application_diagnostics_state.boot_snapshot[ 2 ] );
 }
 
 /// <summary>
@@ -116,9 +120,10 @@ void application_diagnostics_report_boot( void )
 void application_diagnostics_report_live( void )
 {
     BSP_ConsolePrintf( "diag: t=%lus led=%u fpga_fail=%lu fpga_reconfig=%lu marker=%lu\n",
-                       (unsigned long) diagnostics.uptime_seconds, diagnostics.led_on,
-                       (unsigned long) diagnostics.fpga_failures,
-                       (unsigned long) diagnostics.fpga_reconfigures,
+                       (unsigned long) application_diagnostics_state.uptime_seconds,
+                       application_diagnostics_state.led_on,
+                       (unsigned long) application_diagnostics_state.fpga_failures,
+                       (unsigned long) application_diagnostics_state.fpga_reconfigures,
                        (unsigned long) BSP_WatchdogMarkerGet() );
 }
 
@@ -171,7 +176,7 @@ void application_diagnostics_report_blink( void )
 /// </returns>
 static const char *boot_reason_name( void )
 {
-    switch ( diagnostics.boot_reason )
+    switch ( application_diagnostics_state.boot_reason )
     {
     case BSP_BOOT_WATCHDOG:
         return "watchdog";
@@ -219,11 +224,12 @@ static boot_signature_t boot_signature( void )
 {
     boot_signature_t signature = { 255, 255, 255, 1 }; /* power-on: one white blink */
 
-    switch ( diagnostics.boot_reason )
+    switch ( application_diagnostics_state.boot_reason )
     {
     case BSP_BOOT_WATCHDOG:
         /* red, blinked as many times as the retained progress marker */
-        signature = ( boot_signature_t ){ 255, 0, 0, clamp_blinks( diagnostics.boot_marker ) };
+        signature = ( boot_signature_t ){
+            255, 0, 0, clamp_blinks( application_diagnostics_state.boot_marker ) };
         break;
     case BSP_BOOT_BROWNOUT:
         signature = ( boot_signature_t ){ 255, 255, 0, 2 }; /* yellow */

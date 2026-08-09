@@ -57,7 +57,7 @@ typedef struct
 } ui_state_t;
 
 
-extern ui_state_t ui;
+extern ui_state_t application_ui_state;
 
 
 

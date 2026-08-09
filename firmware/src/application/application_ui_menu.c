@@ -252,7 +252,7 @@ static void action_soak( void )
 /// </summary>
 static void action_steps( void )
 {
-    ui.mode = APPLICATION_UI_MODE_STEPS;
+    application_ui_state.mode = APPLICATION_UI_MODE_STEPS;
     print_steps();
 }
 
@@ -298,7 +298,7 @@ static void action_advanced( void )
 /// </summary>
 static void action_shell( void )
 {
-    ui.mode = APPLICATION_UI_MODE_SHELL;
+    application_ui_state.mode = APPLICATION_UI_MODE_SHELL;
     application_console_start();
 }
 

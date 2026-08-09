@@ -33,7 +33,7 @@
    released flag all suppress unsolicited output -- and reaches it through the
    extern in application_console_internal.h. The two files are one module split
    by concern, so they share the singleton rather than each keeping half. */
-console_state_t console;
+console_state_t application_console_state;
 
 
 
@@ -76,11 +76,11 @@ static void process_character( int16_t character );
 /// </summary>
 void application_console_start( void )
 {
-    console = ( console_state_t ){
+    application_console_state = ( console_state_t ){
         .echo_enabled = true,
         .auto_status_enabled = true,
     };
-    console.current_time_ms = BSP_TimeNowMs();
+    application_console_state.current_time_ms = BSP_TimeNowMs();
     application_console_status_schedule_idle();
     application_console_print_prompt();
 }
@@ -95,7 +95,7 @@ void application_console_start( void )
 /// </summary>
 void application_console_feed( int16_t character )
 {
-    console.current_time_ms = BSP_TimeNowMs();
+    application_console_state.current_time_ms = BSP_TimeNowMs();
     process_character( character );
 }
 
@@ -108,7 +108,7 @@ void application_console_feed( int16_t character )
 /// </summary>
 void application_console_release( void )
 {
-    console.released = true;
+    application_console_state.released = true;
     application_console_status_stop();
 }
 
@@ -121,7 +121,7 @@ void application_console_release( void )
 /// </summary>
 void application_console_set_echo( bool enabled )
 {
-    console.echo_enabled = enabled;
+    application_console_state.echo_enabled = enabled;
 }
 
 
@@ -134,9 +134,9 @@ void application_console_set_echo( bool enabled )
 /// </summary>
 void application_console_set_quiet( bool enabled )
 {
-    console.quiet = enabled;
-    console.echo_enabled = !enabled;
-    console.auto_status_enabled = !enabled;
+    application_console_state.quiet = enabled;
+    application_console_state.echo_enabled = !enabled;
+    application_console_state.auto_status_enabled = !enabled;
     application_console_status_stop();
 }
 
@@ -166,7 +166,7 @@ void application_console_mark_write( void )
 /// </summary>
 void application_console_print_prompt( void )
 {
-    if ( !console.quiet && !console.released )
+    if ( !application_console_state.quiet && !application_console_state.released )
     {
         application_console_mark_write();
         BSP_ConsolePrintf( "forgix> " );
@@ -191,7 +191,7 @@ void application_console_print_prompt( void )
 /// </summary>
 static void echo_character( int16_t character )
 {
-    if ( !console.quiet && console.echo_enabled )
+    if ( !application_console_state.quiet && application_console_state.echo_enabled )
     {
         application_console_mark_write();
         BSP_ConsolePutChar( (uint8_t) character );
@@ -207,7 +207,7 @@ static void echo_character( int16_t character )
 /// </summary>
 static void erase_character( void )
 {
-    if ( !console.quiet && console.echo_enabled )
+    if ( !application_console_state.quiet && application_console_state.echo_enabled )
     {
         application_console_mark_write();
         BSP_ConsolePrintf( "\b \b" );
@@ -224,37 +224,38 @@ static void erase_character( void )
 /// </summary>
 static void complete_line( void )
 {
-    if ( !console.quiet && console.echo_enabled )
+    if ( !application_console_state.quiet && application_console_state.echo_enabled )
     {
         application_console_mark_write();
         BSP_ConsolePrintf( "\r\n" );
     }
 
-    if ( console.used )
+    if ( application_console_state.used )
     {
-        console.line[ console.used ] = 0;
+        application_console_state.line[ application_console_state.used ] = 0;
         BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_COMMAND );
-        application_process_command( console.line );
-        console.used = 0;
+        application_process_command( application_console_state.line );
+        application_console_state.used = 0;
     }
 
     /* The keystroke that started this line paused whatever was running. A
        command that armed its own watch outranks the restore; otherwise a
        paused watch resumes with its period intact, one whole period from the
        line that interrupted it, and only the idle default starts over. */
-    if ( console.status_mode != APPLICATION_CONSOLE_STATUS_WATCH )
+    if ( application_console_state.status_mode != APPLICATION_CONSOLE_STATUS_WATCH )
     {
-        if ( console.paused_status_mode == APPLICATION_CONSOLE_STATUS_WATCH )
+        if ( application_console_state.paused_status_mode == APPLICATION_CONSOLE_STATUS_WATCH )
         {
-            console.status_mode = APPLICATION_CONSOLE_STATUS_WATCH;
-            console.next_status_ms = console.current_time_ms + console.status_period_ms;
+            application_console_state.status_mode = APPLICATION_CONSOLE_STATUS_WATCH;
+            application_console_state.next_status_ms = application_console_state.current_time_ms +
+                                                       application_console_state.status_period_ms;
         }
         else
         {
             application_console_status_schedule_idle();
         }
     }
-    console.paused_status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
+    application_console_state.paused_status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
     application_console_print_prompt();
 }
 
@@ -270,8 +271,8 @@ static void complete_line( void )
 /// </summary>
 static void cancel_line( void )
 {
-    console.used = 0;
-    if ( !console.quiet && console.echo_enabled )
+    application_console_state.used = 0;
+    if ( !application_console_state.quiet && application_console_state.echo_enabled )
     {
         application_console_mark_write();
         BSP_ConsolePrintf( "^C\r\n" );
@@ -292,10 +293,11 @@ static void cancel_line( void )
 /// </summary>
 static void redraw_line( void )
 {
-    if ( !console.quiet && console.echo_enabled )
+    if ( !application_console_state.quiet && application_console_state.echo_enabled )
     {
         application_console_mark_write();
-        BSP_ConsolePrintf( "\r\nforgix> %.*s", (int) console.used, console.line );
+        BSP_ConsolePrintf( "\r\nforgix> %.*s", (int) application_console_state.used,
+                           application_console_state.line );
     }
 }
 
@@ -311,17 +313,17 @@ static void redraw_line( void )
 /// </summary>
 static void process_character( int16_t character )
 {
-    if ( character == '\n' && console.swallow_lf )
+    if ( character == '\n' && application_console_state.swallow_lf )
     {
-        console.swallow_lf = false;
+        application_console_state.swallow_lf = false;
         return;
     }
-    console.swallow_lf = false;
+    application_console_state.swallow_lf = false;
     application_console_status_pause();
 
     if ( character == '\r' || character == '\n' )
     {
-        console.swallow_lf = character == '\r';
+        application_console_state.swallow_lf = character == '\r';
         complete_line();
     }
     else if ( character == 3 )
@@ -334,17 +336,17 @@ static void process_character( int16_t character )
     }
     else if ( character == 21 )
     {
-        while ( console.used )
+        while ( application_console_state.used )
         {
-            --console.used;
+            --application_console_state.used;
             erase_character();
         }
     }
     else if ( character == '\b' || character == 127 )
     {
-        if ( console.used )
+        if ( application_console_state.used )
         {
-            --console.used;
+            --application_console_state.used;
             erase_character();
         }
         else
@@ -354,9 +356,9 @@ static void process_character( int16_t character )
     }
     else if ( isprint( (unsigned char) character ) )
     {
-        if ( console.used + 1 < sizeof console.line )
+        if ( application_console_state.used + 1 < sizeof application_console_state.line )
         {
-            console.line[ console.used++ ] = (char) character;
+            application_console_state.line[ application_console_state.used++ ] = (char) character;
             echo_character( character );
         }
         else

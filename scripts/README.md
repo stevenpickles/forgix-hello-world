@@ -31,7 +31,7 @@ document](../docs/fpga-ci.md)).
 | Script | What it does |
 | --- | --- |
 | [check_efinity_reports.py](check_efinity_reports.py) | Verify the Efinity build used the Forgix pinout, met its clock target, and ran timing against the project SDC with every interface port constrained |
-| [check_firmware_layers.py](check_firmware_layers.py) | Protect the dependency boundary between application code and board support |
+| [check_firmware_layers.py](check_firmware_layers.py) | Protect the dependency boundary between application code and board support, including `_internal.h` ownership: only a module's own implementation files may include its internal header |
 | [check_protocol_constants.py](check_protocol_constants.py) | Verify every copy of the MCU-FPGA wire protocol -- BSP sources, register-map document, hardware-test script -- against `fpga/rtl/forgix_pkg.vhd`, the authority |
 | [check_repository.py](check_repository.py) | Validate repository-owned Efinity metadata without invoking the licensed tools |
 | [render_coverage_summary.py](render_coverage_summary.py) | Render Cobertura coverage totals as a GitHub-compatible HTML summary fragment |
@@ -59,6 +59,7 @@ document](../docs/fpga-ci.md)).
 
 | Script | What it does |
 | --- | --- |
+| [test_check_firmware_layers.py](test_check_firmware_layers.py) | Unit tests for the layering checker's internal-header ownership rule, including a whole-repository consistency run |
 | [test_check_protocol_constants.py](test_check_protocol_constants.py) | Unit tests for the protocol-constants checker, including a whole-repository consistency run |
 | [test_decode_scratch.py](test_decode_scratch.py) | Unit tests for the scratch-register decoder, pinning its half of the snapshot packing contract |
 | [test_efinity_tools.py](test_efinity_tools.py) | Unit tests for Efinity image conversion and build-report validation |

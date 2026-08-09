@@ -81,7 +81,7 @@ typedef struct
 /* The single instance, defined in application_ibit.c. A step is a foreground
    state machine spanning many passes, so its scratch has to outlive the pass
    that wrote it; the runner is what clears the per-step half between steps. */
-extern ibit_state_t ibit;
+extern ibit_state_t application_ibit_state;
 
 
 

@@ -118,36 +118,37 @@ application_ibit_outcome_t application_ibit_step_led( char *detail, size_t capac
     };
     static const uint32_t COLOUR_COUNT = sizeof COLOURS / sizeof COLOURS[ 0 ];
 
-    if ( !ibit.led_saved )
+    if ( !application_ibit_state.led_saved )
     {
-        ibit.led_before = BSP_LedGet();
-        ibit.led_saved = true;
-        ibit.phase = 0;
+        application_ibit_state.led_before = BSP_LedGet();
+        application_ibit_state.led_saved = true;
+        application_ibit_state.phase = 0;
     }
 
     const uint32_t due = application_ibit_step_elapsed_ms() / LED_PHASE_MS;
-    if ( due < ibit.phase )
+    if ( due < application_ibit_state.phase )
     {
         return APPLICATION_IBIT_PENDING;
     }
-    if ( ibit.phase < COLOUR_COUNT )
+    if ( application_ibit_state.phase < COLOUR_COUNT )
     {
-        const uint8_t *colour = COLOURS[ ibit.phase ];
+        const uint8_t *colour = COLOURS[ application_ibit_state.phase ];
         BSP_LedSet( colour[ 0 ], colour[ 1 ], colour[ 2 ], 128 );
         const bsp_led_state_t readback = BSP_LedGet();
         if ( readback.red != colour[ 0 ] || readback.green != colour[ 1 ] ||
              readback.blue != colour[ 2 ] )
         {
             snprintf( detail, capacity, "readback mismatch at step %lu: %u,%u,%u",
-                      (unsigned long) ibit.phase, readback.red, readback.green, readback.blue );
-            BSP_LedRestore( &ibit.led_before );
+                      (unsigned long) application_ibit_state.phase, readback.red, readback.green,
+                      readback.blue );
+            BSP_LedRestore( &application_ibit_state.led_before );
             return APPLICATION_IBIT_FAIL;
         }
-        ++ibit.phase;
+        ++application_ibit_state.phase;
         return APPLICATION_IBIT_PENDING;
     }
 
-    BSP_LedRestore( &ibit.led_before );
+    BSP_LedRestore( &application_ibit_state.led_before );
     snprintf( detail, capacity,
               "red, green, blue and white all read back; previous colour restored" );
     return APPLICATION_IBIT_PASS;
@@ -168,7 +169,7 @@ application_ibit_outcome_t application_ibit_step_led( char *detail, size_t capac
 /// </returns>
 application_ibit_outcome_t application_ibit_step_button( char *detail, size_t capacity )
 {
-    if ( ibit.phase == 0 )
+    if ( application_ibit_state.phase == 0 )
     {
         /* Cleared before the baseline is taken. The FPGA's counter is eight bits
            and saturates rather than wrapping, so on a board anyone has been
@@ -177,24 +178,27 @@ application_ibit_outcome_t application_ibit_step_button( char *detail, size_t ca
            exactly the boards that have seen the most use. */
         BSP_ButtonClearCount();
         const bsp_button_state_t start = BSP_ButtonGetState();
-        ibit.button_count_before = start.count;
-        ibit.button_level_before = start.level;
-        ibit.button_level_moved = false;
-        ibit.phase = 1;
-        ibit.next_poll_ms = ibit.current_time_ms;
+        application_ibit_state.button_count_before = start.count;
+        application_ibit_state.button_level_before = start.level;
+        application_ibit_state.button_level_moved = false;
+        application_ibit_state.phase = 1;
+        application_ibit_state.next_poll_ms = application_ibit_state.current_time_ms;
         application_ibit_mark_write();
         BSP_ConsolePrintf( "        press SW1 within %lus ...\n",
                            (unsigned long) ( APPLICATION_IBIT_BUTTON_TIMEOUT_MS / 1000u ) );
         return APPLICATION_IBIT_PENDING;
     }
-    if ( !application_deadline_reached( ibit.current_time_ms, ibit.next_poll_ms ) )
+    if ( !application_deadline_reached( application_ibit_state.current_time_ms,
+                                        application_ibit_state.next_poll_ms ) )
     {
         return APPLICATION_IBIT_PENDING;
     }
 
-    ibit.next_poll_ms = ibit.current_time_ms + BUTTON_POLL_MS;
+    application_ibit_state.next_poll_ms = application_ibit_state.current_time_ms + BUTTON_POLL_MS;
     const bsp_button_state_t now = BSP_ButtonGetState();
-    ibit.button_level_moved = ibit.button_level_moved || ( now.level != ibit.button_level_before );
+    application_ibit_state.button_level_moved =
+        application_ibit_state.button_level_moved ||
+        ( now.level != application_ibit_state.button_level_before );
 
     /* The count alone decides it. The FPGA debounces and counts edges
        continuously; the level is a 50 ms sample of a line a person holds down
@@ -207,13 +211,14 @@ application_ibit_outcome_t application_ibit_step_button( char *detail, size_t ca
        reporting is all it can honestly support at this sample rate. A counter
        running free without any press shows up in how far it moved, which is why
        the count is printed rather than merely tested. */
-    if ( now.count != ibit.button_count_before )
+    if ( now.count != application_ibit_state.button_count_before )
     {
         snprintf( detail, capacity, "pressed after %lu.%lus, count %u -> %u, level %s",
                   (unsigned long) ( application_ibit_step_elapsed_ms() / 1000u ),
                   (unsigned long) ( ( application_ibit_step_elapsed_ms() / 100u ) % 10u ),
-                  ibit.button_count_before, now.count,
-                  ibit.button_level_moved ? "seen to move" : "never sampled moving" );
+                  application_ibit_state.button_count_before, now.count,
+                  application_ibit_state.button_level_moved ? "seen to move"
+                                                            : "never sampled moving" );
         return APPLICATION_IBIT_PASS;
     }
     if ( application_ibit_step_elapsed_ms() < APPLICATION_IBIT_BUTTON_TIMEOUT_MS )
@@ -223,7 +228,7 @@ application_ibit_outcome_t application_ibit_step_button( char *detail, size_t ca
 
     snprintf( detail, capacity, "no press within %lus; count stayed at %u",
               (unsigned long) ( APPLICATION_IBIT_BUTTON_TIMEOUT_MS / 1000u ),
-              ibit.button_count_before );
+              application_ibit_state.button_count_before );
     return APPLICATION_IBIT_TIMEOUT;
 }
 
@@ -245,21 +250,23 @@ application_ibit_outcome_t application_ibit_step_button( char *detail, size_t ca
 /// </returns>
 application_ibit_outcome_t application_ibit_step_fpga_clock( char *detail, size_t capacity )
 {
-    if ( ibit.phase == 0 )
+    if ( application_ibit_state.phase == 0 )
     {
-        ibit.fpga_tick_before = BSP_FpgaTickSample();
-        ibit.fpga_tick_t0_ms = ibit.current_time_ms;
-        ibit.phase = 1;
+        application_ibit_state.fpga_tick_before = BSP_FpgaTickSample();
+        application_ibit_state.fpga_tick_t0_ms = application_ibit_state.current_time_ms;
+        application_ibit_state.phase = 1;
         return APPLICATION_IBIT_PENDING;
     }
-    if ( !application_deadline_reached( ibit.current_time_ms,
-                                        ibit.fpga_tick_t0_ms + FPGA_CLOCK_SAMPLE_MS ) )
+    if ( !application_deadline_reached( application_ibit_state.current_time_ms,
+                                        application_ibit_state.fpga_tick_t0_ms +
+                                            FPGA_CLOCK_SAMPLE_MS ) )
     {
         return APPLICATION_IBIT_PENDING;
     }
 
-    const uint32_t elapsed_ms = ibit.current_time_ms - ibit.fpga_tick_t0_ms;
-    const uint32_t ticks = BSP_FpgaTickSample() - ibit.fpga_tick_before;
+    const uint32_t elapsed_ms =
+        application_ibit_state.current_time_ms - application_ibit_state.fpga_tick_t0_ms;
+    const uint32_t ticks = BSP_FpgaTickSample() - application_ibit_state.fpga_tick_before;
     /* Both products outgrow 32 bits before their divides -- 32e6 ticks/s over
        500 ms is 1.6e10, and ticks * 1000 peaks near 4.3e12 -- so each is taken
        in 64 and only the quotient comes back down. elapsed_ms is at least

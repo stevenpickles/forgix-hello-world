@@ -66,7 +66,7 @@ typedef struct
 /* Not static, and the one exception to this section's name: the step modules
    are the other half of this state machine and reach it through
    application_ibit_internal.h. Nothing outside the three sees it. */
-ibit_state_t ibit;
+ibit_state_t application_ibit_state;
 
 static const char *const OUTCOME_TEXT[] = {
     "PENDING", "PASS", "FAIL", "TIMEOUT", "SKIP", "INFO",
@@ -239,7 +239,7 @@ const application_activity_t *application_ibit_soak( void )
 /// </returns>
 const application_activity_t *application_ibit_single( uint32_t index )
 {
-    ibit.index = index;
+    application_ibit_state.index = index;
     return &SINGLE;
 }
 
@@ -314,7 +314,7 @@ void application_ibit_mark_write( void )
 /// </returns>
 uint32_t application_ibit_step_elapsed_ms( void )
 {
-    return ibit.current_time_ms - ibit.step_started_ms;
+    return application_ibit_state.current_time_ms - application_ibit_state.step_started_ms;
 }
 
 
@@ -407,23 +407,23 @@ static void tally( application_ibit_outcome_t outcome )
 {
     if ( outcome == APPLICATION_IBIT_PASS )
     {
-        ++ibit.pass;
+        ++application_ibit_state.pass;
     }
     else if ( outcome == APPLICATION_IBIT_FAIL )
     {
-        ++ibit.fail;
+        ++application_ibit_state.fail;
     }
     else if ( outcome == APPLICATION_IBIT_TIMEOUT )
     {
-        ++ibit.timeout;
+        ++application_ibit_state.timeout;
     }
     else if ( outcome == APPLICATION_IBIT_SKIP )
     {
-        ++ibit.skip;
+        ++application_ibit_state.skip;
     }
     else
     {
-        ++ibit.info;
+        ++application_ibit_state.info;
     }
 }
 
@@ -440,11 +440,11 @@ static void tally( application_ibit_outcome_t outcome )
 /// </summary>
 static void begin_step( uint32_t index )
 {
-    ibit.index = index;
-    ibit.phase = 0;
-    ibit.led_saved = false;
-    ibit.step_started_ms = ibit.current_time_ms;
-    ibit.skipping = STEPS[ index ].needs_fpga && !fpga_reachable();
+    application_ibit_state.index = index;
+    application_ibit_state.phase = 0;
+    application_ibit_state.led_saved = false;
+    application_ibit_state.step_started_ms = application_ibit_state.current_time_ms;
+    application_ibit_state.skipping = STEPS[ index ].needs_fpga && !fpga_reachable();
 }
 
 
@@ -456,16 +456,16 @@ static void begin_step( uint32_t index )
 /// </summary>
 static void begin_run( uint32_t first_index, uint32_t last_index )
 {
-    ibit.current_time_ms = BSP_TimeNowMs();
-    ibit.first_index = first_index;
-    ibit.last_index = last_index;
-    ibit.sequence_started_ms = ibit.current_time_ms;
-    ibit.pass = 0;
-    ibit.fail = 0;
-    ibit.timeout = 0;
-    ibit.skip = 0;
-    ibit.info = 0;
-    ibit.memory_sampled = false;
+    application_ibit_state.current_time_ms = BSP_TimeNowMs();
+    application_ibit_state.first_index = first_index;
+    application_ibit_state.last_index = last_index;
+    application_ibit_state.sequence_started_ms = application_ibit_state.current_time_ms;
+    application_ibit_state.pass = 0;
+    application_ibit_state.fail = 0;
+    application_ibit_state.timeout = 0;
+    application_ibit_state.skip = 0;
+    application_ibit_state.info = 0;
+    application_ibit_state.memory_sampled = false;
     begin_step( first_index );
 }
 
@@ -477,14 +477,16 @@ static void begin_run( uint32_t first_index, uint32_t last_index )
 /// </summary>
 static void print_summary( void )
 {
-    const uint32_t elapsed_ms = ibit.current_time_ms - ibit.sequence_started_ms;
+    const uint32_t elapsed_ms =
+        application_ibit_state.current_time_ms - application_ibit_state.sequence_started_ms;
 
     application_ibit_mark_write();
-    BSP_ConsolePrintf( "\nIBIT: %lu PASS  %lu FAIL  %lu TIMEOUT  %lu SKIP  %lu INFO  in %lu.%lus\n",
-                       (unsigned long) ibit.pass, (unsigned long) ibit.fail,
-                       (unsigned long) ibit.timeout, (unsigned long) ibit.skip,
-                       (unsigned long) ibit.info, (unsigned long) ( elapsed_ms / 1000u ),
-                       (unsigned long) ( ( elapsed_ms / 100u ) % 10u ) );
+    BSP_ConsolePrintf(
+        "\nIBIT: %lu PASS  %lu FAIL  %lu TIMEOUT  %lu SKIP  %lu INFO  in %lu.%lus\n",
+        (unsigned long) application_ibit_state.pass, (unsigned long) application_ibit_state.fail,
+        (unsigned long) application_ibit_state.timeout, (unsigned long) application_ibit_state.skip,
+        (unsigned long) application_ibit_state.info, (unsigned long) ( elapsed_ms / 1000u ),
+        (unsigned long) ( ( elapsed_ms / 100u ) % 10u ) );
 }
 
 
@@ -505,16 +507,16 @@ static bool advance( void )
     char detail[ DETAIL_CAPACITY ] = { 0 };
 
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_IBIT );
-    ibit.current_time_ms = BSP_TimeNowMs();
+    application_ibit_state.current_time_ms = BSP_TimeNowMs();
 
     application_ibit_outcome_t outcome = APPLICATION_IBIT_SKIP;
-    if ( ibit.skipping )
+    if ( application_ibit_state.skipping )
     {
         snprintf( detail, sizeof detail, "FPGA not responding; this test sits behind it" );
     }
     else
     {
-        outcome = STEPS[ ibit.index ].run( detail, sizeof detail );
+        outcome = STEPS[ application_ibit_state.index ].run( detail, sizeof detail );
     }
     if ( outcome == APPLICATION_IBIT_PENDING )
     {
@@ -522,13 +524,13 @@ static bool advance( void )
     }
 
     tally( outcome );
-    print_result( ibit.index, outcome, detail );
-    if ( ibit.index == ibit.last_index )
+    print_result( application_ibit_state.index, outcome, detail );
+    if ( application_ibit_state.index == application_ibit_state.last_index )
     {
         return false;
     }
 
-    begin_step( ibit.index + 1u );
+    begin_step( application_ibit_state.index + 1u );
     return true;
 }
 
@@ -542,10 +544,10 @@ static bool advance( void )
 /// </summary>
 static void restore( void )
 {
-    if ( ibit.led_saved )
+    if ( application_ibit_state.led_saved )
     {
-        BSP_LedRestore( &ibit.led_before );
-        ibit.led_saved = false;
+        BSP_LedRestore( &application_ibit_state.led_before );
+        application_ibit_state.led_saved = false;
     }
 }
 
@@ -588,9 +590,9 @@ static bool sequence_poll( void )
 /// </summary>
 static void soak_start( void )
 {
-    ibit.soak_iterations = 0;
-    ibit.soak_failures = 0;
-    ibit.soak_timeouts = 0;
+    application_ibit_state.soak_iterations = 0;
+    application_ibit_state.soak_failures = 0;
+    application_ibit_state.soak_timeouts = 0;
     application_ibit_mark_write();
     BSP_ConsolePrintf( "\nIBIT soak; press any key to stop\n\n" );
     begin_run( 0, application_ibit_step_count() - 1u );
@@ -614,19 +616,20 @@ static bool soak_poll( void )
     }
 
     print_summary();
-    ++ibit.soak_iterations;
+    ++application_ibit_state.soak_iterations;
 
     /* Failures and timeouts are tallied apart, and only failures are the
        headline. A soak is unattended by definition, so the button times out on
        every iteration; folding that into the failure count would make the one
        number a burn-in exists to produce equal the run count forever. */
-    ibit.soak_failures += ( ibit.fail > 0u ) ? 1u : 0u;
-    ibit.soak_timeouts += ( ibit.timeout > 0u ) ? 1u : 0u;
+    application_ibit_state.soak_failures += ( application_ibit_state.fail > 0u ) ? 1u : 0u;
+    application_ibit_state.soak_timeouts += ( application_ibit_state.timeout > 0u ) ? 1u : 0u;
 
     application_ibit_mark_write();
     BSP_ConsolePrintf( "soak: %lu run(s), %lu with a failure, %lu with a timeout\n\n",
-                       (unsigned long) ibit.soak_iterations, (unsigned long) ibit.soak_failures,
-                       (unsigned long) ibit.soak_timeouts );
+                       (unsigned long) application_ibit_state.soak_iterations,
+                       (unsigned long) application_ibit_state.soak_failures,
+                       (unsigned long) application_ibit_state.soak_timeouts );
 
     begin_run( 0, application_ibit_step_count() - 1u );
     return true;
@@ -641,8 +644,8 @@ static bool soak_poll( void )
 static void single_start( void )
 {
     application_ibit_mark_write();
-    BSP_ConsolePrintf( "\n%s\n\n", STEPS[ ibit.index ].name );
-    begin_run( ibit.index, ibit.index );
+    BSP_ConsolePrintf( "\n%s\n\n", STEPS[ application_ibit_state.index ].name );
+    begin_run( application_ibit_state.index, application_ibit_state.index );
 }
 
 
