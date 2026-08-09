@@ -14,6 +14,8 @@
 #include "application_console.h"
 #include "application_console_status.h"
 #include "application_diagnostics.h"
+#include "application_diagnostics_led.h"
+#include "application_diagnostics_report.h"
 #include "application_time.h"
 #include "mock_bsp_console.h"
 #include "mock_bsp_time.h"
