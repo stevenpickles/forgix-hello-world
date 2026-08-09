@@ -10,6 +10,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "application_diagnostics_internal.h"
+#include "application_diagnostics_led.h"
+#include "application_diagnostics_report.h"
 #include "application_time.h"
 #include "bsp.h"
 
@@ -25,21 +28,12 @@
 
 enum
 {
-    HEARTBEAT_BRIGHTNESS = 64,
     /* Six heartbeat toggles mark a successful FPGA reconfiguration -- four
        white on-phases in all, because the repaint at the reconfiguring sample
        lands an extra one before the six countdown toggles begin. A frozen LED
        that resumes with this signature proves the MCU stayed alive and the
        FPGA lost its configuration. */
-    RECOVERY_TOGGLES = 6,
-    BOOT_BLINK_MAX = 8,
-    /* The blink code is the USB-free image's only boot-evidence channel, and it
-       plays once: a power cycle to see it again would destroy the very scratch
-       registers it is reporting. So it is paced to be readable and repeated. */
-    BOOT_BLINK_ON_MS = 350,
-    BOOT_BLINK_OFF_MS = 250,
-    BOOT_BLINK_GAP_MS = 800,
-    BOOT_REPORT_REPEATS = 3,
+    RECOVERY_TOGGLES = 6
 };
 
 
@@ -59,61 +53,6 @@ enum
 };
 
 
-typedef struct
-{
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint32_t blinks;
-} boot_signature_t;
-
-
-typedef struct
-{
-    bool usb_present;
-    bsp_boot_reason boot_reason;
-    uint32_t boot_marker;
-    uint32_t boot_snapshot[ BSP_WATCHDOG_SNAPSHOT_SLOTS ];
-
-    bool led_on;
-    /* True while something else owns the LED. The phase keeps advancing
-       underneath, so the heartbeat picks up where it would have been rather than
-       restarting whenever an activity ends. */
-    bool led_released;
-    uint32_t next_led_ms;
-    uint32_t next_sample_ms;
-    uint32_t uptime_seconds;
-    uint32_t recovery_toggles;
-    bsp_led_state_t commanded;
-
-    bsp_usb_health_t health;
-    uint32_t last_tx_count;
-    /* True while an unbroken run of samples has seen the transmit FIFO full
-       with the TX completion counter unmoved. Cleared by observed room or by
-       TX progress; inbound traffic does not touch it. */
-    bool fifo_stalled;
-    /* The timestamp of the first sample of that run -- the stall is measured
-       from the moment fullness was first observed, not from the last sample
-       that had room. Meaningful only while fifo_stalled is set. */
-    uint32_t fifo_stall_epoch_ms;
-    uint32_t last_frame_number;
-    uint32_t last_frame_ms;
-
-    uint32_t fpga_failures;
-    /* Exactly one of the three below moves with every fpga_failures increment,
-       naming the first term that failed: the configuration pin, the design-ID
-       ping, or the LED register readback. The split is what turns "the check
-       failed once a boot" from a mystery into a measurement. */
-    uint32_t fpga_cdone_failures;
-    uint32_t fpga_ping_failures;
-    uint32_t fpga_readback_failures;
-    /* Failing samples since the last passing one -- the debounce that keeps a
-       single bus misread from revoking readiness for the rest of the boot. */
-    uint32_t fpga_consecutive_failures;
-    uint32_t fpga_reconfigures;
-} diagnostics_state_t;
-
-
 
 
 /***************************************************************************************
@@ -123,7 +62,11 @@ typedef struct
 ***************************************************************************************/
 
 
-static diagnostics_state_t diagnostics;
+/* Not static: the LED policy and the reporting live in their own files and both
+   read this record through the extern in application_diagnostics_internal.h.
+   The three files are one module split by concern -- what the board has been
+   doing is a single fact, and a copy of it would let two of them disagree. */
+diagnostics_state_t diagnostics;
 
 
 
@@ -135,14 +78,6 @@ static diagnostics_state_t diagnostics;
 ***************************************************************************************/
 
 
-static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue );
-
-static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue );
-
-static void apply_led( uint32_t now_ms );
-
-static bool led_readback_matches( void );
-
 static void check_fpga( uint32_t now_ms );
 
 static void sample_usb( uint32_t now_ms );
@@ -150,18 +85,6 @@ static void sample_usb( uint32_t now_ms );
 static uint32_t packed_health( void );
 
 static void store_snapshots( void );
-
-static const char *boot_reason_name( void );
-
-static void print_boot_report( void );
-
-static void print_live_report( void );
-
-static uint32_t clamp_blinks( uint32_t marker );
-
-static boot_signature_t boot_signature( void );
-
-static void blink_boot_report( void );
 
 
 
@@ -195,10 +118,10 @@ void application_diagnostics_start( void )
        and when the USB-free image is built with FORGIX_DIAGNOSTIC_UART it is the
        only report that survives the FPGA dying. The blink code is additional,
        for the console-less build. */
-    print_boot_report();
+    application_diagnostics_report_boot();
     if ( !diagnostics.usb_present )
     {
-        blink_boot_report();
+        application_diagnostics_report_blink();
     }
 
     uint32_t now_ms = BSP_TimeNowMs();
@@ -208,7 +131,7 @@ void application_diagnostics_start( void )
     /* The stall run needs no seed: the wholesale zeroing above cleared the
        flag, and the epoch is only ever read while the flag is set. */
     diagnostics.last_frame_ms = now_ms;
-    apply_led( now_ms );
+    application_diagnostics_apply_led( now_ms );
 
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
     BSP_WatchdogStart( APPLICATION_DIAGNOSTICS_WATCHDOG_TIMEOUT_MS );
@@ -244,7 +167,7 @@ void application_diagnostics_poll( void )
     }
     if ( ( led_due || sample_due ) && !diagnostics.led_released )
     {
-        apply_led( now_ms );
+        application_diagnostics_apply_led( now_ms );
     }
     if ( led_due && diagnostics.recovery_toggles )
     {
@@ -260,60 +183,10 @@ void application_diagnostics_poll( void )
            The shell image omits it, where it would flood the console. */
         if ( !diagnostics.usb_present )
         {
-            print_live_report();
+            application_diagnostics_report_live();
         }
         BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
     }
-}
-
-/// <summary>
-///     Replays the boot line from what start captured rather than re-reading the
-///     hardware, which by now describes this run, then adds the live counters at
-///     their full width -- the retained slots only carry them modulo the bit
-///     fields they were packed into.
-/// </summary>
-void application_diagnostics_print_report( void )
-{
-    print_boot_report();
-    BSP_ConsolePrintf(
-        "diag: uptime=%lus connected=%u suspended=%u write=%lu activity=%lu sof=%lu "
-        "fpga_fail=%lu fpga_cdone=%lu fpga_ping=%lu fpga_led=%lu fpga_reconfig=%lu\n",
-        (unsigned long) diagnostics.uptime_seconds, (unsigned) diagnostics.health.connected,
-        (unsigned) diagnostics.health.suspended, (unsigned long) diagnostics.health.write_available,
-        (unsigned long) diagnostics.health.activity_count,
-        (unsigned long) diagnostics.health.frame_number, (unsigned long) diagnostics.fpga_failures,
-        (unsigned long) diagnostics.fpga_cdone_failures,
-        (unsigned long) diagnostics.fpga_ping_failures,
-        (unsigned long) diagnostics.fpga_readback_failures,
-        (unsigned long) diagnostics.fpga_reconfigures );
-}
-
-/// <summary>
-///     Stands down the heartbeat write and the readback comparison together, and
-///     deliberately leaves the LED showing whatever it last commanded: the new
-///     owner inherits a lit board rather than a dark one, and inherits it before
-///     it has painted anything of its own.
-/// </summary>
-void application_diagnostics_release_led( void )
-{
-    diagnostics.led_released = true;
-}
-
-/// <summary>
-///     Resumes the heartbeat at whatever phase it would have reached, not at the
-///     start of a period, so a short light show does not visibly reset the blink.
-///     Harmless without a matching release, which is what lets an aborted
-///     activity's stop path call it unconditionally.
-/// </summary>
-void application_diagnostics_reclaim_led( void )
-{
-    diagnostics.led_released = false;
-    /* Written immediately rather than at the next 250 ms edge. Waiting would
-       leave whatever the last owner painted on the board for a quarter of a
-       second after it stopped owning it, and -- worse -- would leave the FPGA
-       health check comparing against a command that predates the handover if it
-       samples first. */
-    apply_led( BSP_TimeNowMs() );
 }
 
 /// <summary>
@@ -339,145 +212,6 @@ bsp_boot_reason application_diagnostics_boot_reason( void )
 **
 ***************************************************************************************/
 
-
-/* The USB-free image has no USB health to show, so its resting heartbeat carries
-   the last boot reason instead. The blink code plays once and cannot be replayed
-   without destroying the evidence, so this keeps the verdict readable for the
-   whole run: blue is nominal, any other resting color means something happened. */
-/// <summary>
-///     Writes all three channels on every path, so the caller never has to clear
-///     them first and no reason can leak a channel from the previous call. A
-///     reason with no case of its own falls through to the blue a clean power-on
-///     gets, so an unrecognised code reads as nominal rather than as a fault.
-/// </summary>
-static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue )
-{
-    *red = 0;
-    *green = 0;
-    *blue = 255; /* blue: clean power-on */
-
-    switch ( diagnostics.boot_reason )
-    {
-    case BSP_BOOT_WATCHDOG:
-        *red = 255;
-        *blue = 0; /* red: the foreground stopped and the watchdog recovered it */
-        break;
-    case BSP_BOOT_BROWNOUT:
-        *red = 255;
-        *green = 255;
-        *blue = 0; /* yellow: supply droop */
-        break;
-    case BSP_BOOT_OTHER:
-        *green = 255; /* cyan: reset with no attributable cause */
-        break;
-    default:
-        break;
-    }
-}
-
-/// <summary>
-///     The branch order is a severity ladder rather than a set of independent
-///     tests: the recovery signature outranks any live verdict, and a link that
-///     is both suspended and starved of transfers shows only the first colour
-///     that matches. One LED cannot say two things at once.
-/// </summary>
-static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue )
-{
-    if ( diagnostics.recovery_toggles )
-    {
-        *red = 255;
-        *green = 255;
-        *blue = 255; /* white: FPGA reconfiguration recovery signature */
-    }
-    else if ( !diagnostics.usb_present )
-    {
-        resting_color( red, green, blue );
-    }
-    else if ( !diagnostics.health.connected )
-    {
-        *red = 0;
-        *green = 0;
-        *blue = 255; /* blue: host has not asserted DTR */
-    }
-    else if ( diagnostics.health.suspended ||
-              application_stalled_since( now_ms, diagnostics.last_frame_ms,
-                                         APPLICATION_DIAGNOSTICS_FRAME_STALL_MS ) )
-    {
-        *red = 255;
-        *green = 0;
-        *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
-    }
-    else if ( diagnostics.fifo_stalled &&
-              application_stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
-                                         APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
-    {
-        /* red: every sample for the whole window saw the transmit FIFO full
-           with no TX completion, measured from the first such sample. The flag
-           already encodes "full at the last sample", so no separate
-           write_available test is needed here. Two earlier shapes of this
-           verdict were wrong: keying off the last CDC traffic punished quiet
-           links, and pooling RX with TX let inbound traffic conceal a wedged
-           transmit endpoint indefinitely. */
-        *red = 255;
-        *green = 0;
-        *blue = 0;
-    }
-    else
-    {
-        *red = 0;
-        *green = 255;
-        *blue = 0; /* green: connected and transfers are completing */
-    }
-}
-
-/// <summary>
-///     The only place the heartbeat touches the LED, and it records what it asked
-///     for in the same step -- the FPGA readback check has nothing else to
-///     compare against, so a write that bypassed this would be reported as a bus
-///     fault. The dark half clears only the enable flag, matching BSP_LedOff,
-///     which leaves the recorded colour still describing the registers.
-/// </summary>
-static void apply_led( uint32_t now_ms )
-{
-    if ( diagnostics.led_on )
-    {
-        uint8_t red = 0;
-        uint8_t green = 0;
-        uint8_t blue = 0;
-        heartbeat_color( now_ms, &red, &green, &blue );
-        BSP_LedSet( red, green, blue, HEARTBEAT_BRIGHTNESS );
-        diagnostics.commanded = ( bsp_led_state_t ){
-            .red = red,
-            .green = green,
-            .blue = blue,
-            .brightness = HEARTBEAT_BRIGHTNESS,
-            .enabled = true,
-        };
-    }
-    else
-    {
-        BSP_LedOff();
-        diagnostics.commanded.enabled = false;
-    }
-}
-
-/// <summary>
-///     Compares every field, brightness and enable included, so a write that
-///     latched only some of the registers fails here rather than passing on
-///     colour alone. Meaningful only while the heartbeat still owns the LED, and
-///     only immediately after apply_led has run in this pass.
-/// </summary>
-/// <returns>
-///     True when the FPGA holds exactly what apply_led last commanded.
-/// </returns>
-static bool led_readback_matches( void )
-{
-    bsp_led_state_t led = BSP_LedGet();
-    return led.red == diagnostics.commanded.red && led.green == diagnostics.commanded.green &&
-           led.blue == diagnostics.commanded.blue &&
-           led.brightness == diagnostics.commanded.brightness &&
-           led.enabled == diagnostics.commanded.enabled;
-}
 
 /* Runs immediately after the heartbeat LED write, so the readback measures the
    FPGA bus rather than whatever a `color` command left behind between polls. */
@@ -507,7 +241,7 @@ static void check_fpga( uint32_t now_ms )
     {
         ++diagnostics.fpga_ping_failures;
     }
-    else if ( !diagnostics.led_released && !led_readback_matches() )
+    else if ( !diagnostics.led_released && !application_diagnostics_led_readback_matches() )
     {
         ++diagnostics.fpga_readback_failures;
     }
@@ -558,7 +292,7 @@ static void check_fpga( uint32_t now_ms )
         diagnostics.fpga_consecutive_failures = 0;
         if ( !diagnostics.led_released )
         {
-            apply_led( now_ms );
+            application_diagnostics_apply_led( now_ms );
         }
     }
 }
@@ -633,138 +367,4 @@ static void store_snapshots( void )
     BSP_WatchdogSnapshotSet( 0, diagnostics.uptime_seconds );
     BSP_WatchdogSnapshotSet( 1, diagnostics.health.activity_count );
     BSP_WatchdogSnapshotSet( 2, packed_health() );
-}
-
-/// <summary>
-///     Names the latched reason for the boot line. Anything the BSP did not
-///     classify shares the "other" text with BSP_BOOT_OTHER, so the report cannot
-///     tell the two apart -- deliberate, because neither is actionable and a
-///     numeric fallback would invite someone to look one up.
-/// </summary>
-/// <returns>
-///     A string literal, so it outlives every caller.
-/// </returns>
-static const char *boot_reason_name( void )
-{
-    switch ( diagnostics.boot_reason )
-    {
-    case BSP_BOOT_WATCHDOG:
-        return "watchdog";
-    case BSP_BOOT_BROWNOUT:
-        return "brownout";
-    case BSP_BOOT_POWER_ON:
-        return "power-on";
-    default:
-        return "other";
-    }
-}
-
-/// <summary>
-///     Prints entirely from the copy start took, so the line reads identically
-///     the first time and hours later when `diag` asks for it again. Nothing here
-///     goes near the scratch registers, which by now hold the running loop's own
-///     snapshots rather than the ones being reported.
-/// </summary>
-static void print_boot_report( void )
-{
-    BSP_ConsolePrintf( "diag: boot=%s marker=%lu loop=%lu usb=%lu health=%08lX\n",
-                       boot_reason_name(), (unsigned long) diagnostics.boot_marker,
-                       (unsigned long) diagnostics.boot_snapshot[ 0 ],
-                       (unsigned long) diagnostics.boot_snapshot[ 1 ],
-                       (unsigned long) diagnostics.boot_snapshot[ 2 ] );
-}
-
-/// <summary>
-///     Every field but one comes from RAM; the marker is read back out of the
-///     scratch register, so the line doubles as evidence that the retained-value
-///     path still works. A marker that stops tracking the loop here means the
-///     post-reset report is worthless, and this is where that shows up first.
-/// </summary>
-static void print_live_report( void )
-{
-    BSP_ConsolePrintf( "diag: t=%lus led=%u fpga_fail=%lu fpga_reconfig=%lu marker=%lu\n",
-                       (unsigned long) diagnostics.uptime_seconds, diagnostics.led_on,
-                       (unsigned long) diagnostics.fpga_failures,
-                       (unsigned long) diagnostics.fpga_reconfigures,
-                       (unsigned long) BSP_WatchdogMarkerGet() );
-}
-
-/// <summary>
-///     A zero marker becomes one blink rather than none, because a code with
-///     nothing to see cannot be told apart from a dead LED or a dead board. Above
-///     the maximum the count saturates, so a long code reads as "eight or more"
-///     rather than as an exact number somebody is expected to count.
-/// </summary>
-/// <returns>
-///     A blink count between one and BOOT_BLINK_MAX inclusive.
-/// </returns>
-static uint32_t clamp_blinks( uint32_t marker )
-{
-    if ( marker == 0 )
-    {
-        return 1;
-    }
-    if ( marker > BOOT_BLINK_MAX )
-    {
-        return BOOT_BLINK_MAX;
-    }
-    return marker;
-}
-
-/// <summary>
-///     Colour and count both carry the verdict, so a code stays readable when one
-///     of them is hard to judge: the fixed counts separate the reasons an
-///     onlooker cannot tell apart by hue. Only the watchdog case spends its count
-///     on the retained marker, which is the one reason with more to say.
-/// </summary>
-/// <returns>
-///     The colour and blink count standing for the latched boot reason.
-/// </returns>
-static boot_signature_t boot_signature( void )
-{
-    boot_signature_t signature = { 255, 255, 255, 1 }; /* power-on: one white blink */
-
-    switch ( diagnostics.boot_reason )
-    {
-    case BSP_BOOT_WATCHDOG:
-        /* red, blinked as many times as the retained progress marker */
-        signature = ( boot_signature_t ){ 255, 0, 0, clamp_blinks( diagnostics.boot_marker ) };
-        break;
-    case BSP_BOOT_BROWNOUT:
-        signature = ( boot_signature_t ){ 255, 255, 0, 2 }; /* yellow */
-        break;
-    case BSP_BOOT_OTHER:
-        signature = ( boot_signature_t ){ 0, 255, 255, 3 }; /* cyan */
-        break;
-    default:
-        break;
-    }
-    return signature;
-}
-
-/* The USB-free image has no console, so the same boot report is emitted as an
-   LED blink code. This runs before the watchdog is armed, so blocking is safe. */
-/// <summary>
-///     Blocks for several seconds -- three passes of up to eight blinks -- which
-///     only the unarmed watchdog makes safe. It repeats because there is no way
-///     to ask for it again, and finishes with the LED off, so the heartbeat's
-///     first write is what decides what shows next rather than a leftover colour.
-/// </summary>
-static void blink_boot_report( void )
-{
-    boot_signature_t signature = boot_signature();
-
-    BSP_LedOff();
-    BSP_TimeSleepMs( BOOT_BLINK_GAP_MS );
-    for ( uint32_t pass = 0; pass < BOOT_REPORT_REPEATS; ++pass )
-    {
-        for ( uint32_t blink = 0; blink < signature.blinks; ++blink )
-        {
-            BSP_LedSet( signature.red, signature.green, signature.blue, HEARTBEAT_BRIGHTNESS );
-            BSP_TimeSleepMs( BOOT_BLINK_ON_MS );
-            BSP_LedOff();
-            BSP_TimeSleepMs( BOOT_BLINK_OFF_MS );
-        }
-        BSP_TimeSleepMs( BOOT_BLINK_GAP_MS );
-    }
 }

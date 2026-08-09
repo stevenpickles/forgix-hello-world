@@ -64,6 +64,7 @@ add_library(forgix_bsp STATIC
   src/bsp/bsp_led.c
   src/bsp/bsp_mcu.c
   src/bsp/bsp_memory.c
+  src/bsp/bsp_memory_identity.c
   src/bsp/bsp_memory_verdict.c
   src/bsp/bsp_time.c
   src/bsp/bsp_watchdog.c
@@ -114,12 +115,18 @@ target_link_libraries(forgix_bsp_usb_stub PUBLIC pico_stdlib)
 add_library(forgix_application STATIC
   src/application/application.c
   src/application/application_console.c
+  src/application/application_console_status.c
   src/application/application_diagnostics.c
+  src/application/application_diagnostics_led.c
+  src/application/application_diagnostics_report.c
   src/application/application_effects.c
   src/application/application_ibit.c
+  src/application/application_ibit_steps_board.c
+  src/application/application_ibit_steps_fpga.c
   src/application/application_runner.c
   src/application/application_time.c
-  src/application/application_ui.c)
+  src/application/application_ui.c
+  src/application/application_ui_menu.c)
 target_include_directories(forgix_application
   PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src/application)
 target_link_libraries(forgix_application PUBLIC forgix_bsp)

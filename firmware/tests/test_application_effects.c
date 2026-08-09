@@ -12,6 +12,8 @@
 #include <string.h>
 
 #include "application_diagnostics.h"
+#include "application_diagnostics_led.h"
+#include "application_diagnostics_report.h"
 #include "application_effects.h"
 #include "application_time.h"
 #include "mock_bsp_console.h"
