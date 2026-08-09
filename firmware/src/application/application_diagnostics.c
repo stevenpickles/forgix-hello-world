@@ -66,7 +66,7 @@ enum
    read this record through the extern in application_diagnostics_internal.h.
    The three files are one module split by concern -- what the board has been
    doing is a single fact, and a copy of it would let two of them disagree. */
-diagnostics_state_t diagnostics;
+diagnostics_state_t application_diagnostics_state;
 
 
 
@@ -104,13 +104,13 @@ static void store_snapshots( void );
 /// </summary>
 void application_diagnostics_start( void )
 {
-    diagnostics = ( diagnostics_state_t ){ 0 };
-    diagnostics.usb_present = BSP_UsbPresent();
-    diagnostics.boot_reason = BSP_WatchdogBootReason();
-    diagnostics.boot_marker = BSP_WatchdogMarkerGet();
+    application_diagnostics_state = ( diagnostics_state_t ){ 0 };
+    application_diagnostics_state.usb_present = BSP_UsbPresent();
+    application_diagnostics_state.boot_reason = BSP_WatchdogBootReason();
+    application_diagnostics_state.boot_marker = BSP_WatchdogMarkerGet();
     for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
     {
-        diagnostics.boot_snapshot[ slot ] = BSP_WatchdogSnapshotGet( slot );
+        application_diagnostics_state.boot_snapshot[ slot ] = BSP_WatchdogSnapshotGet( slot );
         BSP_WatchdogSnapshotSet( slot, 0 );
     }
 
@@ -119,18 +119,19 @@ void application_diagnostics_start( void )
        only report that survives the FPGA dying. The blink code is additional,
        for the console-less build. */
     application_diagnostics_report_boot();
-    if ( !diagnostics.usb_present )
+    if ( !application_diagnostics_state.usb_present )
     {
         application_diagnostics_report_blink();
     }
 
     uint32_t now_ms = BSP_TimeNowMs();
-    diagnostics.led_on = true;
-    diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
-    diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
+    application_diagnostics_state.led_on = true;
+    application_diagnostics_state.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
+    application_diagnostics_state.next_sample_ms =
+        now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
     /* The stall run needs no seed: the wholesale zeroing above cleared the
        flag, and the epoch is only ever read while the flag is set. */
-    diagnostics.last_frame_ms = now_ms;
+    application_diagnostics_state.last_frame_ms = now_ms;
     application_diagnostics_apply_led( now_ms );
 
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
@@ -149,29 +150,33 @@ void application_diagnostics_poll( void )
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_LOOP );
 
     uint32_t now_ms = BSP_TimeNowMs();
-    bool led_due = application_deadline_reached( now_ms, diagnostics.next_led_ms );
-    bool sample_due = application_deadline_reached( now_ms, diagnostics.next_sample_ms );
+    bool led_due =
+        application_deadline_reached( now_ms, application_diagnostics_state.next_led_ms );
+    bool sample_due =
+        application_deadline_reached( now_ms, application_diagnostics_state.next_sample_ms );
 
     /* Sampling first means the heartbeat color below reflects the health just
        read, and the single LED write is the one the FPGA check reads back. */
     if ( sample_due )
     {
-        diagnostics.next_sample_ms = now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
-        ++diagnostics.uptime_seconds;
+        application_diagnostics_state.next_sample_ms =
+            now_ms + APPLICATION_DIAGNOSTICS_SAMPLE_PERIOD_MS;
+        ++application_diagnostics_state.uptime_seconds;
         sample_usb( now_ms );
     }
     if ( led_due )
     {
-        diagnostics.next_led_ms = now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
-        diagnostics.led_on = !diagnostics.led_on;
+        application_diagnostics_state.next_led_ms =
+            now_ms + APPLICATION_DIAGNOSTICS_LED_HALF_PERIOD_MS;
+        application_diagnostics_state.led_on = !application_diagnostics_state.led_on;
     }
-    if ( ( led_due || sample_due ) && !diagnostics.led_released )
+    if ( ( led_due || sample_due ) && !application_diagnostics_state.led_released )
     {
         application_diagnostics_apply_led( now_ms );
     }
-    if ( led_due && diagnostics.recovery_toggles )
+    if ( led_due && application_diagnostics_state.recovery_toggles )
     {
-        --diagnostics.recovery_toggles;
+        --application_diagnostics_state.recovery_toggles;
     }
     if ( sample_due )
     {
@@ -181,7 +186,7 @@ void application_diagnostics_poll( void )
            MCU-liveness proof the LED cannot give: it depends on nothing but the
            foreground loop, so the last logged second dates the freeze exactly.
            The shell image omits it, where it would flood the console. */
-        if ( !diagnostics.usb_present )
+        if ( !application_diagnostics_state.usb_present )
         {
             application_diagnostics_report_live();
         }
@@ -200,7 +205,7 @@ void application_diagnostics_poll( void )
 /// </returns>
 bsp_boot_reason application_diagnostics_boot_reason( void )
 {
-    return diagnostics.boot_reason;
+    return application_diagnostics_state.boot_reason;
 }
 
 
@@ -235,31 +240,33 @@ static void check_fpga( uint32_t now_ms )
        design-ID ping still answer for the FPGA. */
     if ( !BSP_FpgaCdone() )
     {
-        ++diagnostics.fpga_cdone_failures;
+        ++application_diagnostics_state.fpga_cdone_failures;
     }
     else if ( BSP_FpgaPing() != BSP_FPGA_DESIGN_ID )
     {
-        ++diagnostics.fpga_ping_failures;
+        ++application_diagnostics_state.fpga_ping_failures;
     }
-    else if ( !diagnostics.led_released && !application_diagnostics_led_readback_matches() )
+    else if ( !application_diagnostics_state.led_released &&
+              !application_diagnostics_led_readback_matches() )
     {
-        ++diagnostics.fpga_readback_failures;
+        ++application_diagnostics_state.fpga_readback_failures;
     }
     else
     {
-        diagnostics.fpga_consecutive_failures = 0;
+        application_diagnostics_state.fpga_consecutive_failures = 0;
         return;
     }
 
-    ++diagnostics.fpga_failures;
-    ++diagnostics.fpga_consecutive_failures;
+    ++application_diagnostics_state.fpga_failures;
+    ++application_diagnostics_state.fpga_consecutive_failures;
 
     /* The debounce. Bench evidence: this bus misreads about one sample per
        boot session, and a misread does not repeat, while a real fault fails
        every sample. Revoking on the first failure turned each transient into a
        shell gated until reboot; three in a row costs two seconds of latency on
        a genuine fault and nothing on a misread. */
-    if ( diagnostics.fpga_consecutive_failures < APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES )
+    if ( application_diagnostics_state.fpga_consecutive_failures <
+         APPLICATION_DIAGNOSTICS_FPGA_FAULT_SAMPLES )
     {
         return;
     }
@@ -282,15 +289,15 @@ static void check_fpga( uint32_t now_ms )
     }
     if ( BSP_FpgaReconfigure() )
     {
-        ++diagnostics.fpga_reconfigures;
-        diagnostics.recovery_toggles = RECOVERY_TOGGLES;
+        ++application_diagnostics_state.fpga_reconfigures;
+        application_diagnostics_state.recovery_toggles = RECOVERY_TOGGLES;
         /* The fresh configuration starts a fresh verdict: its registers are
            cleared, so the commanded heartbeat state has to be written again --
            but only while the heartbeat owns the LED. Released, those registers
            are the new owner's to fill, and reclaim repaints unconditionally
            when the handover ends. */
-        diagnostics.fpga_consecutive_failures = 0;
-        if ( !diagnostics.led_released )
+        application_diagnostics_state.fpga_consecutive_failures = 0;
+        if ( !application_diagnostics_state.led_released )
         {
             application_diagnostics_apply_led( now_ms );
         }
@@ -310,28 +317,32 @@ static void check_fpga( uint32_t now_ms )
 static void sample_usb( uint32_t now_ms )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_USB_SNAPSHOT );
-    diagnostics.health = BSP_UsbHealth();
+    application_diagnostics_state.health = BSP_UsbHealth();
 
     /* != rather than an ordered compare, so the counter wrapping past zero
        still reads as progress. */
-    const bool tx_moved = diagnostics.health.tx_complete_count != diagnostics.last_tx_count;
+    const bool tx_moved = application_diagnostics_state.health.tx_complete_count !=
+                          application_diagnostics_state.last_tx_count;
     if ( tx_moved )
     {
-        diagnostics.last_tx_count = diagnostics.health.tx_complete_count;
+        application_diagnostics_state.last_tx_count =
+            application_diagnostics_state.health.tx_complete_count;
     }
-    if ( diagnostics.health.write_available > 0u || tx_moved )
+    if ( application_diagnostics_state.health.write_available > 0u || tx_moved )
     {
-        diagnostics.fifo_stalled = false;
+        application_diagnostics_state.fifo_stalled = false;
     }
-    else if ( !diagnostics.fifo_stalled )
+    else if ( !application_diagnostics_state.fifo_stalled )
     {
-        diagnostics.fifo_stalled = true;
-        diagnostics.fifo_stall_epoch_ms = now_ms;
+        application_diagnostics_state.fifo_stalled = true;
+        application_diagnostics_state.fifo_stall_epoch_ms = now_ms;
     }
-    if ( diagnostics.health.frame_number != diagnostics.last_frame_number )
+    if ( application_diagnostics_state.health.frame_number !=
+         application_diagnostics_state.last_frame_number )
     {
-        diagnostics.last_frame_number = diagnostics.health.frame_number;
-        diagnostics.last_frame_ms = now_ms;
+        application_diagnostics_state.last_frame_number =
+            application_diagnostics_state.health.frame_number;
+        application_diagnostics_state.last_frame_ms = now_ms;
     }
 }
 
@@ -346,12 +357,14 @@ static void sample_usb( uint32_t now_ms )
 /// </returns>
 static uint32_t packed_health( void )
 {
-    uint32_t packed = diagnostics.health.frame_number & HEALTH_FRAME_MASK;
-    packed |= (uint32_t) diagnostics.health.connected << HEALTH_CONNECTED_SHIFT;
-    packed |= (uint32_t) diagnostics.health.suspended << HEALTH_SUSPENDED_SHIFT;
-    packed |= (uint32_t) ( diagnostics.health.write_available == 0 ) << HEALTH_WRITE_BLOCKED_SHIFT;
-    packed |= ( diagnostics.fpga_failures & HEALTH_FPGA_FAILURE_MASK ) << HEALTH_FPGA_FAILURE_SHIFT;
-    packed |= ( diagnostics.fpga_reconfigures & HEALTH_FPGA_RECONFIGURE_MASK )
+    uint32_t packed = application_diagnostics_state.health.frame_number & HEALTH_FRAME_MASK;
+    packed |= (uint32_t) application_diagnostics_state.health.connected << HEALTH_CONNECTED_SHIFT;
+    packed |= (uint32_t) application_diagnostics_state.health.suspended << HEALTH_SUSPENDED_SHIFT;
+    packed |= (uint32_t) ( application_diagnostics_state.health.write_available == 0 )
+              << HEALTH_WRITE_BLOCKED_SHIFT;
+    packed |= ( application_diagnostics_state.fpga_failures & HEALTH_FPGA_FAILURE_MASK )
+              << HEALTH_FPGA_FAILURE_SHIFT;
+    packed |= ( application_diagnostics_state.fpga_reconfigures & HEALTH_FPGA_RECONFIGURE_MASK )
               << HEALTH_FPGA_RECONFIGURE_SHIFT;
     return packed;
 }
@@ -364,7 +377,7 @@ static uint32_t packed_health( void )
 /// </summary>
 static void store_snapshots( void )
 {
-    BSP_WatchdogSnapshotSet( 0, diagnostics.uptime_seconds );
-    BSP_WatchdogSnapshotSet( 1, diagnostics.health.activity_count );
+    BSP_WatchdogSnapshotSet( 0, application_diagnostics_state.uptime_seconds );
+    BSP_WatchdogSnapshotSet( 1, application_diagnostics_state.health.activity_count );
     BSP_WatchdogSnapshotSet( 2, packed_health() );
 }

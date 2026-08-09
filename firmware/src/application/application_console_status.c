@@ -34,14 +34,15 @@
 /// </summary>
 void application_console_idle( void )
 {
-    console.current_time_ms = BSP_TimeNowMs();
+    application_console_state.current_time_ms = BSP_TimeNowMs();
 
     /* Unsolicited output is gated on DTR. Writing status into a port no host has
        opened is the firmware's only unbounded, self-inflicted trip through the
        untimed stdio flush loop. */
-    if ( console.quiet || console.used ||
-         console.status_mode == APPLICATION_CONSOLE_STATUS_DISABLED ||
-         !application_deadline_reached( console.current_time_ms, console.next_status_ms ) ||
+    if ( application_console_state.quiet || application_console_state.used ||
+         application_console_state.status_mode == APPLICATION_CONSOLE_STATUS_DISABLED ||
+         !application_deadline_reached( application_console_state.current_time_ms,
+                                        application_console_state.next_status_ms ) ||
          !BSP_UsbConnected() )
     {
         return;
@@ -51,7 +52,8 @@ void application_console_idle( void )
     BSP_ConsolePrintf( "\r\n" );
     application_print_status();
     application_console_print_prompt();
-    console.next_status_ms = console.current_time_ms + console.status_period_ms;
+    application_console_state.next_status_ms =
+        application_console_state.current_time_ms + application_console_state.status_period_ms;
 }
 
 
@@ -66,9 +68,10 @@ void application_console_idle( void )
 void application_console_set_watch( uint32_t period_seconds )
 {
     application_console_set_quiet( false );
-    console.status_mode = APPLICATION_CONSOLE_STATUS_WATCH;
-    console.status_period_ms = period_seconds * 1000u;
-    console.next_status_ms = console.current_time_ms + console.status_period_ms;
+    application_console_state.status_mode = APPLICATION_CONSOLE_STATUS_WATCH;
+    application_console_state.status_period_ms = period_seconds * 1000u;
+    application_console_state.next_status_ms =
+        application_console_state.current_time_ms + application_console_state.status_period_ms;
 }
 
 
@@ -80,7 +83,7 @@ void application_console_set_watch( uint32_t period_seconds )
 /// </summary>
 void application_console_disable_watch( void )
 {
-    console.auto_status_enabled = false;
+    application_console_state.auto_status_enabled = false;
     application_console_status_stop();
 }
 
@@ -94,15 +97,17 @@ void application_console_disable_watch( void )
 /// </summary>
 void application_console_status_schedule_idle( void )
 {
-    if ( console.quiet || console.released || !console.auto_status_enabled )
+    if ( application_console_state.quiet || application_console_state.released ||
+         !application_console_state.auto_status_enabled )
     {
-        console.status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
+        application_console_state.status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
         return;
     }
 
-    console.status_mode = APPLICATION_CONSOLE_STATUS_IDLE;
-    console.status_period_ms = APPLICATION_IDLE_STATUS_PERIOD_MS;
-    console.next_status_ms = console.current_time_ms + APPLICATION_IDLE_TIMEOUT_MS;
+    application_console_state.status_mode = APPLICATION_CONSOLE_STATUS_IDLE;
+    application_console_state.status_period_ms = APPLICATION_IDLE_STATUS_PERIOD_MS;
+    application_console_state.next_status_ms =
+        application_console_state.current_time_ms + APPLICATION_IDLE_TIMEOUT_MS;
 }
 
 
@@ -115,8 +120,8 @@ void application_console_status_schedule_idle( void )
 /// </summary>
 void application_console_status_stop( void )
 {
-    console.status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
-    console.paused_status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
+    application_console_state.status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
+    application_console_state.paused_status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
 }
 
 
@@ -129,9 +134,9 @@ void application_console_status_stop( void )
 /// </summary>
 void application_console_status_pause( void )
 {
-    if ( console.status_mode != APPLICATION_CONSOLE_STATUS_DISABLED )
+    if ( application_console_state.status_mode != APPLICATION_CONSOLE_STATUS_DISABLED )
     {
-        console.paused_status_mode = console.status_mode;
+        application_console_state.paused_status_mode = application_console_state.status_mode;
     }
-    console.status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
+    application_console_state.status_mode = APPLICATION_CONSOLE_STATUS_DISABLED;
 }

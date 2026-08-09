@@ -48,14 +48,14 @@ static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint
 /// </summary>
 void application_diagnostics_apply_led( uint32_t now_ms )
 {
-    if ( diagnostics.led_on )
+    if ( application_diagnostics_state.led_on )
     {
         uint8_t red = 0;
         uint8_t green = 0;
         uint8_t blue = 0;
         heartbeat_color( now_ms, &red, &green, &blue );
         BSP_LedSet( red, green, blue, APPLICATION_DIAGNOSTICS_HEARTBEAT_BRIGHTNESS );
-        diagnostics.commanded = ( bsp_led_state_t ){
+        application_diagnostics_state.commanded = ( bsp_led_state_t ){
             .red = red,
             .green = green,
             .blue = blue,
@@ -66,7 +66,7 @@ void application_diagnostics_apply_led( uint32_t now_ms )
     else
     {
         BSP_LedOff();
-        diagnostics.commanded.enabled = false;
+        application_diagnostics_state.commanded.enabled = false;
     }
 }
 
@@ -82,10 +82,11 @@ void application_diagnostics_apply_led( uint32_t now_ms )
 bool application_diagnostics_led_readback_matches( void )
 {
     bsp_led_state_t led = BSP_LedGet();
-    return led.red == diagnostics.commanded.red && led.green == diagnostics.commanded.green &&
-           led.blue == diagnostics.commanded.blue &&
-           led.brightness == diagnostics.commanded.brightness &&
-           led.enabled == diagnostics.commanded.enabled;
+    return led.red == application_diagnostics_state.commanded.red &&
+           led.green == application_diagnostics_state.commanded.green &&
+           led.blue == application_diagnostics_state.commanded.blue &&
+           led.brightness == application_diagnostics_state.commanded.brightness &&
+           led.enabled == application_diagnostics_state.commanded.enabled;
 }
 
 /// <summary>
@@ -96,7 +97,7 @@ bool application_diagnostics_led_readback_matches( void )
 /// </summary>
 void application_diagnostics_release_led( void )
 {
-    diagnostics.led_released = true;
+    application_diagnostics_state.led_released = true;
 }
 
 /// <summary>
@@ -107,7 +108,7 @@ void application_diagnostics_release_led( void )
 /// </summary>
 void application_diagnostics_reclaim_led( void )
 {
-    diagnostics.led_released = false;
+    application_diagnostics_state.led_released = false;
     /* Written immediately rather than at the next 250 ms edge. Waiting would
        leave whatever the last owner painted on the board for a quarter of a
        second after it stopped owning it, and -- worse -- would leave the FPGA
@@ -142,7 +143,7 @@ static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue )
     *green = 0;
     *blue = 255; /* blue: clean power-on */
 
-    switch ( diagnostics.boot_reason )
+    switch ( application_diagnostics_state.boot_reason )
     {
     case BSP_BOOT_WATCHDOG:
         *red = 255;
@@ -169,32 +170,32 @@ static void resting_color( uint8_t *red, uint8_t *green, uint8_t *blue )
 /// </summary>
 static void heartbeat_color( uint32_t now_ms, uint8_t *red, uint8_t *green, uint8_t *blue )
 {
-    if ( diagnostics.recovery_toggles )
+    if ( application_diagnostics_state.recovery_toggles )
     {
         *red = 255;
         *green = 255;
         *blue = 255; /* white: FPGA reconfiguration recovery signature */
     }
-    else if ( !diagnostics.usb_present )
+    else if ( !application_diagnostics_state.usb_present )
     {
         resting_color( red, green, blue );
     }
-    else if ( !diagnostics.health.connected )
+    else if ( !application_diagnostics_state.health.connected )
     {
         *red = 0;
         *green = 0;
         *blue = 255; /* blue: host has not asserted DTR */
     }
-    else if ( diagnostics.health.suspended ||
-              application_stalled_since( now_ms, diagnostics.last_frame_ms,
+    else if ( application_diagnostics_state.health.suspended ||
+              application_stalled_since( now_ms, application_diagnostics_state.last_frame_ms,
                                          APPLICATION_DIAGNOSTICS_FRAME_STALL_MS ) )
     {
         *red = 255;
         *green = 0;
         *blue = 255; /* magenta: bus suspended or start-of-frame counter frozen */
     }
-    else if ( diagnostics.fifo_stalled &&
-              application_stalled_since( now_ms, diagnostics.fifo_stall_epoch_ms,
+    else if ( application_diagnostics_state.fifo_stalled &&
+              application_stalled_since( now_ms, application_diagnostics_state.fifo_stall_epoch_ms,
                                          APPLICATION_DIAGNOSTICS_FIFO_STALL_MS ) )
     {
         /* red: every sample for the whole window saw the transmit FIFO full

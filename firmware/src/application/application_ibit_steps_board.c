@@ -246,7 +246,7 @@ application_ibit_outcome_t application_ibit_step_boot_flash( char *detail, size_
 /// </returns>
 application_ibit_outcome_t application_ibit_step_psram( char *detail, size_t capacity )
 {
-    if ( ibit.phase == 0 )
+    if ( application_ibit_state.phase == 0 )
     {
         const bsp_memory_report_t memory = memory_report();
 
@@ -271,41 +271,44 @@ application_ibit_outcome_t application_ibit_step_psram( char *detail, size_t cap
         /* Identity before sweep, because the read begins with a global reset
            that tears the device out of QPI; the same call re-enters it. A
            failed re-entry means there is no window to sweep. */
-        ibit.psram_identity = BSP_MemoryPsramIdentify();
-        if ( !ibit.psram_identity.restored )
+        application_ibit_state.psram_identity = BSP_MemoryPsramIdentify();
+        if ( !application_ibit_state.psram_identity.restored )
         {
             snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry/verify failed",
-                      ibit.psram_identity.kgd, ibit.psram_identity.eid );
+                      application_ibit_state.psram_identity.kgd,
+                      application_ibit_state.psram_identity.eid );
             return APPLICATION_IBIT_FAIL;
         }
-        ibit.psram_chunks = memory.psram_bytes / (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
-        ibit.phase = 1;
+        application_ibit_state.psram_chunks =
+            memory.psram_bytes / (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES;
+        application_ibit_state.phase = 1;
         return APPLICATION_IBIT_PENDING;
     }
 
-    const uint32_t swept_kib =
-        ibit.psram_chunks * ( (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES / 1024u );
-    const uint32_t chunk_ordinal = ibit.phase - 1u;
-    const bsp_memory_sweep_op op = (bsp_memory_sweep_op) ( chunk_ordinal / ibit.psram_chunks );
+    const uint32_t swept_kib = application_ibit_state.psram_chunks *
+                               ( (uint32_t) BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES / 1024u );
+    const uint32_t chunk_ordinal = application_ibit_state.phase - 1u;
+    const bsp_memory_sweep_op op =
+        (bsp_memory_sweep_op) ( chunk_ordinal / application_ibit_state.psram_chunks );
     const bsp_memory_sweep_result_t result =
-        BSP_MemoryPsramSweepChunk( op, chunk_ordinal % ibit.psram_chunks );
+        BSP_MemoryPsramSweepChunk( op, chunk_ordinal % application_ibit_state.psram_chunks );
 
     if ( !result.ok )
     {
         snprintf( detail, capacity, "%luKiB sweep %lu/3 LOST at 0x%08lX, kgd=%02X eid=%02X%s",
                   (unsigned long) swept_kib, (unsigned long) ( (uint32_t) op + 1u ),
-                  (unsigned long) result.fail_address, ibit.psram_identity.kgd,
-                  ibit.psram_identity.eid, psram_schematic_note() );
+                  (unsigned long) result.fail_address, application_ibit_state.psram_identity.kgd,
+                  application_ibit_state.psram_identity.eid, psram_schematic_note() );
         return APPLICATION_IBIT_FAIL;
     }
-    if ( ibit.phase == 3u * ibit.psram_chunks )
+    if ( application_ibit_state.phase == 3u * application_ibit_state.psram_chunks )
     {
         snprintf( detail, capacity, "%luKiB sweep held, kgd=%02X eid=%02X%s",
-                  (unsigned long) swept_kib, ibit.psram_identity.kgd, ibit.psram_identity.eid,
-                  psram_schematic_note() );
+                  (unsigned long) swept_kib, application_ibit_state.psram_identity.kgd,
+                  application_ibit_state.psram_identity.eid, psram_schematic_note() );
         return APPLICATION_IBIT_PASS;
     }
-    ++ibit.phase;
+    ++application_ibit_state.phase;
     return APPLICATION_IBIT_PENDING;
 }
 
@@ -358,10 +361,10 @@ application_ibit_outcome_t application_ibit_step_usb( char *detail, size_t capac
 {
     const bsp_usb_health_t health = BSP_UsbHealth();
 
-    if ( ibit.phase == 0 )
+    if ( application_ibit_state.phase == 0 )
     {
-        ibit.usb_frame_before = health.frame_number;
-        ibit.phase = 1;
+        application_ibit_state.usb_frame_before = health.frame_number;
+        application_ibit_state.phase = 1;
         return APPLICATION_IBIT_PENDING;
     }
     if ( application_ibit_step_elapsed_ms() < USB_SAMPLE_MS )
@@ -369,7 +372,7 @@ application_ibit_outcome_t application_ibit_step_usb( char *detail, size_t capac
         return APPLICATION_IBIT_PENDING;
     }
 
-    const bool framing = health.frame_number != ibit.usb_frame_before;
+    const bool framing = health.frame_number != application_ibit_state.usb_frame_before;
     snprintf( detail, capacity, "dtr=%u suspended=%u sof %s txfree=%lu", health.connected,
               health.suspended, framing ? "advancing" : "FROZEN",
               (unsigned long) health.write_available );
@@ -439,12 +442,12 @@ application_ibit_outcome_t application_ibit_step_watchdog( char *detail, size_t 
 /// </returns>
 static bsp_memory_report_t memory_report( void )
 {
-    if ( !ibit.memory_sampled )
+    if ( !application_ibit_state.memory_sampled )
     {
-        ibit.memory = BSP_MemoryCheck();
-        ibit.memory_sampled = true;
+        application_ibit_state.memory = BSP_MemoryCheck();
+        application_ibit_state.memory_sampled = true;
     }
-    return ibit.memory;
+    return application_ibit_state.memory;
 }
 
 
@@ -457,5 +460,9 @@ static bsp_memory_report_t memory_report( void )
 /// </returns>
 static const char *psram_schematic_note( void )
 {
-    return ibit.psram_identity.kgd == 0x5du ? "" : " (not the part on the schematic)";
+    if ( application_ibit_state.psram_identity.kgd == 0x5du )
+    {
+        return "";
+    }
+    return " (not the part on the schematic)";
 }

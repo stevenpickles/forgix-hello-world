@@ -72,7 +72,7 @@ typedef struct
 } console_state_t;
 
 
-extern console_state_t console;
+extern console_state_t application_console_state;
 
 
 

@@ -32,7 +32,7 @@
    reads the clock this pass cached, and it does so through the extern in
    application_ui_internal.h. The two files are one module split by concern, so
    they share the singleton rather than each keeping half of it. */
-ui_state_t ui;
+ui_state_t application_ui_state;
 
 
 
@@ -68,10 +68,10 @@ static void finish_activity( void );
 /// </summary>
 void application_ui_start( void )
 {
-    ui = ( ui_state_t ){ .mode = APPLICATION_UI_MODE_BANNER };
-    ui.current_time_ms = BSP_TimeNowMs();
-    ui.started_ms = ui.current_time_ms;
-    ui.next_banner_ms = ui.current_time_ms;
+    application_ui_state = ( ui_state_t ){ .mode = APPLICATION_UI_MODE_BANNER };
+    application_ui_state.current_time_ms = BSP_TimeNowMs();
+    application_ui_state.started_ms = application_ui_state.current_time_ms;
+    application_ui_state.next_banner_ms = application_ui_state.current_time_ms;
 }
 
 
@@ -97,13 +97,13 @@ void application_ui_poll( void )
 {
     BSP_WatchdogMarkerSet( APPLICATION_DIAGNOSTICS_MARKER_CONSOLE_READ );
     int16_t character = BSP_ConsoleGetCharTimeoutUs( 1000 );
-    ui.current_time_ms = BSP_TimeNowMs();
+    application_ui_state.current_time_ms = BSP_TimeNowMs();
 
     /* A real byte is 0..255; the timeout sentinel is merely the common
        negative. Testing against the sentinel alone would let any other
        negative SDK error code impersonate a keystroke -- and a phantom
        keystroke aborts activities and dismisses banners. */
-    if ( ui.mode == APPLICATION_UI_MODE_SHELL )
+    if ( application_ui_state.mode == APPLICATION_UI_MODE_SHELL )
     {
         if ( character >= 0 )
         {
@@ -116,18 +116,18 @@ void application_ui_poll( void )
         return;
     }
 
-    if ( ui.mode == APPLICATION_UI_MODE_ACTIVITY )
+    if ( application_ui_state.mode == APPLICATION_UI_MODE_ACTIVITY )
     {
         /* Any key aborts. A user watching a test they no longer want should not
            have to remember which key means stop. */
         if ( character >= 0 )
         {
-            ui.activity->stop();
+            application_ui_state.activity->stop();
             application_ui_mark_write();
             BSP_ConsolePrintf( "\naborted\n" );
             finish_activity();
         }
-        else if ( !ui.activity->poll() )
+        else if ( !application_ui_state.activity->poll() )
         {
             finish_activity();
         }
@@ -138,14 +138,14 @@ void application_ui_poll( void )
 
     if ( character >= 0 )
     {
-        if ( ui.mode == APPLICATION_UI_MODE_BANNER )
+        if ( application_ui_state.mode == APPLICATION_UI_MODE_BANNER )
         {
             /* The key that ends the banner is consumed by ending it. Treating it
                as a selection as well would fire whichever item the user happened
                to hit while reaching for any key at all. */
             enter_menu();
         }
-        else if ( ui.mode == APPLICATION_UI_MODE_STEPS )
+        else if ( application_ui_state.mode == APPLICATION_UI_MODE_STEPS )
         {
             application_ui_menu_select_step( character );
         }
@@ -156,14 +156,16 @@ void application_ui_poll( void )
         return;
     }
 
-    if ( ui.mode != APPLICATION_UI_MODE_BANNER ||
-         !application_deadline_reached( ui.current_time_ms, ui.next_banner_ms ) )
+    if ( application_ui_state.mode != APPLICATION_UI_MODE_BANNER ||
+         !application_deadline_reached( application_ui_state.current_time_ms,
+                                        application_ui_state.next_banner_ms ) )
     {
         return;
     }
 
-    ui.next_banner_ms = ui.current_time_ms + APPLICATION_UI_BANNER_PERIOD_MS;
-    ++ui.banner_count;
+    application_ui_state.next_banner_ms =
+        application_ui_state.current_time_ms + APPLICATION_UI_BANNER_PERIOD_MS;
+    ++application_ui_state.banner_count;
 
     /* The count advances whether or not anyone is listening, so it reads as
        uptime rather than as a byte count. Only the writing is gated on DTR:
@@ -200,7 +202,7 @@ void application_ui_mark_write( void )
 /// </returns>
 uint32_t application_ui_uptime_seconds( void )
 {
-    return ( ui.current_time_ms - ui.started_ms ) / 1000u;
+    return ( application_ui_state.current_time_ms - application_ui_state.started_ms ) / 1000u;
 }
 
 
@@ -217,8 +219,8 @@ uint32_t application_ui_uptime_seconds( void )
 void application_ui_start_activity( const application_activity_t *activity )
 {
     application_diagnostics_release_led();
-    ui.mode = APPLICATION_UI_MODE_ACTIVITY;
-    ui.activity = activity;
+    application_ui_state.mode = APPLICATION_UI_MODE_ACTIVITY;
+    application_ui_state.activity = activity;
     activity->start();
 }
 
@@ -240,7 +242,8 @@ void application_ui_start_activity( const application_activity_t *activity )
 static void print_banner( void )
 {
     application_ui_mark_write();
-    BSP_ConsolePrintf( "hello world - %lu - press any key\n", (unsigned long) ui.banner_count );
+    BSP_ConsolePrintf( "hello world - %lu - press any key\n",
+                       (unsigned long) application_ui_state.banner_count );
 }
 
 
@@ -255,7 +258,7 @@ static void enter_menu( void )
        `menu` command reaches here from inside command dispatch, and the shell
        would otherwise print one last prompt after the menu that replaced it. */
     application_console_release();
-    ui.mode = APPLICATION_UI_MODE_MENU;
+    application_ui_state.mode = APPLICATION_UI_MODE_MENU;
     application_ui_menu_print();
 }
 
@@ -268,7 +271,7 @@ static void enter_menu( void )
 /// </summary>
 static void finish_activity( void )
 {
-    ui.activity = NULL;
+    application_ui_state.activity = NULL;
     application_diagnostics_reclaim_led();
     enter_menu();
 }
