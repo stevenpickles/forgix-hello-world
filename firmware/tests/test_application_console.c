@@ -77,12 +77,12 @@ void test_console_echoes_a_command_and_coalesces_crlf( void )
 
     poll_text_at( "help\r\n", 100 );
 
-    TEST_ASSERT_EQUAL_STRING(
-        "help\r\n"
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | memtest | menu | reset | "
-        "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n"
-        "forgix> ",
-        MOCK_BSP_ConsoleOutput() );
+    TEST_ASSERT_EQUAL_STRING( "help\r\n"
+                              "hello | color <r> <g> <b> [brightness] | off | status | diag | "
+                              "memid | memtest | menu | reset | "
+                              "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n"
+                              "forgix> ",
+                              MOCK_BSP_ConsoleOutput() );
 }
 
 
@@ -166,10 +166,10 @@ void test_quiet_mode_keeps_machine_commands_free_of_echo_prompts_and_telemetry( 
     poll_at( 50002 );
     poll_text_at( "help\r", 50100 );
 
-    TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | memtest | menu | reset | "
-        "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
-        MOCK_BSP_ConsoleOutput() );
+    TEST_ASSERT_EQUAL_STRING( "hello | color <r> <g> <b> [brightness] | off | status | diag | "
+                              "memid | memtest | menu | reset | "
+                              "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
+                              MOCK_BSP_ConsoleOutput() );
 }
 
 
@@ -200,7 +200,8 @@ void test_echo_can_be_disabled_and_reenabled_without_changing_command_responses(
     poll_at( 151 );
     poll_text_at( "help\r", 200 );
     TEST_ASSERT_EQUAL_STRING(
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | memtest | menu | reset | "
+        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | memtest | menu | "
+        "reset | "
         "echo <on|off> | watch <seconds|off> | quiet | interactive | help\nforgix> ",
         MOCK_BSP_ConsoleOutput() );
 
@@ -237,11 +238,11 @@ void test_released_console_stops_prompting_and_stops_scheduling_status( void )
     application_console_release();
     poll_text_at( "help\r", 100 );
 
-    TEST_ASSERT_EQUAL_STRING(
-        "help\r\n"
-        "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | memtest | menu | reset | "
-        "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
-        MOCK_BSP_ConsoleOutput() );
+    TEST_ASSERT_EQUAL_STRING( "help\r\n"
+                              "hello | color <r> <g> <b> [brightness] | off | status | diag | "
+                              "memid | memtest | menu | reset | "
+                              "echo <on|off> | watch <seconds|off> | quiet | interactive | help\n",
+                              MOCK_BSP_ConsoleOutput() );
 
     MOCK_BSP_ConsoleReset();
     poll_at( 60000 );

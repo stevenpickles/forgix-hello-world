@@ -204,8 +204,7 @@ static void _RunMappedSlice( const bsp_memory_bist_slice_t *ptr_slice )
     {
         const uint32_t address = BSP_MemoryBistChunkAddress( ptr_slice, chunk );
         volatile uint8_t *const ptr_memory = (volatile uint8_t *) ( PSRAM_NOCACHE_BASE + address );
-        uint8_t *const ptr_data =
-            &_bistSliceData[ chunk * (uint32_t) BSP_MEMORY_BIST_CHUNK_BYTES ];
+        uint8_t *const ptr_data = &_bistSliceData[ chunk * (uint32_t) BSP_MEMORY_BIST_CHUNK_BYTES ];
 
         if ( !ptr_slice->verifying )
         {
@@ -229,9 +228,9 @@ static void _RunMappedSlice( const bsp_memory_bist_slice_t *ptr_slice )
 
     if ( ptr_slice->verifying )
     {
-        BSP_MemoryBistNoteSliceObserved(
-            &_bistContext, _bistSliceData,
-            ptr_slice->chunk_count * (uint32_t) BSP_MEMORY_BIST_CHUNK_BYTES );
+        BSP_MemoryBistNoteSliceObserved( &_bistContext, _bistSliceData,
+                                         ptr_slice->chunk_count *
+                                             (uint32_t) BSP_MEMORY_BIST_CHUNK_BYTES );
     }
 }
 

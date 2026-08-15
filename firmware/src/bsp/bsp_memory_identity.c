@@ -34,8 +34,7 @@ static void _RestoreBoot2Xip( void );
    function must run from RAM: it suspends chip-select-0 XIP to use the bus,
    and flash-resident code cannot execute while it is down. */
 static void _CsOperationSequence( const bsp_memory_cs_operation_t *ptr_operations,
-                                  uint32_t operationCount, uint32_t clkdiv,
-                                  uint32_t csAssertBits )
+                                  uint32_t operationCount, uint32_t clkdiv, uint32_t csAssertBits )
     __attribute__( ( noinline, section( ".time_critical._CsOperationSequence" ) ) );
 #endif
 
@@ -64,8 +63,7 @@ void BSP_MemoryCs1OperationSequence( const bsp_memory_cs_operation_t *ptr_operat
     flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_8K );
 
     const uint32_t interrupts = save_and_disable_interrupts();
-    _CsOperationSequence( ptr_operations, operationCount, clkdiv,
-                          QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
+    _CsOperationSequence( ptr_operations, operationCount, clkdiv, QMI_DIRECT_CSR_ASSERT_CS1N_BITS );
 
     /* Do this before boot2 restoration. Leaving 8K advertised makes the ROM
        send another XIP-exit sequence to CS1, which is foreign traffic after
@@ -169,8 +167,7 @@ static void _RestoreBoot2Xip( void )
 ///     the window.
 /// </summary>
 static void _CsOperationSequence( const bsp_memory_cs_operation_t *ptr_operations,
-                                  uint32_t operationCount, uint32_t clkdiv,
-                                  uint32_t csAssertBits )
+                                  uint32_t operationCount, uint32_t clkdiv, uint32_t csAssertBits )
 {
     rom_connect_internal_flash_fn connect_internal_flash =
         (rom_connect_internal_flash_fn) rom_func_lookup_inline( ROM_FUNC_CONNECT_INTERNAL_FLASH );

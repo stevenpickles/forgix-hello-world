@@ -57,8 +57,7 @@
 
 #define OPERATION_COUNT ( 6u + ( SCRATCH_PASSES * 2u * SCRATCH_CHUNKS ) )
 
-_Static_assert( SYS_CLK_HZ / POST_CLKDIV <= 33000000u,
-                "Read-ID must stay at or under 33 MHz" );
+_Static_assert( SYS_CLK_HZ / POST_CLKDIV <= 33000000u, "Read-ID must stay at or under 33 MHz" );
 _Static_assert( ( 8ull * READ_ID_BYTES * POST_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000ull,
                 "Read-ID must hold chip select shorter than 3 us" );
 _Static_assert( ( 8ull * READ_OP_BYTES * POST_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000ull,
@@ -149,10 +148,9 @@ bsp_memory_post_report_t BSP_MemoryPsramPost( void )
     _postReport.scratch_ok = _ScratchVerified( &_postReport.scratch_fail_address );
     _postReport.restored = BSP_MemoryPsramForceFromDatasheet();
     BSP_MemoryPsramRecordIdentity( _postReport.kgd, _postReport.eid );
-    _postReport.result =
-        BSP_MemoryVerdictPostClassify( _postReport.mfid, _postReport.kgd, _postReport.eid,
-                                       _postReport.mr0, _postReport.scratch_ok,
-                                       _postReport.restored );
+    _postReport.result = BSP_MemoryVerdictPostClassify(
+        _postReport.mfid, _postReport.kgd, _postReport.eid, _postReport.mr0, _postReport.scratch_ok,
+        _postReport.restored );
 #else
     _postReport.result = BSP_MEMORY_POST_SKIPPED;
 #endif
@@ -216,16 +214,16 @@ static uint32_t _BuildOperationList( void )
 {
     uint32_t operation = 0u;
 
-    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
-        _resetEnable, NULL, 1u, true, POST_DESELECT_WAIT_CYCLES };
-    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
-        _reset, NULL, 1u, true, POST_TRST_WAIT_CYCLES };
-    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
-        _resetEnable, _discard, 1u, false, POST_DESELECT_WAIT_CYCLES };
-    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
-        _reset, _discard, 1u, false, POST_TRST_WAIT_CYCLES };
-    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
-        _readId, _idResponse, READ_ID_BYTES, false, POST_DESELECT_WAIT_CYCLES };
+    _operations[ operation++ ] =
+        ( bsp_memory_cs_operation_t ){ _resetEnable, NULL, 1u, true, POST_DESELECT_WAIT_CYCLES };
+    _operations[ operation++ ] =
+        ( bsp_memory_cs_operation_t ){ _reset, NULL, 1u, true, POST_TRST_WAIT_CYCLES };
+    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){ _resetEnable, _discard, 1u, false,
+                                                                POST_DESELECT_WAIT_CYCLES };
+    _operations[ operation++ ] =
+        ( bsp_memory_cs_operation_t ){ _reset, _discard, 1u, false, POST_TRST_WAIT_CYCLES };
+    _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){ _readId, _idResponse, READ_ID_BYTES,
+                                                                false, POST_DESELECT_WAIT_CYCLES };
     _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
         _mr0Read, _mr0Response, MR0_READ_BYTES, false, POST_DESELECT_WAIT_CYCLES };
 
@@ -241,8 +239,7 @@ static uint32_t _BuildOperationList( void )
             ptr_write[ 3 ] = (uint8_t) address;
             for ( uint32_t byte = 0u; byte < SCRATCH_CHUNK_BYTES; ++byte )
             {
-                ptr_write[ 4u + byte ] =
-                    BSP_MemoryVerdictScratchByte( address + byte, pass != 0u );
+                ptr_write[ 4u + byte ] = BSP_MemoryVerdictScratchByte( address + byte, pass != 0u );
             }
             _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
                 ptr_write, NULL, WRITE_OP_BYTES, false, POST_DESELECT_WAIT_CYCLES };
@@ -261,8 +258,12 @@ static uint32_t _BuildOperationList( void )
                 ptr_read[ byte ] = 0u;
             }
             _operations[ operation++ ] = ( bsp_memory_cs_operation_t ){
-                ptr_read, _readResponse[ pass ][ chunk ], READ_OP_BYTES, false,
-                POST_DESELECT_WAIT_CYCLES };
+                .ptr_transmit = ptr_read,
+                .ptr_receive = _readResponse[ pass ][ chunk ],
+                .count = READ_OP_BYTES,
+                .quad = false,
+                .delay_cycles_after = POST_DESELECT_WAIT_CYCLES,
+            };
         }
     }
 
@@ -289,8 +290,7 @@ static bool _ScratchVerified( uint32_t *ptr_failAddress )
             const uint32_t address = SCRATCH_BASE + chunk * SCRATCH_CHUNK_BYTES;
             for ( uint32_t byte = 0u; byte < SCRATCH_CHUNK_BYTES; ++byte )
             {
-                const uint8_t expected =
-                    BSP_MemoryVerdictScratchByte( address + byte, pass != 0u );
+                const uint8_t expected = BSP_MemoryVerdictScratchByte( address + byte, pass != 0u );
                 const uint8_t actual = _readResponse[ pass ][ chunk ][ READ_DATA_INDEX + byte ];
                 if ( verified && actual != expected )
                 {
