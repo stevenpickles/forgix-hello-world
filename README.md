@@ -237,7 +237,9 @@ GPIO 0 to 3V3 is the actual fix and is a board respin item.
 The secondary memory is 2 MByte of QSPI PSRAM at `0x11000000`, enabled by
 default through `FORGIX_QSPI_PSRAM`. A pre-USB boot POST performs the only
 PSRAM Read-ID transaction, reads MR0, verifies a 64-byte scratch area twice,
-and restores the QPI mapping. `memid` only prints that cached result. The
+and restores the QPI mapping. FPGA `PIN13` (Trion ball `F5`) is high around
+that transaction sequence as a logic-analyzer trigger. `memid` only prints
+that cached result. The
 built-in test and the separate 23-pair `memtest` exercise the uncached mapped
 window without resetting the device or entering QMI direct mode. `diag`
 reports both memories. One

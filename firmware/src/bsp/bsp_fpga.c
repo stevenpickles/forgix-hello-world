@@ -29,6 +29,10 @@
    as seen from inside the design rather than off the CDONE pin. */
 #define REG_STATUS ( (uint8_t) 0x01 )
 
+/* One-bit general-purpose output on board-edge FPGA PIN13 (Trion ball F5).
+   It is not RP2354 GPIO13, which remains the UART0 RX input. */
+#define REG_GPO ( (uint8_t) 0x15 )
+
 /* The FPGA's free-running 32 MHz tick counter. A write to the capture address
    latches all 32 bits into a snapshot read back one byte per transaction at
    TICK_0..TICK_3; the latch is what keeps the four reads describing one
@@ -285,6 +289,29 @@ void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value )
 {
     const uint8_t tx[] = { CMD_WRITE, address, value };
     _Transaction( tx, 3, false );
+}
+
+
+/// <summary>
+///     Drives the FPGA's general-purpose instrument output. The register masks
+///     every bit except bit zero, so callers express the electrical level as a
+///     boolean rather than leaking the wire protocol outside the BSP.
+/// </summary>
+void BSP_FpgaGpoSet( const bool high )
+{
+    BSP_FpgaWriteRegister( REG_GPO, high ? 1u : 0u );
+}
+
+
+/// <summary>
+///     Reads back the FPGA register controlling the instrument output.
+/// </summary>
+/// <returns>
+///     True when board-edge FPGA PIN13 is being driven high.
+/// </returns>
+bool BSP_FpgaGpoGet( void )
+{
+    return ( BSP_FpgaReadRegister( REG_GPO ) & 1u ) != 0u;
 }
 
 /// <summary>

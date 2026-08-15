@@ -194,13 +194,13 @@ try {
     Assert-Response $help '^hello \| color <r> <g> <b> \[brightness\] \| off \| status \| diag \| memid \| memtest \| menu \| reset \| echo <on\|off> \| watch <seconds\|off> \| quiet \| interactive \| help$' "Command help"
 
     $initialStatus = Invoke-ForgixCommand $serial "status"
-    Assert-Response $initialStatus '^id=B7 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "FPGA status"
+    Assert-Response $initialStatus '^id=B8 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "FPGA status"
     $null = $initialStatus -match ' count=([0-9]+) '
     $initialCount = [int]$Matches[1]
     Write-Host "    $initialStatus" -ForegroundColor Green
 
     $hello = Invoke-ForgixCommand $serial "hello"
-    Assert-Response $hello '^Hello from RP2354 -> FPGA B7$' "Hello readback"
+    Assert-Response $hello '^Hello from RP2354 -> FPGA B8$' "Hello readback"
     Write-Host "    $hello" -ForegroundColor Green
 
     if (-not $NoDazzle) {
@@ -215,7 +215,7 @@ try {
     }
 
     $finalStatus = Invoke-ForgixCommand $serial "status"
-    Assert-Response $finalStatus '^id=B7 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "Final FPGA status"
+    Assert-Response $finalStatus '^id=B8 status=[0-9A-F]{2} button=[0-9A-F]{2} count=([0-9]+) fpga_status=1$' "Final FPGA status"
     $null = $finalStatus -match ' count=([0-9]+) '
     $finalCount = [int]$Matches[1]
     Write-Host "    $finalStatus" -ForegroundColor Green

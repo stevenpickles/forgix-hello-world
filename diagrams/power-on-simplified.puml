@@ -1,0 +1,53 @@
+@startuml
+title Forgix power-on to steady state - simplified
+
+hide footbox
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 90
+
+actor Power
+participant "RP2354 boot ROM" as ROM
+database "Boot flash" as Flash
+control "RP2354 firmware" as MCU
+participant "Trion FPGA" as FPGA
+database "QSPI PSRAM" as PSRAM
+boundary "USB host" as Host
+
+Power -> ROM : Reset released
+
+alt External 10 kOhm CS1 pull-up fitted
+  ROM -> Flash : Read boot image over QSPI
+  note right of PSRAM
+    PSRAM CS# remains high,
+    so it ignores shared-bus traffic.
+  end note
+else Pull-up missing on the current board
+  ROM -> Flash : Attempt boot reads over shared QSPI
+  PSRAM --> ROM : May also respond while CS# is pulled low
+  note over ROM, PSRAM
+    The boot can wedge here before firmware,
+    FPGA configuration, or the analyzer trigger.
+  end note
+end
+
+ROM -> MCU : Start firmware if XIP reads succeeded
+MCU -> MCU : Immediately change CS1 pad to pull-up
+MCU -> FPGA : Load embedded FPGA bitstream
+FPGA --> MCU : CDONE high; ping returns design ID 0xB8
+
+alt FPGA ready
+  MCU -> FPGA : Set GPO0 / PIN13 high
+end
+MCU -> PSRAM : Run boot-only reset, identity and scratch POST
+alt FPGA ready
+  MCU -> FPGA : Set GPO0 / PIN13 low
+end
+
+MCU -> Host : Start USB console and print boot report
+
+loop Steady-state foreground loop
+  MCU -> MCU : Feed watchdog and service USB/UI
+  MCU -> FPGA : Heartbeat updates and once-per-second health checks
+end
+
+@enduml

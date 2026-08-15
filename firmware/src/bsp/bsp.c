@@ -110,7 +110,23 @@ bsp_init_result_t BSP_Init( void )
     }
     else
     {
+#if FORGIX_QSPI_PSRAM
+        /* A rising edge on board-edge FPGA PIN13 arms an external logic
+           analyzer before the first CS1 transition. It remains high through
+           reset, identity, MR0, both scratch passes and QPI restoration. If
+           the POST wedges, it deliberately remains high as evidence. */
+        if ( result.ready )
+        {
+            BSP_FpgaGpoSet( true );
+        }
+#endif
         (void) BSP_MemoryPsramPost();
+#if FORGIX_QSPI_PSRAM
+        if ( result.ready )
+        {
+            BSP_FpgaGpoSet( false );
+        }
+#endif
     }
     BSP_WatchdogFeed();
     BSP_WatchdogMarkerSet( BSP_WATCHDOG_MARKER_STARTUP );

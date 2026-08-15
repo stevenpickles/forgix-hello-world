@@ -43,6 +43,7 @@ DOC_TEMPLATE = """\
 | `0x10..0x12` | LED R/G/B | R/W | PWM intensity |
 | `0x13` | LED GLOBAL | R/W | global brightness |
 | `0x14` | LED ENABLE | R/W | bit 0 enables output |
+| `0x15` | GPO0 | R/W | bit 0 drives the output |
 | `0x20` | BUTTON LEVEL | R | level |
 | `0x21` | BUTTON COUNT | R/W | count |
 | `0x30` | TICK CAPTURE | W | capture |
@@ -50,7 +51,7 @@ DOC_TEMPLATE = """\
 """
 
 FAKE_VHDL = {
-    "DESIGN_ID": 0xB7,
+    "DESIGN_ID": 0xB8,
     "CMD_WRITE": 0x02,
     "CMD_READ": 0x03,
     "CMD_RESET": 0x7F,
@@ -63,6 +64,7 @@ FAKE_VHDL = {
     "REG_LED_B": 0x12,
     "REG_LED_GLOBAL": 0x13,
     "REG_LED_ENABLE": 0x14,
+    "REG_GPO": 0x15,
     "REG_BUTTON": 0x20,
     "REG_BUTTON_COUNT": 0x21,
     "REG_TICK_CAPTURE": 0x30,
@@ -73,7 +75,7 @@ FAKE_VHDL = {
 }
 
 
-def doc_with(ping_cell: str = "Return design ID `0xb7`", id_cell: str = "`0xb7`") -> str:
+def doc_with(ping_cell: str = "Return design ID `0xb8`", id_cell: str = "`0xb8`") -> str:
     return DOC_TEMPLATE.format(ping_cell=ping_cell, id_cell=id_cell)
 
 
@@ -86,12 +88,12 @@ def register_map_errors(text: str) -> list[str]:
 class VhdlParsing(unittest.TestCase):
     def test_parses_constants_despite_formatting(self) -> None:
         text = (
-            'constant DESIGN_ID        : byte_t := x"B7";\n'
+            'constant DESIGN_ID        : byte_t := x"B8";\n'
             '  constant CMD_WRITE:byte_t   :=   x"02" ;\n'
             'constant REG_TICK_3 : byte_t := x"33";\n'
         )
         parsed = parse_vhdl_constants(text)
-        self.assertEqual({"DESIGN_ID": 0xB7, "CMD_WRITE": 0x02, "REG_TICK_3": 0x33}, parsed)
+        self.assertEqual({"DESIGN_ID": 0xB8, "CMD_WRITE": 0x02, "REG_TICK_3": 0x33}, parsed)
 
     def test_ignores_non_byte_constants(self) -> None:
         text = "constant STABLE_CYCLES : positive := 100;\n"
@@ -164,20 +166,20 @@ class DesignIdRows(unittest.TestCase):
         self.assertEqual([], register_map_errors(doc_with()))
 
     def test_a_stale_ping_row_fails_on_its_own(self) -> None:
-        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb6`"))
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb7`"))
         self.assertEqual(1, len(errors), errors)
-        self.assertIn("Ping row says the design ID is 0xb6", errors[0])
+        self.assertIn("Ping row says the design ID is 0xb7", errors[0])
 
     def test_a_stale_id_register_row_fails_on_its_own(self) -> None:
-        errors = register_map_errors(doc_with(id_cell="`0xb6`"))
+        errors = register_map_errors(doc_with(id_cell="`0xb7`"))
         self.assertEqual(1, len(errors), errors)
-        self.assertIn("ID row says the design ID is 0xb6", errors[0])
+        self.assertIn("ID row says the design ID is 0xb7", errors[0])
 
     def test_scattered_mentions_do_not_satisfy_the_check(self) -> None:
         """The old implementation counted matching mentions anywhere in the
         file, so prose containing the current ID twice hid two stale rows."""
-        text = doc_with(ping_cell="Return design ID `0xb6`", id_cell="`0xb6`")
-        text += "\nThe previous revisions answered `0xb7` and `0xb7` respectively.\n"
+        text = doc_with(ping_cell="Return design ID `0xb7`", id_cell="`0xb7`")
+        text += "\nThe current revision answers `0xb8` and `0xb8` respectively.\n"
         errors = register_map_errors(text)
         self.assertEqual(2, len(errors), errors)
         self.assertTrue(any("Ping row" in error for error in errors))
@@ -191,17 +193,17 @@ class DesignIdRows(unittest.TestCase):
     def test_the_exact_current_ping_cell_passes(self) -> None:
         """Pins the accepted grammar against the real document's spelling,
         including the closing backtick the cell parser strips at cell end."""
-        self.assertEqual([], register_map_errors(doc_with(ping_cell="Return design ID `0xb7`")))
+        self.assertEqual([], register_map_errors(doc_with(ping_cell="Return design ID `0xb8`")))
 
     def test_an_overlong_ping_value_is_not_read_as_its_prefix(self) -> None:
-        """The old regex matched the first two digits of `0xb70` and reported
-        the correct-looking 0xb7, hiding a malformed document."""
-        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb70`"))
+        """The old regex matched the first two digits of `0xb80` and reported
+        the correct-looking 0xb8, hiding a malformed document."""
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb80`"))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("exactly once", errors[0])
 
     def test_a_ping_value_with_trailing_garbage_fails(self) -> None:
-        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb7garbage`"))
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb8garbage`"))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("exactly once", errors[0])
 
@@ -214,22 +216,22 @@ class DesignIdRows(unittest.TestCase):
         """Only at the end of the cell may the closing backtick be absent,
         because that is where the cell parser strips it; mid-cell the value
         must be properly delimited."""
-        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb7 as a byte"))
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xb8 as a byte"))
         self.assertEqual(1, len(errors), errors)
         self.assertIn("exactly once", errors[0])
         self.assertEqual(
-            [], register_map_errors(doc_with(ping_cell="Return design ID `0xb7` as a byte"))
+            [], register_map_errors(doc_with(ping_cell="Return design ID `0xb8` as a byte"))
         )
 
     def test_ping_value_case_is_handled_consistently(self) -> None:
-        self.assertEqual([], register_map_errors(doc_with(ping_cell="Return design ID `0xB7`")))
-        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xB6`"))
+        self.assertEqual([], register_map_errors(doc_with(ping_cell="Return design ID `0xB8`")))
+        errors = register_map_errors(doc_with(ping_cell="Return design ID `0xB7`"))
         self.assertEqual(1, len(errors), errors)
-        self.assertIn("says the design ID is 0xb6", errors[0])
+        self.assertIn("says the design ID is 0xb7", errors[0])
 
     def test_a_ping_row_stating_the_id_twice_fails(self) -> None:
         errors = register_map_errors(
-            doc_with(ping_cell="Return design ID `0xb7` or design ID `0xb7`")
+            doc_with(ping_cell="Return design ID `0xb8` or design ID `0xb8`")
         )
         self.assertEqual(1, len(errors), errors)
         self.assertIn("exactly once", errors[0])

@@ -12,11 +12,12 @@ set_input_delay -clock clk_32m -max 10.000 [get_ports {spi_cs_n spi_sck spi_sdio
 set_input_delay -clock clk_32m -min 0.000 [get_ports {spi_cs_n spi_sck spi_sdio_in button_n}]
 set_false_path -from [get_ports {spi_cs_n spi_sck spi_sdio_in button_n}]
 
-# The outputs have no synchronous consumer either: the LEDs feed an eye, and
+# The outputs have no synchronous consumer either: the LEDs feed an eye, GPO0
+# feeds external instrumentation, and
 # the MCU samples SDIO roughly a microsecond after the driving edge of a bus
 # it clocks itself. Constraining them to a same-cycle 10 ns budget fails the
 # PWM's register-to-pad cone against a deadline nothing on the board imposes,
 # so the paths are declared false after being given delays for the record.
-set_output_delay -clock clk_32m -max 10.000 [get_ports {spi_sdio_out spi_sdio_oe led_r_n led_g_n led_b_n}]
-set_output_delay -clock clk_32m -min 0.000 [get_ports {spi_sdio_out spi_sdio_oe led_r_n led_g_n led_b_n}]
-set_false_path -to [get_ports {spi_sdio_out spi_sdio_oe led_r_n led_g_n led_b_n}]
+set_output_delay -clock clk_32m -max 10.000 [get_ports {spi_sdio_out spi_sdio_oe led_r_n led_g_n led_b_n gpo_0}]
+set_output_delay -clock clk_32m -min 0.000 [get_ports {spi_sdio_out spi_sdio_oe led_r_n led_g_n led_b_n gpo_0}]
+set_false_path -to [get_ports {spi_sdio_out spi_sdio_oe led_r_n led_g_n led_b_n gpo_0}]

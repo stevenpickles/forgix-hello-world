@@ -45,6 +45,7 @@ VHDL_NAMES = frozenset(
         "REG_LED_B",
         "REG_LED_GLOBAL",
         "REG_LED_ENABLE",
+        "REG_GPO",
         "REG_BUTTON",
         "REG_BUTTON_COUNT",
         "REG_TICK_CAPTURE",
@@ -63,6 +64,7 @@ C_FILE_NAMES = {
     "firmware/src/bsp/bsp_fpga.c": frozenset(
         {
             "REG_STATUS",
+            "REG_GPO",
             "REG_TICK_CAPTURE",
             "REG_TICK_0",
             "REG_TICK_1",
@@ -97,6 +99,7 @@ DOC_REGISTERS = {
     "LED R/G/B": ("REG_LED_R", "REG_LED_G", "REG_LED_B"),
     "LED GLOBAL": ("REG_LED_GLOBAL",),
     "LED ENABLE": ("REG_LED_ENABLE",),
+    "GPO0": ("REG_GPO",),
     "BUTTON LEVEL": ("REG_BUTTON",),
     "BUTTON COUNT": ("REG_BUTTON_COUNT",),
     "TICK CAPTURE": ("REG_TICK_CAPTURE",),
@@ -115,13 +118,13 @@ DESIGN_ID_DEFINE = re.compile(
 )
 DOC_HEX = re.compile(r"^0x([0-9A-Fa-f]{1,2})$")
 DOC_HEX_RANGE = re.compile(r"^0x([0-9A-Fa-f]{1,2})\.\.0x([0-9A-Fa-f]{1,2})$")
-# The Ping row's Transaction cell reads "Return design ID `0xb7`". This regex
+# The Ping row's Transaction cell reads "Return design ID `0xb8`". This regex
 # runs against the NORMALIZED cell: parse_doc_tables strips a cell's outer
 # backticks, which eats this phrase's closing backtick exactly when the phrase
 # ends the cell -- so the accepted grammar is "design ID `0x" + exactly two hex
 # digits + (the closing backtick, or the end of the normalized cell). Exactly
-# two digits with a required boundary is the point: "0xb70" and "0xb7garbage"
-# must fail rather than be read as 0xb7, and "0xb" must fail rather than pass
+# two digits with a required boundary is the point: "0xb80" and "0xb8garbage"
+# must fail rather than be read as 0xb8, and "0xb" must fail rather than pass
 # as a one-digit value.
 DOC_PING_DESIGN_ID = re.compile(r"design ID `0x([0-9A-Fa-f]{2})(?:`|$)")
 IBIT_PING = re.compile(r"ping returns `0x([0-9A-Fa-f]{2})`")

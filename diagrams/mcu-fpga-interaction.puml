@@ -1,0 +1,77 @@
+@startuml
+title RP2354 and FPGA interaction over the system lifecycle
+
+hide footbox
+autonumber
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 100
+
+control "RP2354 firmware" as MCU
+database "Embedded bitstream\nin boot flash" as Image
+participant "Trion configuration logic" as Config
+participant "FPGA register design" as FPGA
+participant "FPGA peripherals" as Periph
+boundary "Dedicated FPGA pins" as Pins
+
+group Configuration phase - hardware SPI at 8 MHz
+  MCU -> Pins : OSC_EN high; CRESET_N low then high
+  Image --> MCU : fpga_image bytes
+  MCU -> Config : CS low; stream bitstream on SCK and SDIO
+  loop Until configuration completes or 500 ms expires
+    MCU -> Config : 32 trailing zero bytes / clocks
+    Config -> Pins : CDONE level
+    Pins --> MCU : Sample CDONE on RP2354 GPIO5
+  end
+  MCU -> Config : CS high
+  MCU -> MCU : Deinitialize SPI0; park CS high, SCK low, SDIO input
+  Config -> FPGA : Start design; internal 256-cycle reset at 32 MHz
+end
+
+group Bring-up validation - bit-banged three-wire register bus
+  MCU -> MCU : Wait 1500 ms
+  MCU -> FPGA : PING command 0x9F
+  FPGA --> MCU : Design ID 0xB8 on shared SDIO
+  MCU -> MCU : Cache FPGA ready verdict
+end
+
+group Boot PSRAM analyzer marker
+  MCU -> FPGA : WRITE register 0x15 = 1
+  FPGA -> Periph : Drive GPO0 / board PIN13 / ball F5 high
+  MCU -> MCU : Run the intentional PSRAM POST
+  MCU -> FPGA : WRITE register 0x15 = 0 when POST returns
+  FPGA -> Periph : Drive GPO0 low
+end
+
+group Normal runtime control and observation
+  MCU -> FPGA : Write LED RGB, brightness and enable registers
+  FPGA -> Periph : Generate active-low PWM for physical RGB LED
+  Periph -> FPGA : SW1 active-low input
+  FPGA -> FPGA : Debounce; track level, sticky event and press count
+  MCU -> FPGA : Read status, button and count registers
+  FPGA --> MCU : One register byte per read transaction
+  MCU -> FPGA : Write tick-capture register
+  FPGA -> FPGA : Latch free-running 32-bit counter
+  MCU -> FPGA : Read four tick bytes
+  FPGA --> MCU : Coherent counter snapshot
+end
+
+group Once-per-second runtime health monitoring
+  Pins --> MCU : CDONE and STATUS levels
+  MCU -> FPGA : PING and optional LED readback
+  FPGA --> MCU : ID and register values
+  alt Three consecutive failures and automatic recovery enabled
+    MCU -> Config : Re-run complete configuration sequence
+    Config -> FPGA : Fresh design and register defaults
+    MCU -> FPGA : Repaint heartbeat state after successful validation
+  else Healthy or recovery disabled
+    MCU -> MCU : Continue foreground loop
+  end
+end
+
+note over MCU, FPGA
+  The MCU is the runtime bus controller. The FPGA never initiates a
+  three-wire transaction; it returns data only while the MCU clocks a read.
+  CDONE and STATUS are the independent FPGA-to-MCU indications.
+end note
+
+@enduml

@@ -45,6 +45,7 @@ architecture sim of tb_spi_regs is
   signal led_r_n      : std_ulogic;
   signal led_g_n      : std_ulogic;
   signal led_b_n      : std_ulogic;
+  signal gpo_0        : std_ulogic;
 
   -- 40 ns per half period, against a 10 ns clk: four clk cycles per sck level. The RTL
   -- oversamples sck through a three-stage synchronizer and detects edges two stages
@@ -230,7 +231,8 @@ begin
       spi_sdio_oe  => spi_sdio_oe,
       led_r_n      => led_r_n,
       led_g_n      => led_g_n,
-      led_b_n      => led_b_n
+      led_b_n      => led_b_n,
+      gpo_0        => gpo_0
     );
 
   stimulus : process is
@@ -319,6 +321,25 @@ begin
     ping(result);
     assert result = DESIGN_ID
       report "ping did not return the design ID"
+      severity failure;
+
+    read_register(REG_FEATURES, result);
+    assert result = x"07"
+      report "feature bits do not advertise LED, button and GPO0"
+      severity failure;
+
+    read_register(REG_GPO, result);
+    assert result = x"00" and gpo_0 = '0'
+      report "GPO0 did not power up low"
+      severity failure;
+    write_register(REG_GPO, x"FF");
+    read_register(REG_GPO, result);
+    assert result = x"01" and gpo_0 = '1'
+      report "GPO0 write/readback did not drive high or mask unused bits"
+      severity failure;
+    write_register(REG_GPO, x"00");
+    assert gpo_0 = '0'
+      report "GPO0 did not drive low"
       severity failure;
 
     write_register(REG_LED_R, x"12");
@@ -471,6 +492,10 @@ begin
       report "address past the tick bytes should read as unmapped"
       severity failure;
 
+    write_register(REG_GPO, x"01");
+    assert gpo_0 = '1'
+      report "GPO0 setup before reset failed"
+      severity failure;
     begin_transaction(spi_cs_n);
     send_byte(spi_sck, spi_sdio_in, CMD_RESET);
     end_transaction(spi_cs_n);
@@ -485,6 +510,10 @@ begin
     read_register(REG_LED_ENABLE, result);
     assert result = x"01"
       report "reset did not enable LEDs"
+      severity failure;
+    read_register(REG_GPO, result);
+    assert result = x"00" and gpo_0 = '0'
+      report "reset did not restore GPO0 low"
       severity failure;
     -- CMD_RESET restored the register defaults above; the timebase must have kept
     -- running through it. A counter that cleared here would be living in

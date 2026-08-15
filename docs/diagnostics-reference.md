@@ -116,6 +116,13 @@ Read-ID. It follows with a `B5h` MR0 read and two write/read passes over
 `0x1FFFC0..0x1FFFFF`, using four-byte payloads so even the nine-byte fast
 read stays below the tighter 3.3 V extended-grade `tCEM`.
 
+For logic-analyzer capture, the MCU writes FPGA register `GPO0` high immediately
+before entering that POST and writes it low after QPI restoration. The signal is
+board-edge FPGA `PIN13`, Trion ball `F5`; trigger on its rising edge to capture
+the complete CS1 sequence. A wedged POST deliberately leaves it high. This is
+not RP2354 GPIO13/UART0 RX, which firmware never drives. The GPO register and
+pin default low whenever the FPGA is configured or reset.
+
 All descriptors, transmit bytes and receive buffers are writable SRAM
 objects, and the direct-mode engine itself executes from SRAM. Interrupts
 remain disabled from XIP exit through boot2 restoration. The previous CS1 size
