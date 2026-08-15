@@ -35,6 +35,7 @@ permissions:
 
 env:
   ARTIFACT_SUFFIX: run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+  BUILD_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -211,7 +212,8 @@ jobs:
       - name: Choose the image to embed
         id: image
         run: |
-          real="$GITHUB_WORKSPACE/dist/fpga/forgix_hello_world.bin"
+          short_sha="${BUILD_COMMIT_SHA:0:7}"
+          real="$GITHUB_WORKSPACE/dist/fpga/forgix-t8f49-$short_sha.bin"
           if [[ -s "$real" ]]; then
             echo "path=$real" >> "$GITHUB_OUTPUT"
             echo "real=true" >> "$GITHUB_OUTPUT"
@@ -280,17 +282,28 @@ jobs:
         env:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
 
+      - name: Stage identified firmware artifacts
+        run: |
+          short_sha="${BUILD_COMMIT_SHA:0:7}"
+          mkdir -p dist/firmware
+          cp build/firmware-ci/forgix_hello_world.uf2 \
+            "dist/firmware/forgix-hello-world-$short_sha.uf2"
+          cp build/firmware-ci/forgix_hello_world.elf \
+            "dist/firmware/forgix-hello-world-$short_sha.elf"
+          cp build/firmware-ci/forgix_hello_world.elf.map \
+            "dist/firmware/forgix-hello-world-$short_sha.elf.map"
+          cp build/firmware-ci/forgix_hello_world.bin \
+            "dist/firmware/forgix-hello-world-$short_sha.bin"
+          cp build/firmware-ci/forgix_led_only_diagnostic.uf2 \
+            "dist/firmware/forgix-led-only-diagnostic-$short_sha.uf2"
+          cp build/firmware-ci/forgix_led_only_diagnostic.elf \
+            "dist/firmware/forgix-led-only-diagnostic-$short_sha.elf"
+
       - name: Upload flashable firmware and diagnostics
         uses: actions/upload-artifact@v7
         with:
           name: forgix-rp2354-test-firmware-${{ env.ARTIFACT_SUFFIX }}
-          path: |
-            build/firmware-ci/forgix_hello_world.uf2
-            build/firmware-ci/forgix_hello_world.elf
-            build/firmware-ci/forgix_hello_world.elf.map
-            build/firmware-ci/forgix_hello_world.bin
-            build/firmware-ci/forgix_led_only_diagnostic.uf2
-            build/firmware-ci/forgix_led_only_diagnostic.elf
+          path: dist/firmware/
           if-no-files-found: error
           retention-days: 7
 

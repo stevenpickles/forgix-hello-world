@@ -279,8 +279,10 @@ GitHub Actions summary renders color-coded line and branch totals (plus
 functions when the report carries them; gcovr 8.x dropped that Cobertura
 extension) and links to the detailed annotated HTML report in the downloadable
 test artifact.
-CI artifact names include the workflow run ID and attempt number so downloaded
-reports and firmware images can be traced back to an exact execution.
+CI artifact bundle names include the workflow run ID and attempt number. Every
+downloadable firmware and FPGA build-output filename also includes the
+seven-character commit SHA, so an extracted file remains traceable without its
+bundle.
 
 Pico SDK 2.3.0 must include its TinyUSB submodule. If the SDK came from a
 source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible
@@ -301,10 +303,11 @@ BSP mocks and enforced coverage), the Efinity synthesis job, and an RP2354 USB
 firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
 last linking the bitstream that same run produced, falling back to the
 `tests/fixtures/fpga-test.bin` compile fixture only if synthesis failed. The
-firmware job publishes seven-day `forgix_hello_world.uf2` and
-`forgix_led_only_diagnostic.uf2` BOOTSEL images alongside its ELF, map, and raw
-binary; the verify job publishes its JUnit, detailed HTML, Cobertura XML, and
-text reports as a separate workflow artifact. Hardware tests remain local. A push or pull request
+firmware job publishes seven-day `forgix-hello-world-<short-sha>.uf2` and
+`forgix-led-only-diagnostic-<short-sha>.uf2` BOOTSEL images alongside identified
+ELF, map, and raw binary files; the FPGA outputs use the same short SHA. The
+verify job publishes its JUnit, detailed HTML, Cobertura XML, and text reports
+as a separate workflow artifact. Hardware tests remain local. A push or pull request
 confined to Markdown, `docs/`, or the license skips the entire workflow —
 nothing in CI reads those files — so a documentation-only pull request arrives
 with no checks at all.
