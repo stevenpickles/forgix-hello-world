@@ -266,13 +266,12 @@ application_ibit_outcome_t application_ibit_step_psram( char *detail, size_t cap
             return APPLICATION_IBIT_FAIL;
         }
 
-        /* Identity before sweep, because the read begins with a global reset
-           that tears the device out of QPI; the same call re-enters it. A
-           failed re-entry means there is no window to sweep. */
+        /* The legacy identity view is now the boot POST's cached observation.
+           restored says that boot handed back a verified mapped window. */
         application_ibit_state.psram_identity = BSP_MemoryPsramIdentify();
         if ( !application_ibit_state.psram_identity.restored )
         {
-            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry/verify failed",
+            snprintf( detail, capacity, "kgd=%02X eid=%02X; boot POST restore failed",
                       application_ibit_state.psram_identity.kgd,
                       application_ibit_state.psram_identity.eid );
             return APPLICATION_IBIT_FAIL;

@@ -2,13 +2,14 @@
 
 What the firmware carries to make a hang or a hardware fault attributable
 instead of silent: a watchdog with retained scratch registers, a runtime FPGA
-health check, and the `diag` and `memid` shell commands.
+health check, the boot-only PSRAM POST, and the `diag`, `memid`, and `memtest`
+shell commands.
 
 ## Scope
 
 These are permanent features of both firmware images, not a temporary
 investigation harness. The watchdog, its scratch registers, the FPGA health
-check, and the `diag`/`memid` commands ship in `forgix_hello_world.uf2` and
+check, and the PSRAM diagnostic commands ship in `forgix_hello_world.uf2` and
 `forgix_led_only_diagnostic.uf2` today and are not going away. The
 investigation that produced them is closed; see
 [the firmware lockup cause and fix](../README.md#firmware-lockup-cause-and-fix)
@@ -41,9 +42,9 @@ CMake options that shape the diagnostics (defaults as configured in
 
 `diag` takes no arguments and is gate-free: it is dispatched in
 `application_process_command` (`firmware/src/application/application.c`)
-above the FPGA-readiness gate, alongside `memid` and `menu`. The gate exists
+above the FPGA-readiness gate, alongside `memid`, `memtest`, and `menu`. The gate exists
 to stop hardware commands from touching an FPGA that failed to configure;
-`diag` and `memid` are exempt because a command that diagnoses a failure must
+those diagnostics are exempt because a command that diagnoses a failure must
 not be gated behind the hardware that failed.
 
 Running `diag` prints three lines:
@@ -78,71 +79,74 @@ current. Both are available at any time, whether or not the FPGA ever
 configured, which is the whole point: the diagnostics that explain a broken
 board must not depend on the board working.
 
-## The memid command
+## The PSRAM boot POST and memid command
 
-`memid` reads out the raw identity bytes of both QSPI memories on the shared
-bus, via `BSP_MemoryIdentityDump` (`firmware/src/bsp/bsp_memory_identity.c`) and
-`print_identity_dump` (`firmware/src/application/application.c`). It is
-gate-free for the same reason as `diag`: the memories share nothing with the
-FPGA, and the identity investigation is most needed exactly when the board is
-being distrusted.
+`BSP_MemoryPsramPost` runs once in `BSP_Init`, before USB or the command
+shell exists. `memid` only reprints that cached result; it never sends a
+runtime command to PSRAM. A typical fitted-board result is:
 
-The output is one line per transaction, every one of the sixteen response
-bytes shown (`BSP_MEMORY_IDENTITY_RESPONSE_BYTES = 16` -- eight bytes past the
-documented manufacturer/KGD/EID fields, so the capture also shows whether a
-device keeps driving, repeats its ID, or goes quiet):
+```text
+post: no-device mfid=66 kgd=0B eid=43 mr0=70 scratch=1 restored=1
+```
 
-- `cs0 flash 9F: ...` -- a plain `0x9F` Read-ID against the boot flash on
-  chip select 0. This line is a sampling control: a known-good device on the
-  same bus, read through the same direct-mode engine at the same clock and
-  sample settings, so a correct flash ID is evidence the controller itself
-  samples faithfully.
-- `cs1 psram 9F @<rate>kHz: ...`, once per probe rate. The PSRAM is probed at
-  three clock divisors -- 6, 30, and 150 against the 150 MHz system clock --
-  giving 25 MHz, 5 MHz, and 1 MHz. An identity that is bit-identical across
-  that 25x spread cannot be a marginal-sampling artefact.
-- `cs1 psram: not probed; this image was built without PSRAM support` when
-  the image has `FORGIX_QSPI_PSRAM` off; no chip-select-1 transaction is
-  attempted.
-- A closing `qpi re-entry: ok (readback verified)` or `error: qpi re-entry or
-  readback verify failed; psram is unusable until the next successful check`
-  line, since every read tears the device out of QPI and the same call
-  re-enters it before returning. The `ok` is earned, not assumed: the SDK's
-  re-initialisation call can only fail on its own preconditions and never
-  probes the device, so after it succeeds the firmware writes two words at
-  opposite ends of the window through the uncached alias, reads them back,
-  and restores what it displaced -- only a readback that held reports `ok`.
+The identity verdict and functional verdict are intentionally separate. This
+board's returned identity does not match the AP Memory part on the schematic,
+but its mode-register fields are valid, its scratch test passes, and its QPI
+mapping restores successfully.
 
-Two method facts worth keeping from the investigation that built this:
+The implementation uses the conservative intersection of the
+[1.8 V APS1604M-SQR Rev. 3.0 datasheet](https://www.apmemory.com/en/downloadFiles/0324112120r6586620)
+and the repository's
+[3.3 V APS1604M-3SQR Rev. 3.1 datasheet](datasheets/APS1604M-3SQR-QSPI-PSRAM.pdf):
 
-- **A reset ahead of Read-ID has to reach the device in whatever mode it is
-  currently in.** The device can be left in QPI from a previous session or in
-  plain SPI mode, and the two modes decode reset opcodes differently. The
-  current code (`BSP_MemoryIdentityDump` and `BSP_MemoryPsramIdentify`) issues
-  the quad-width reset pair first, unconditionally, then the serial reset
-  pair, every time -- not only after a serial identification has already
-  failed. The comment in the source explains why: "one of the two always
-  applies, and the serial pair also cleans up after the quad opcodes a serial
-  device would have decoded as noise." An earlier version of this code held
-  the quad reset back until serial identification failed, out of concern that
-  issuing it to a device already in SPI mode was itself a disturbance -- that
-  concern is exactly why the two resets now run back-to-back inside one
-  unbroken XIP-down window rather than being made conditional on which one
-  should be needed.
-- **An RX sampling-delay sweep across this bus was inconclusive, not
-  negative.** `flash_do_cmd_cs` (the SDK helper) calls
-  `connect_internal_flash`, which resets QMI `DIRECT_CSR` state and discards
-  any divisor or delay written beforehand, so a delay set ahead of a call
-  through that helper never reaches the transfer. That is why
-  `_CsOperationSequence` in `bsp_memory_identity.c` is a reimplementation of the
-  direct-mode transfer rather than a wrapper around the SDK's helper: it is
-  the only way to hold a clock divisor across the whole sequence of resets and
-  reads that this file needs.
+| Timing fact | 1.8 V variant | 3.3 V variant | Firmware |
+| --- | ---: | ---: | ---: |
+| Power-up initialization | 150 us | 150 us | POST runs well after FPGA initialization |
+| Reset-to-command, `tRST` | at least 50 ns | at least 50 ns | 10 us in the SRAM-only window |
+| SPI Read-ID maximum clock | 33 MHz | 33 MHz | 25 MHz |
+| Extended-grade `tCEM` | 4 us | 3 us | longest transaction is 2.88 us |
+| Standard-grade `tCEM` | 8 us | 8 us | longest transaction is 2.88 us |
+| Chip-select-high, `tCPH` | at least 18 ns | at least 18 ns | 100 ns between transactions |
 
-What the identity bytes mean and the open question of whether they name the
-schematic's specified part are answered in
-[the built-in test reference](ibit.md#what-it-reports-but-does-not-judge), not
-here -- this command exists to produce the raw evidence, not to judge it.
+The 3.3 V document restricts `9Fh` Read-ID to power-up initialization after
+global reset. The POST therefore uses that stricter sequence for either
+voltage variant: quad `66h/99h` first to recover a warm-reset device left in
+QPI, serial `66h/99h`, a 10 us reset delay, then the one seven-byte SPI
+Read-ID. It follows with a `B5h` MR0 read and two write/read passes over
+`0x1FFFC0..0x1FFFFF`, using four-byte payloads so even the nine-byte fast
+read stays below the tighter 3.3 V extended-grade `tCEM`.
+
+All descriptors, transmit bytes and receive buffers are writable SRAM
+objects, and the direct-mode engine itself executes from SRAM. Interrupts
+remain disabled from XIP exit through boot2 restoration. The previous CS1 size
+is restored before boot2 runs, preventing the ROM from inserting an
+unsolicited CS1 exit sequence after the legal Read-ID window.
+
+An early 15-second watchdog marks the POST. If it resets there, the next boot
+recognizes the retained marker, issues no CS1 transaction, advertises a
+zero-sized PSRAM window, and reaches the console with
+`post: watchdog-recovery` instead of entering a reset loop.
+
+## The memtest command
+
+`memtest`, also menu key `7`, is a destructive runtime test of the complete
+2 MiB window. It deliberately does **not** reuse the POST mechanism: every
+4 KiB foreground slice uses ordinary volatile loads and stores through the
+uncached QPI mapping while flash XIP, interrupts, USB, and the watchdog remain
+active. No runtime path sends PSRAM `9Fh` or changes QMI direct mode.
+
+Twenty-three whole-device write/verify pairs run separately so a later write
+that aliases an earlier address is detected: address-derived data ascending,
+its inverse descending, `00 FF AA 55`, walking ones, walking zeroes, and a
+final clear. Progress prints after every full write or verify sweep. The final
+verdict distinguishes data, address-alias, and controller/window failures,
+records the first eight byte mismatches, counts any remaining errors, and
+reports whether the 2 MiB mapping is still advertised. Any key aborts between
+slices. On the tested board the complete run finishes with:
+
+```text
+memtest: pass errors=0 restored=1
+```
 
 ## Watchdog scratch registers
 
@@ -188,10 +192,14 @@ path, so a watchdog reset names where the foreground stopped.
 | 7 | `MENU` | Drawing or dispatching the front-panel menu |
 | 8 | `IBIT` | Running a built-in test step |
 | 9 | `EFFECT` | Painting the blinker or the advanced blinker |
+| 10 | `MEMTEST` | Running one mapped-QPI PSRAM slice |
+| `0x100` | `PSRAM_POST` | The boot-only direct-mode PSRAM POST |
+| `0x101` | `STARTUP` | Startup after the POST and before the foreground loop |
 
 ## Boot report and blink codes
 
-Emitted before the watchdog is armed. In the USB image it is a serial line:
+The retained reason and marker are captured before the early watchdog is
+armed. In the USB image the report is a serial line:
 
 ```text
 diag: boot=watchdog marker=3 loop=612 usb=44 health=00010001

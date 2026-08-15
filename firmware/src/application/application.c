@@ -15,6 +15,7 @@
 
 #include "application_console.h"
 #include "application_diagnostics.h"
+#include "application_memtest.h"
 #include "application_ui.h"
 #include "bsp.h"
 
@@ -202,6 +203,20 @@ void application_process_command( char *line )
         }
         return;
     }
+    /* Gate-free like memid: this memory is independent of FPGA readiness. The
+       UI owns progress and any-key abort after the handoff. */
+    if ( !strcmp( argv[ 0 ], "memtest" ) )
+    {
+        if ( argc == 1 )
+        {
+            application_ui_enter_activity( application_memtest_activity() );
+        }
+        else
+        {
+            BSP_ConsolePuts( "error: invalid command (try help)" );
+        }
+        return;
+    }
     /* Above the FPGA gate: getting back to the menu is how a user reaches the
        tests that diagnose a dead FPGA, so it cannot be one of the things a dead
        FPGA takes away. */
@@ -364,8 +379,9 @@ static bool parse_watch_period( const char *text, uint32_t *seconds )
 /// </summary>
 static void print_help( void )
 {
-    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | menu "
-                     "| reset | echo <on|off> | watch <seconds|off> | quiet | interactive | help" );
+    BSP_ConsolePuts( "hello | color <r> <g> <b> [brightness] | off | status | diag | memid | "
+                     "memtest | menu | reset | echo <on|off> | watch <seconds|off> | quiet | "
+                     "interactive | help" );
 }
 
 

@@ -22,6 +22,7 @@
 #include "mock_auto_application_diagnostics.h"
 #include "mock_auto_application_effects.h"
 #include "mock_auto_application_ibit.h"
+#include "mock_auto_application_memtest.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
 #include "mock_auto_bsp_led.h"
@@ -202,6 +203,29 @@ void test_menu_command_takes_the_terminal_back_from_the_shell( void )
     /* Back under the menu, a key selects again rather than reaching the shell. */
     BSP_FpgaIsReady_ExpectAndReturn( true );
     key_at( '?', 200 );
+}
+
+
+void test_enter_activity_takes_the_terminal_and_finishes_into_the_menu( void )
+{
+    open_menu_at( 0 );
+    application_console_start_Expect();
+    key_at( 'c', 100 );
+    MOCK_BSP_ConsoleReset();
+
+    application_diagnostics_release_led_Expect();
+    application_ui_enter_activity( &FAKE_ACTIVITY );
+    TEST_ASSERT_EQUAL_UINT32( 1, activity_starts );
+
+    poll_at( 200 );
+    poll_at( 300 );
+    application_diagnostics_reclaim_led_Expect();
+    BSP_FpgaIsReady_ExpectAndReturn( true );
+    poll_at( 400 );
+
+    TEST_ASSERT_EQUAL_UINT32( 3, activity_polls );
+    TEST_ASSERT_EQUAL_UINT32( 0, activity_stops );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "=== Forgix menu ===" ) );
 }
 
 

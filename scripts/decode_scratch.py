@@ -30,6 +30,9 @@ MARKERS = {
     7: "MENU - drawing or dispatching the front-panel menu",
     8: "IBIT - running a built-in test step",
     9: "EFFECT - painting the blinker or the advanced blinker",
+    10: "MEMTEST - running a mapped-QPI PSRAM slice",
+    0x100: "PSRAM_POST - running the boot-only direct-mode PSRAM test",
+    0x101: "STARTUP - after the PSRAM POST and before the foreground loop",
     # Not a code path: the built-in test writes this, reads it straight back to
     # prove the register holds, and replaces it. Landing here means a reset
     # caught a window a few microseconds wide.

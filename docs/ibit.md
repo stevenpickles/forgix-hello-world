@@ -78,24 +78,15 @@ from here. Flash comes from what the image was linked for, and the DRAM from the
 SDK's own detection.
 
 **The PSRAM identity.** The fitted device sweeps clean across its whole range
-but reports `KGD 0x0B, EID 0x43` rather than AP Memory's `0x5D`, so it is not the
-`APS1604M-3SQR-SN` the schematic calls for. Identity and function are separate
-questions; the test answers the second and no test can answer the first. Reading
-the package marking would settle it. `memid` prints the raw Read-ID bytes at
-three clock rates for offline comparison; see
-[the diagnostics reference](diagnostics-reference.md#the-memid-command).
+but returns `MFID 0x66, KGD 0x0B, EID 0x43` rather than AP Memory's
+`0x0D, 0x5D` identity. Identity and function are separate questions; reading
+the package marking would settle what is actually fitted. `memid` prints the
+boot POST's cached raw fields; see
+[the diagnostics reference](diagnostics-reference.md#the-psram-boot-post-and-memid-command).
 
-Step 7 re-reads those bytes on every run, in the one window the datasheet
-allows: a global reset, the 50 ns settling time, then a serial Read-ID under the
-33 MHz ceiling, with QPI re-entered immediately after in the same pass. The
-boot-time capture cannot be trusted for this — it is only legal on a cold start,
-and after a warm reboot the device is still in QPI from the previous session, so
-the serial Read-ID the SDK issues returns nonsense. The per-run read is what
-makes the reported bytes meaningful whichever way the board arrived at the menu.
-The re-entry is proven, not assumed: the SDK's re-initialisation call never
-probes the device, so the step writes and reads back two words at opposite ends
-of the window through the uncached alias before claiming the window is back. A
-failed re-entry or a failed readback both fail the step before any sweep runs.
+Step 7 never resets the device or issues Read-ID. It uses the boot POST's cached
+identity for context, then judges function independently with a mapped
+moving-inversion sweep through the uncached alias.
 
 ## What it does not check, and why
 
@@ -113,10 +104,9 @@ fitting the resistor is the actual fix.
 **Anything destructive to the MCU.** No SRAM march test, no deliberate watchdog
 reset, no second-core launch. Every MCU check is read-only, so a run cannot leave
 the board in a state a power cycle is needed to escape. The PSRAM is the one
-deliberate exception: step 7 overwrites the whole device and global-resets it,
-which is safe because nothing in the firmware stores data there, and the device
-is re-initialised inside the same pass that reset it — an abort at any point
-leaves nothing that the next run or a power cycle is needed to repair.
+deliberate exception: step 7 overwrites the whole device through its ordinary
+mapped-QPI window, which is safe because nothing in the firmware stores data
+there. It does not reset the device or change controller mode.
 
 ## The other menu entries
 
@@ -133,6 +123,8 @@ leaves nothing that the next run or a power cycle is needed to repair.
 - **`6` Advanced blinker** — heartbeat, colour wheel and aurora. These ran from
   the host in `scripts/test_hardware.sh`; in firmware they need nothing but
   power.
+- **`7` PSRAM memory test** — 23 destructive whole-device pattern pairs through
+  the ordinary uncached QPI mapping, with progress and a detailed fault map.
 - **`c`** drops to the `forgix>` shell, and the shell's `menu` command comes back.
 - **`r`** reboots; **`b`** enters BOOTSEL for reflashing without unplugging.
 
@@ -143,6 +135,6 @@ and whether it was lit at all -- including on an abort.
 ## When something hangs
 
 Every part of this has its own watchdog progress marker, so a reset attributes
-itself: `MENU` (7), `IBIT` (8), `EFFECT` (9). Read them off a frozen board with
+itself: `MENU` (7), `IBIT` (8), `EFFECT` (9), `MEMTEST` (10). Read them off a frozen board with
 `scripts/decode_scratch.py`; the procedure is in
 [the diagnostics reference](diagnostics-reference.md#reading-a-frozen-board).

@@ -93,6 +93,12 @@ class EndToEnd(unittest.TestCase):
         output = self.run_tool("0x1", "60", "0", hex(5 << 19))
         self.assertIn("reconfiguration never succeeded", output)
 
+    def test_names_the_runtime_and_boot_psram_markers(self) -> None:
+        runtime = self.run_tool("10", "0", "0", "0")
+        boot = self.run_tool("0x100", "0", "0", "0")
+        self.assertIn("MEMTEST - running a mapped-QPI PSRAM slice", runtime)
+        self.assertIn("PSRAM_POST - running the boot-only direct-mode PSRAM test", boot)
+
 
 if __name__ == "__main__":
     unittest.main()

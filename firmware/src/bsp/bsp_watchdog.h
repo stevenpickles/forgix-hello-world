@@ -33,11 +33,11 @@ extern "C" {
    code and the fakes, so it must stay a compile-time constant. */
 #define BSP_WATCHDOG_SNAPSHOT_SLOTS ( (uint32_t) 3u )
 
-/* BSP-owned early-boot markers. Application diagnostics owns 1..9; keeping
+/* BSP-owned early-boot markers. Application diagnostics owns 1..10; keeping
    these adjacent but separate lets a watchdog reboot distinguish a POST hang
    from a later startup stall without making the BSP include application code. */
-#define BSP_WATCHDOG_MARKER_PSRAM_POST ( (uint32_t) 10u )
-#define BSP_WATCHDOG_MARKER_STARTUP ( (uint32_t) 11u )
+#define BSP_WATCHDOG_MARKER_PSRAM_POST ( (uint32_t) 0x100u )
+#define BSP_WATCHDOG_MARKER_STARTUP ( (uint32_t) 0x101u )
 
 
 

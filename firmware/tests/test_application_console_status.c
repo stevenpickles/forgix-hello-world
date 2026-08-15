@@ -21,6 +21,7 @@
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
+#include "mock_auto_application_memtest.h"
 #include "mock_auto_application_ui.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"

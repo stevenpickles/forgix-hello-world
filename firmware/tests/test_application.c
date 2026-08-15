@@ -23,6 +23,7 @@
 #include "mock_bsp_time.h"
 #include "mock_bsp_usb.h"
 #include "mock_bsp_watchdog.h"
+#include "mock_auto_application_memtest.h"
 #include "mock_auto_application_ui.h"
 #include "mock_auto_bsp_button.h"
 #include "mock_auto_bsp_fpga.h"
@@ -127,6 +128,7 @@ void test_help_remains_available_without_fpga_access( void )
 {
     process( "help" );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "hello | color" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "memid | memtest | menu" ) );
 }
 
 
@@ -416,6 +418,21 @@ void test_memid_reports_when_the_watchdog_recovered_a_post_hang( void )
 }
 
 
+/* No FPGA expectation is queued: the mapped memory test must remain available
+   when the independent FPGA is unavailable. */
+void test_memtest_hands_the_terminal_to_its_activity_without_consulting_the_fpga( void )
+{
+    static const application_activity_t MEMTEST_STUB = { 0 };
+
+    application_memtest_activity_ExpectAndReturn( &MEMTEST_STUB );
+    application_ui_enter_activity_Expect( &MEMTEST_STUB );
+
+    process( "memtest" );
+
+    TEST_ASSERT_EQUAL_STRING( "", MOCK_BSP_ConsoleOutput() );
+}
+
+
 void test_reset_reaches_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );
@@ -447,7 +464,7 @@ void test_known_commands_with_extra_arguments_are_rejected( void )
 {
     const char *gated_commands[] = { "hello extra", "off extra", "reset extra" };
     const char *gate_free_commands[] = {
-        "help extra", "status extra", "diag extra", "memid extra", "menu extra",
+        "help extra", "status extra", "diag extra", "memid extra", "memtest extra", "menu extra",
     };
 
     for ( uint32_t index = 0;
