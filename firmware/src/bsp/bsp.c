@@ -73,8 +73,9 @@ static void _ConfigureQspiCs1( void );
 
 /// <summary>
 ///     Brings the board up in the one order that works: the chip select fix
-///     first, because it decides whether flash reads stay coherent at all, then
-///     the console so later failures can be reported, then the FPGA.
+///     first, because it decides whether flash reads stay coherent at all; the
+///     FPGA next; then the boot-only PSRAM transaction while USB does not yet
+///     exist; and the console only after XIP is permanently back in service.
 /// </summary>
 /// <returns>
 ///     What the FPGA bring-up found, which the application uses to decide
@@ -83,7 +84,6 @@ static void _ConfigureQspiCs1( void );
 bsp_init_result_t BSP_Init( void )
 {
     _ConfigureQspiCs1();
-    BSP_ConsoleInit();
 
     /* Both of these sample once and cache. The MCU identity costs a flash
        command on the bus the chip select fix above protects, so it belongs
@@ -92,7 +92,10 @@ bsp_init_result_t BSP_Init( void )
     BSP_McuInit();
     BSP_AdcInit();
 
-    return BSP_FpgaInit();
+    const bsp_init_result_t result = BSP_FpgaInit();
+    (void) BSP_MemoryPsramPost();
+    BSP_ConsoleInit();
+    return result;
 }
 
 

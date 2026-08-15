@@ -83,6 +83,19 @@ typedef struct bsp_memory_psram_identity_t_tag
 } bsp_memory_psram_identity_t;
 
 
+/* Boot-only identity capture. Read-ID is legal only immediately after the
+   global reset inside BSP_MemoryPsramPost; later callers retrieve this cached
+   report and never put another 9Fh transaction on CS1. */
+typedef struct bsp_memory_post_report_t_tag
+{
+    bool ran;
+    uint8_t mfid;
+    uint8_t kgd;
+    uint8_t eid;
+    bool restored;
+} bsp_memory_post_report_t;
+
+
 enum
 {
     /* One sweep pass's worth of traffic: 64 KiB is a few milliseconds through
@@ -163,6 +176,13 @@ typedef struct bsp_memory_sweep_result_t_tag
 
 
 bsp_memory_report_t BSP_MemoryCheck( void );
+
+/* Runs once from BSP_Init, before USB is initialized. The complete reset and
+   Read-ID sequence is one direct-mode window at 25 MHz. */
+bsp_memory_post_report_t BSP_MemoryPsramPost( void );
+
+/* Returns the boot capture without touching the QSPI bus. */
+bsp_memory_post_report_t BSP_MemoryPsramPostReport( void );
 
 /* Global reset, Read-ID in the legal window, then QPI re-entry, all in one call
    so an abort can never leave the device reset but not re-initialised. Costs a

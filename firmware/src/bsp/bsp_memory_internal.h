@@ -22,6 +22,30 @@ extern "C" {
 
 /***************************************************************************************
 **
+** Enumerated Values, Type Definitions
+**
+***************************************************************************************/
+
+
+#if FORGIX_QSPI_PSRAM
+/* One direct-mode transfer. Every descriptor and byte buffer passed to the
+   sequence functions below must live in SRAM: chip-select-0 XIP is unavailable
+   while the engine dereferences them. */
+typedef struct bsp_memory_cs_operation_t_tag
+{
+    const uint8_t *ptr_transmit;
+    uint8_t *ptr_receive;
+    uint32_t count;
+    bool quad;
+    uint32_t delay_cycles_after;
+} bsp_memory_cs_operation_t;
+#endif
+
+
+
+
+/***************************************************************************************
+**
 ** Public Function Declarations
 **
 ***************************************************************************************/
@@ -47,6 +71,18 @@ bool BSP_MemoryPsramForceFromDatasheet( void );
    it is what BSP_MemoryCheck reports; the probes supply the only reading that
    is trustworthy after a warm reboot. */
 void BSP_MemoryPsramRecordIdentity( uint8_t kgd, uint8_t eid );
+
+/* Runs one atomic CS1 direct-mode window. The wrapper owns cache cleaning,
+   interrupt masking, temporary ROM visibility of CS1, and the boot2 restore;
+   callers only build an SRAM-resident operation list. Restoring the original
+   CS1 size before boot2 is deliberate: boot2 must restore flash without
+   sending an unsolicited exit sequence to the just-tested PSRAM. */
+void BSP_MemoryCs1OperationSequence( const bsp_memory_cs_operation_t *ptr_operations,
+                                     uint32_t operationCount, uint32_t clkdiv );
+
+/* CS0 sibling used only by the flash-side identity control. */
+void BSP_MemoryCs0OperationSequence( const bsp_memory_cs_operation_t *ptr_operations,
+                                     uint32_t operationCount, uint32_t clkdiv );
 #endif
 
 #ifdef __cplusplus
