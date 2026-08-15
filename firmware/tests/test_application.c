@@ -404,6 +404,18 @@ void test_memid_says_when_the_image_has_no_psram_support( void )
 }
 
 
+void test_memid_reports_when_the_watchdog_recovered_a_post_hang( void )
+{
+    bsp_memory_post_report_t post = { .result = BSP_MEMORY_POST_WATCHDOG_RECOVERY };
+
+    BSP_MemoryPsramPostReport_ExpectAndReturn( post );
+
+    process( "memid" );
+
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "post: watchdog-recovery" ) );
+}
+
+
 void test_reset_reaches_the_fpga( void )
 {
     BSP_FpgaIsReady_ExpectAndReturn( true );

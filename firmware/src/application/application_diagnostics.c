@@ -99,15 +99,16 @@ static void store_snapshots( void );
 /// <summary>
 ///     Copies the retained scratch registers out and zeroes the snapshot slots
 ///     in the same pass, so the loop below cannot mix this run's samples into
-///     the previous boot's evidence. The watchdog is armed last on purpose:
-///     everything above that line, the blink code included, is free to block.
+///     the previous boot's evidence. The BSP's early watchdog is already live;
+///     the blink reporter feeds it, then the final Start narrows its window for
+///     the foreground loop.
 /// </summary>
 void application_diagnostics_start( void )
 {
     application_diagnostics_state = ( diagnostics_state_t ){ 0 };
     application_diagnostics_state.usb_present = BSP_UsbPresent();
     application_diagnostics_state.boot_reason = BSP_WatchdogBootReason();
-    application_diagnostics_state.boot_marker = BSP_WatchdogMarkerGet();
+    application_diagnostics_state.boot_marker = BSP_WatchdogBootMarker();
     for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
     {
         application_diagnostics_state.boot_snapshot[ slot ] = BSP_WatchdogSnapshotGet( slot );

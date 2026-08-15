@@ -371,7 +371,8 @@ static void print_help( void )
 
 static const char *const POST_RESULT_TEXT[] = {
     "pass",     "no-device",    "kgd-fail",        "density-fail",
-    "mr0-fail", "scratch-fail", "controller-fail", "skipped",
+    "mr0-fail", "scratch-fail", "controller-fail", "watchdog-recovery",
+    "skipped",
 };
 
 

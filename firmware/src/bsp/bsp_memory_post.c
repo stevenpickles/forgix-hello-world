@@ -162,6 +162,27 @@ bsp_memory_post_report_t BSP_MemoryPsramPost( void )
 
 
 /// <summary>
+///     Converts a watchdog reset attributed to the preceding POST into a
+///     reportable recovery verdict and disables mapped PSRAM access. No command
+///     reaches CS1, so this path cannot repeat the hang it is recovering from.
+/// </summary>
+/// <returns>
+///     The cached watchdog-recovery report.
+/// </returns>
+bsp_memory_post_report_t BSP_MemoryPsramPostWatchdogRecovery( void )
+{
+    _postReport = ( bsp_memory_post_report_t ){ 0 };
+#if FORGIX_QSPI_PSRAM
+    BSP_MemoryPsramDisable();
+    _postReport.result = BSP_MEMORY_POST_WATCHDOG_RECOVERY;
+#else
+    _postReport.result = BSP_MEMORY_POST_SKIPPED;
+#endif
+    return _postReport;
+}
+
+
+/// <summary>
 ///     Returns the report captured before USB initialization without issuing a
 ///     command to the PSRAM. This is the only legal runtime identity path.
 /// </summary>

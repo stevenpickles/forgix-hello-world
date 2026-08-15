@@ -50,6 +50,8 @@ typedef enum bsp_watchdog_scratch_register_tag
    first query and served from here ever after. */
 static bool _bootReasonLatched;
 static bsp_boot_reason _bootReason;
+static bool _bootMarkerLatched;
+static uint32_t _bootMarker;
 
 
 
@@ -74,11 +76,11 @@ static bsp_boot_reason _ClassifyBootReason( void );
 
 
 /// <summary>
-///     Arms the hardware watchdog. Irreversible: once started it must be fed
+///     Arms or reprograms the hardware watchdog. Once started it must be fed
 ///     within every window or the chip resets, so nothing that blocks for
-///     longer than the timeout may run after this. Arming also poisons the
-///     hardware's record of why the last boot happened, which is why the boot
-///     reason below is latched rather than re-read.
+///     longer than the timeout may run after this. Enabling also changes the
+///     hardware bookkeeping used to identify the prior reset, which is why the
+///     boot reason below is latched rather than re-read.
 /// </summary>
 void BSP_WatchdogStart( const uint32_t timeoutMs )
 {
@@ -114,6 +116,24 @@ bsp_boot_reason BSP_WatchdogBootReason( void )
         _bootReasonLatched = true;
     }
     return _bootReason;
+}
+
+/// <summary>
+///     Latches the retained progress marker before this boot can replace it.
+///     The live MarkerGet API deliberately remains live for self-tests and
+///     diagnostics; callers reporting the previous boot use this snapshot.
+/// </summary>
+/// <returns>
+///     The progress marker retained across the reset into this boot.
+/// </returns>
+uint32_t BSP_WatchdogBootMarker( void )
+{
+    if ( !_bootMarkerLatched )
+    {
+        _bootMarker = watchdog_hw->scratch[ MARKER_REGISTER ];
+        _bootMarkerLatched = true;
+    }
+    return _bootMarker;
 }
 
 /// <summary>

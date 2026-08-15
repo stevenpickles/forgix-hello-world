@@ -62,6 +62,11 @@ typedef struct bsp_memory_cs_operation_t_tag
    how a probe undoes the reset it just performed. */
 bool BSP_MemoryPsramForceFromDatasheet( void );
 
+/* Contains a suspect window without issuing a device command. Every mapped
+   consumer derives its bound from the advertised size and therefore refuses
+   access after this call. */
+void BSP_MemoryPsramDisable( void );
+
 /* Replaces the SDK detection bytes with the boot POST's legal post-reset
    capture. The core keeps the storage because BSP_MemoryCheck reports it. */
 void BSP_MemoryPsramRecordIdentity( uint8_t kgd, uint8_t eid );

@@ -19,6 +19,8 @@
 
 static bsp_boot_reason _bootReason;
 static uint32_t _marker;
+static uint32_t _bootMarker;
+static bool _bootMarkerLatched;
 static uint32_t _snapshots[ BSP_WATCHDOG_SNAPSHOT_SLOTS ];
 static bool _started;
 static uint32_t _timeoutMs;
@@ -46,6 +48,8 @@ void MOCK_BSP_WatchdogReset( void )
 {
     _bootReason = BSP_BOOT_POWER_ON;
     _marker = 0;
+    _bootMarker = 0;
+    _bootMarkerLatched = false;
     for ( uint32_t slot = 0; slot < BSP_WATCHDOG_SNAPSHOT_SLOTS; ++slot )
     {
         _snapshots[ slot ] = 0;
@@ -86,6 +90,7 @@ void MOCK_BSP_WatchdogSetRetained( const uint32_t retainedMarker, const uint32_t
                                    const uint32_t slot1, const uint32_t slot2 )
 {
     _marker = retainedMarker;
+    _bootMarkerLatched = false;
     _snapshots[ 0 ] = slot0;
     _snapshots[ 1 ] = slot1;
     _snapshots[ 2 ] = slot2;
@@ -93,8 +98,8 @@ void MOCK_BSP_WatchdogSetRetained( const uint32_t retainedMarker, const uint32_t
 
 
 /// <summary>
-///     Whether the code under test armed the watchdog. Arming is irreversible on
-///     hardware, so tests assert it happens exactly once and at the right point.
+///     Whether the code under test armed or reprogrammed the watchdog. The BSP
+///     uses a wider boot window before diagnostics narrows it for the loop.
 /// </summary>
 /// <returns>
 ///     True once BSP_WatchdogStart has been called.
@@ -240,6 +245,24 @@ void BSP_WatchdogFeed( void )
 bsp_boot_reason BSP_WatchdogBootReason( void )
 {
     return _bootReason;
+}
+
+
+/// <summary>
+///     Snapshots the staged retained marker on first use, so later marker writes
+///     cannot change what the previous-boot report sees.
+/// </summary>
+/// <returns>
+///     The marker retained into this simulated boot.
+/// </returns>
+uint32_t BSP_WatchdogBootMarker( void )
+{
+    if ( !_bootMarkerLatched )
+    {
+        _bootMarker = _marker;
+        _bootMarkerLatched = true;
+    }
+    return _bootMarker;
 }
 
 

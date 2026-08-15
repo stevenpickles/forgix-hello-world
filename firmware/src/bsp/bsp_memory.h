@@ -143,6 +143,10 @@ bsp_memory_report_t BSP_MemoryCheck( void );
    Read-ID sequence is one direct-mode window at 25 MHz. */
 bsp_memory_post_report_t BSP_MemoryPsramPost( void );
 
+/* Records that a watchdog caught the previous POST and contains CS1 by
+   advertising no mapped size. Used only by BSP_Init's one-boot recovery path. */
+bsp_memory_post_report_t BSP_MemoryPsramPostWatchdogRecovery( void );
+
 /* Returns the boot capture without touching the QSPI bus. */
 bsp_memory_post_report_t BSP_MemoryPsramPostReport( void );
 

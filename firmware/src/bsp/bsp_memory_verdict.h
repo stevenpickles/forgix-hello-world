@@ -51,6 +51,7 @@ typedef enum bsp_memory_post_result_tag
     BSP_MEMORY_POST_MODE_REGISTER_FAIL,
     BSP_MEMORY_POST_SCRATCH_FAIL,
     BSP_MEMORY_POST_CONTROLLER_FAIL,
+    BSP_MEMORY_POST_WATCHDOG_RECOVERY,
     BSP_MEMORY_POST_SKIPPED,
 } bsp_memory_post_result;
 

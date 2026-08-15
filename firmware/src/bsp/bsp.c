@@ -49,6 +49,12 @@
 #define FORGIX_QSPI_CS1_GPIO 0
 #endif
 
+/* Below RP2354's 16.777-second hardware maximum, but long enough to span each
+   pass of the USB-free retained-evidence blink report. That report feeds once
+   per pass; application_diagnostics_start then narrows the timer to its normal
+   five-second foreground window. */
+#define BOOT_WATCHDOG_TIMEOUT_MS ( (uint32_t) 15000u )
+
 
 
 
@@ -93,7 +99,21 @@ bsp_init_result_t BSP_Init( void )
     BSP_AdcInit();
 
     const bsp_init_result_t result = BSP_FpgaInit();
-    (void) BSP_MemoryPsramPost();
+    const bsp_boot_reason bootReason = BSP_WatchdogBootReason();
+    const uint32_t bootMarker = BSP_WatchdogBootMarker();
+
+    BSP_WatchdogMarkerSet( BSP_WATCHDOG_MARKER_PSRAM_POST );
+    BSP_WatchdogStart( BOOT_WATCHDOG_TIMEOUT_MS );
+    if ( bootReason == BSP_BOOT_WATCHDOG && bootMarker == BSP_WATCHDOG_MARKER_PSRAM_POST )
+    {
+        (void) BSP_MemoryPsramPostWatchdogRecovery();
+    }
+    else
+    {
+        (void) BSP_MemoryPsramPost();
+    }
+    BSP_WatchdogFeed();
+    BSP_WatchdogMarkerSet( BSP_WATCHDOG_MARKER_STARTUP );
     BSP_ConsoleInit();
     return result;
 }

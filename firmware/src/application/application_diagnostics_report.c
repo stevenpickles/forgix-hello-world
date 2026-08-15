@@ -128,12 +128,14 @@ void application_diagnostics_report_live( void )
 }
 
 /* The USB-free image has no console, so the same boot report is emitted as an
-   LED blink code. This runs before the watchdog is armed, so blocking is safe. */
+   LED blink code. The BSP's early watchdog is live, so each complete pass feeds
+   it before the next pass can begin. */
 /// <summary>
 ///     Blocks for several seconds -- three passes of up to eight blinks -- which
-///     only the unarmed watchdog makes safe. It repeats because there is no way
-///     to ask for it again, and finishes with the LED off, so the heartbeat's
-///     first write is what decides what shows next rather than a leftover colour.
+///     remains safe because each pass is shorter than the early watchdog window
+///     and feeds it. It repeats because there is no way to ask for it again, and
+///     finishes with the LED off, so the heartbeat's first write decides what
+///     shows next rather than a leftover colour.
 /// </summary>
 void application_diagnostics_report_blink( void )
 {
@@ -152,6 +154,7 @@ void application_diagnostics_report_blink( void )
             BSP_TimeSleepMs( BOOT_BLINK_OFF_MS );
         }
         BSP_TimeSleepMs( BOOT_BLINK_GAP_MS );
+        BSP_WatchdogFeed();
     }
 }
 
