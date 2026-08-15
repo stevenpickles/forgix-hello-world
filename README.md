@@ -301,8 +301,10 @@ BSP mocks and enforced coverage), the Efinity synthesis job, and an RP2354 USB
 firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
 last linking the bitstream that same run produced, falling back to the
 `tests/fixtures/fpga-test.bin` compile fixture only if synthesis failed. The
-verify job publishes its JUnit, detailed HTML, Cobertura XML, and text reports
-as a workflow artifact. Hardware tests remain local. A push or pull request
+firmware job publishes seven-day `forgix_hello_world.uf2` and
+`forgix_led_only_diagnostic.uf2` BOOTSEL images alongside its ELF, map, and raw
+binary; the verify job publishes its JUnit, detailed HTML, Cobertura XML, and
+text reports as a separate workflow artifact. Hardware tests remain local. A push or pull request
 confined to Markdown, `docs/`, or the license skips the entire workflow —
 nothing in CI reads those files — so a documentation-only pull request arrives
 with no checks at all.

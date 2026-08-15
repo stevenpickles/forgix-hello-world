@@ -224,18 +224,26 @@ jobs:
 
       - name: Configure RP2354 firmware
         run: |
-          # PICO_SDK_PATH and the Arm toolchain come from the image; the flag
-          # is kept explicit so the SDK in use is visible in the log.
-          # PICO_NO_PICOTOOL: CI only needs to know this compiles and links.
-          # release.yml omits it so the SDK emits a UF2 via the image's
-          # prebuilt picotool.
+          # PICO_SDK_PATH, the Arm toolchain and picotool come from the image.
+          # Pointing the SDK at the pinned prebuilt picotool makes an ordinary
+          # push or PR produce the same BOOTSEL-ready outputs as a release,
+          # without fetching and compiling picotool from git.
           cmake -S firmware -B build/firmware-ci -G Ninja \
             -DPICO_SDK_PATH="$PICO_SDK_PATH" \
-            -DFPGA_IMAGE="${{ steps.image.outputs.path }}" \
-            -DPICO_NO_PICOTOOL=1
+            -Dpicotool_DIR="$PICOTOOL_BIN_PATH" \
+            -DFPGA_IMAGE="${{ steps.image.outputs.path }}"
 
       - name: Compile and link
         run: cmake --build build/firmware-ci --parallel
+
+      - name: Verify BOOTSEL images
+        run: |
+          test -s build/firmware-ci/forgix_hello_world.uf2
+          test -s build/firmware-ci/forgix_led_only_diagnostic.uf2
+          echo "BOOTSEL images generated:"
+          wc -c \
+            build/firmware-ci/forgix_hello_world.uf2 \
+            build/firmware-ci/forgix_led_only_diagnostic.uf2
 
       - name: Report firmware size
         run: arm-none-eabi-size build/firmware-ci/forgix_hello_world.elf
@@ -272,14 +280,17 @@ jobs:
         env:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
 
-      - name: Upload firmware diagnostics
+      - name: Upload flashable firmware and diagnostics
         uses: actions/upload-artifact@v7
         with:
           name: forgix-rp2354-test-firmware-${{ env.ARTIFACT_SUFFIX }}
           path: |
+            build/firmware-ci/forgix_hello_world.uf2
             build/firmware-ci/forgix_hello_world.elf
             build/firmware-ci/forgix_hello_world.elf.map
             build/firmware-ci/forgix_hello_world.bin
+            build/firmware-ci/forgix_led_only_diagnostic.uf2
+            build/firmware-ci/forgix_led_only_diagnostic.elf
           if-no-files-found: error
           retention-days: 7
 
