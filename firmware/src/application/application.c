@@ -34,11 +34,9 @@ static bool parse_watch_period( const char *text, uint32_t *seconds );
 
 static void print_help( void );
 
-static void print_identity_dump( void );
-
 static void print_memory_report( void );
 
-static void print_response_line( const char *label, const uint8_t *ptr_response );
+static void print_psram_post( void );
 
 
 
@@ -190,14 +188,13 @@ void application_process_command( char *line )
         }
         return;
     }
-    /* Gate-free like diag: the memories share nothing with the FPGA, and the
-       identity investigation is most needed exactly when the board is being
-       distrusted. */
+    /* Gate-free like diag. This reports the boot capture only: the datasheet
+       forbids issuing Read-ID later at runtime. */
     if ( !strcmp( argv[ 0 ], "memid" ) )
     {
         if ( argc == 1 )
         {
-            print_identity_dump();
+            print_psram_post();
         }
         else
         {
@@ -285,6 +282,7 @@ void application_process_command( char *line )
 /// </summary>
 void application_init( const bsp_init_result_t *bsp_result )
 {
+    print_psram_post();
     print_memory_report();
     BSP_ConsolePrintf( "Forgix: configuration=%s design_id=%02X runtime=%s cdone=%u status=%u\n",
                        bsp_result->configured ? "ok" : "failed", bsp_result->design_id,
@@ -371,60 +369,34 @@ static void print_help( void )
 }
 
 
-/* One line per transaction, every byte shown, because the absent bytes are the
-   investigation: the flash line is the sampling control, the manufacturer byte
-   sits at offset 4 of the psram lines, and a byte-alignment difference between
-   vendors shows up as the expected values standing one column off. */
+static const char *const POST_RESULT_TEXT[] = {
+    "pass",     "no-device",    "kgd-fail",        "density-fail",
+    "mr0-fail", "scratch-fail", "controller-fail", "skipped",
+};
+
+
 /// <summary>
-///     Prints the raw Read-ID responses BSP_MemoryIdentityDump captured: the
-///     boot flash control first, then one line per PSRAM probe rate, then
-///     whether the memory window survived the investigation.
+///     Reports the cached boot-only POST with every raw byte behind its verdict.
+///     No QSPI transaction occurs here, so `memid` remains safe at runtime.
 /// </summary>
-static void print_identity_dump( void )
+static void print_psram_post( void )
 {
-    const bsp_memory_identity_dump_t dump = BSP_MemoryIdentityDump();
+    const bsp_memory_post_report_t post = BSP_MemoryPsramPostReport();
 
-    print_response_line( "cs0 flash 9F", dump.flash_response );
-
-    if ( !dump.psram_probed )
+    if ( post.result == BSP_MEMORY_POST_SKIPPED )
     {
-        BSP_ConsolePuts( "cs1 psram: not probed; this image was built without PSRAM support" );
+        BSP_ConsolePuts( "post: skipped; this image was built without PSRAM support" );
         return;
     }
 
-    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
+    BSP_ConsolePrintf( "post: %s mfid=%02X kgd=%02X eid=%02X mr0=%02X scratch=%u restored=%u\n",
+                       POST_RESULT_TEXT[ post.result ], post.mfid, post.kgd, post.eid, post.mr0,
+                       post.scratch_ok, post.restored );
+    if ( !post.scratch_ok )
     {
-        char label[ 32 ];
-        snprintf( label, sizeof label, "cs1 psram 9F @%lukHz",
-                  (unsigned long) ( dump.probe_hz[ rate ] / 1000u ) );
-        print_response_line( label, dump.psram_response[ rate ] );
+        BSP_ConsolePrintf( "post: first scratch mismatch at %06lX\n",
+                           (unsigned long) post.scratch_fail_address );
     }
-
-    BSP_ConsolePuts( dump.restored
-                         ? "qpi re-entry: ok (readback verified)"
-                         : "error: qpi re-entry or readback verify failed; psram is unusable "
-                           "until the next successful check" );
-}
-
-
-/* One write per line rather than one per byte: every console write walks the
-   untimed stdio flush loop, and sixteen byte-sized trips per line is traffic
-   the single formatted buffer avoids. */
-/// <summary>
-///     Prints one labelled Read-ID response as space-separated hex, however
-///     many bytes the dump carries.
-/// </summary>
-static void print_response_line( const char *label, const uint8_t *ptr_response )
-{
-    /* Sized for the longest label plus three characters per byte. */
-    char line[ 80 ];
-    int written = snprintf( line, sizeof line, "%s:", label );
-    for ( uint32_t index = 0; index < (uint32_t) BSP_MEMORY_IDENTITY_RESPONSE_BYTES; ++index )
-    {
-        written += snprintf( line + written, sizeof line - (size_t) written, " %02X",
-                             ptr_response[ index ] );
-    }
-    BSP_ConsolePuts( line );
 }
 
 

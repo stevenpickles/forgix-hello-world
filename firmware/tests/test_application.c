@@ -45,7 +45,7 @@ static void expect_memory_report( void );
 
 static bsp_memory_report_t memory_report( void );
 
-static bsp_memory_identity_dump_t identity_dump( void );
+static bsp_memory_post_report_t post_report( void );
 
 static bsp_led_state_t expected_hello_led( void );
 
@@ -85,6 +85,7 @@ void test_application_init_reports_ready_hardware_and_help( void )
         .status_pin = true,
     };
 
+    BSP_MemoryPsramPostReport_ExpectAndReturn( post_report() );
     expect_memory_report();
     application_init( &result );
 
@@ -104,6 +105,7 @@ void test_application_init_preserves_diagnostics_when_hardware_is_unavailable( v
         .status_pin = false,
     };
 
+    BSP_MemoryPsramPostReport_ExpectAndReturn( post_report() );
     expect_memory_report();
     application_init( &result );
 
@@ -358,63 +360,47 @@ void test_diag_reports_the_last_reset_and_stays_available_without_fpga_access( v
 }
 
 
-/* No BSP_FpgaIsReady expectation is queued: a consult would fail through
-   CMock, which is the FPGA-down guarantee for the one command that exists to
-   interrogate a distrusted board. */
-void test_memid_dumps_every_response_byte_without_consulting_the_fpga( void )
+/* No FPGA expectation is queued: memid reports the boot capture and must be
+   available even when the FPGA is distrusted. */
+void test_memid_reports_the_cached_post_without_touching_hardware( void )
 {
-    bsp_memory_identity_dump_t dump = identity_dump();
-
-    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+    BSP_MemoryPsramPostReport_ExpectAndReturn( post_report() );
 
     process( "memid" );
 
     TEST_ASSERT_NOT_NULL(
         strstr( MOCK_BSP_ConsoleOutput(),
-                "cs0 flash 9F: 00 EF 40 15 EF 40 15 EF 40 15 EF 40 15 EF 40 15" ) );
-    TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(),
-                "cs1 psram 9F @25000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FD" ) );
-    TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(),
-                "cs1 psram 9F @5000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FE" ) );
-    TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(),
-                "cs1 psram 9F @1000kHz: 00 00 00 00 66 0B 43 57 66 0B 43 57 66 0B 43 FF" ) );
-    TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry: ok (readback verified)" ) );
+                "post: pass mfid=0D kgd=5D eid=03 mr0=60 scratch=1 restored=1" ) );
 }
 
 
-void test_memid_reports_a_failed_qpi_reentry( void )
+void test_memid_reports_a_scratch_failure_and_its_first_address( void )
 {
-    bsp_memory_identity_dump_t dump = identity_dump();
-    dump.restored = false;
+    bsp_memory_post_report_t post = post_report();
+    post.result = BSP_MEMORY_POST_SCRATCH_FAIL;
+    post.scratch_ok = false;
+    post.scratch_fail_address = 0x1fffc3u;
 
-    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+    BSP_MemoryPsramPostReport_ExpectAndReturn( post );
 
     process( "memid" );
 
-    TEST_ASSERT_NOT_NULL(
-        strstr( MOCK_BSP_ConsoleOutput(), "error: qpi re-entry or readback verify failed" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "post: scratch-fail" ) );
+    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "first scratch mismatch at 1FFFC3" ) );
 }
 
 
 void test_memid_says_when_the_image_has_no_psram_support( void )
 {
-    bsp_memory_identity_dump_t dump = identity_dump();
-    dump.psram_probed = false;
+    bsp_memory_post_report_t post = { .result = BSP_MEMORY_POST_SKIPPED };
 
-    BSP_MemoryIdentityDump_ExpectAndReturn( dump );
+    BSP_MemoryPsramPostReport_ExpectAndReturn( post );
 
     process( "memid" );
 
-    TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs0 flash 9F: 00 EF 40 15" ) );
     TEST_ASSERT_NOT_NULL( strstr( MOCK_BSP_ConsoleOutput(),
-                                  "cs1 psram: not probed; this image was built without PSRAM" ) );
-    /* the probe lines and the re-entry verdict describe reads that never ran */
-    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "cs1 psram 9F" ) );
-    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "qpi re-entry" ) );
+                                  "post: skipped; this image was built without PSRAM support" ) );
+    TEST_ASSERT_NULL( strstr( MOCK_BSP_ConsoleOutput(), "mfid=" ) );
 }
 
 
@@ -520,34 +506,19 @@ static bsp_memory_report_t memory_report( void )
 }
 
 
-/* Bytes chosen to look like the real investigation: a Winbond flash ID
-   cycling on the control line the way a real NOR repeats it under continued
-   clocking, the observed unexpected PSRAM identity on all three rates, and a
-   trailing byte that differs per rate so a test could never pass by printing
-   one response three times. */
-static bsp_memory_identity_dump_t identity_dump( void )
+static bsp_memory_post_report_t post_report( void )
 {
-    bsp_memory_identity_dump_t dump = {
-        .psram_probed = true,
-        .probe_hz = { 25000000u, 5000000u, 1000000u },
+    bsp_memory_post_report_t report = {
+        .result = BSP_MEMORY_POST_PASS,
+        .ran = true,
+        .mfid = 0x0du,
+        .kgd = 0x5du,
+        .eid = 0x03u,
+        .mr0 = 0x60u,
+        .scratch_ok = true,
         .restored = true,
     };
-    const uint8_t flash[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
-        0x00, 0xEF, 0x40, 0x15, 0xEF, 0x40, 0x15, 0xEF,
-        0x40, 0x15, 0xEF, 0x40, 0x15, 0xEF, 0x40, 0x15,
-    };
-    const uint8_t psram[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
-        0x00, 0x00, 0x00, 0x00, 0x66, 0x0B, 0x43, 0x57,
-        0x66, 0x0B, 0x43, 0x57, 0x66, 0x0B, 0x43, 0x00,
-    };
-    memcpy( dump.flash_response, flash, sizeof flash );
-    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
-    {
-        memcpy( dump.psram_response[ rate ], psram, sizeof psram );
-        dump.psram_response[ rate ][ BSP_MEMORY_IDENTITY_RESPONSE_BYTES - 1u ] =
-            (uint8_t) ( 0xFDu + rate );
-    }
-    return dump;
+    return report;
 }
 
 

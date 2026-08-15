@@ -23,49 +23,6 @@
 
 /***************************************************************************************
 **
-** Compiler Define Directives
-**
-***************************************************************************************/
-
-
-/* The probe clock answers to two datasheet limits at once. Read-ID has no
-   wait cycles, so it carries a 33 MHz ceiling -- over that the QMI samples
-   before the data is valid and returns displaced bytes. And the 8-byte
-   Read-ID holds chip select low for 64 clocks in one stretch, which must fit
-   inside tCEM (3 us at 105 C): the DRAM cannot refresh while selected, so an
-   overrun risks the array. Divisor 8 (18.75 MHz) satisfied the ceiling but
-   stretched the transfer to 3.4 us; 6 gives 25 MHz and 2.56 us, inside both.
-   The asserts pin the arithmetic to clk_sys so neither limit can be broken by
-   a clock change that never looked at this file. */
-#define CS1_PROBE_CLKDIV ( (uint32_t) 6u )
-
-_Static_assert( SYS_CLK_HZ / CS1_PROBE_CLKDIV <= 33000000u,
-                "Read-ID must stay at or under its 33 MHz no-wait-state ceiling" );
-_Static_assert( ( 64ull * CS1_PROBE_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000ull,
-                "the 64-clock Read-ID must hold chip select shorter than the 3 us tCEM" );
-
-/* tRST is 50 ns; 1500 cycles at 150 MHz is 10 us, a 200x margin. Spent as an
-   in-RAM cycle spin rather than a timer wait because it elapses inside the
-   XIP-down window, where the flash-resident busy_wait_us_32 cannot run. */
-#define CS1_TRST_WAIT_CYCLES ( (uint32_t) 1500u )
-
-/* Confirmation rates for the identity investigation: 5 MHz and 1 MHz beside
-   the production 25 MHz. The investigation's extended 128-clock Read-ID holds
-   chip select for 5.1 us, 25.6 us and 128 us at the three rates -- all past
-   tCEM, and deliberately so: the ID register is static logic with no refresh
-   dependency, the array contents are expendable during an investigation (the
-   identify path resets the device and the next sweep rewrites it), and an
-   identity that is bit-identical across a 25x clock spread cannot be a
-   marginal-sampling artefact. Only the production probe, whose short transfer
-   the asserts above measure, stays bound to the datasheet limits. */
-#define CS1_SLOW_PROBE_CLKDIV ( (uint32_t) 30u )
-#define CS1_SLOWEST_PROBE_CLKDIV ( (uint32_t) 150u )
-
-
-
-
-/***************************************************************************************
-**
 ** Private Function Declarations
 **
 ***************************************************************************************/
@@ -119,164 +76,26 @@ void BSP_MemoryCs1OperationSequence( const bsp_memory_cs_operation_t *ptr_operat
 }
 
 
-/// <summary>
-///     Runs the equivalent atomic window against the boot flash. CS1 metadata is
-///     untouched because the control transaction never selects that device.
-/// </summary>
-void BSP_MemoryCs0OperationSequence( const bsp_memory_cs_operation_t *ptr_operations,
-                                     uint32_t operationCount, uint32_t clkdiv )
-{
-    xip_cache_clean_all();
-
-    const uint32_t interrupts = save_and_disable_interrupts();
-    _CsOperationSequence( ptr_operations, operationCount, clkdiv,
-                          QMI_DIRECT_CSR_ASSERT_CS0N_BITS );
-    _RestoreBoot2Xip();
-    restore_interrupts( interrupts );
-}
 #endif
 
 
 /// <summary>
-///     Reads the chip-select-1 identity in the one window the datasheet allows --
-///     straight after a global reset -- then re-enters QPI so the memory keeps
-///     working. Reset, read and re-entry live in one call so an abort can never
-///     leave the device reset but not re-initialised. The fresh bytes replace the
-///     boot capture, which is nonsense after a warm reboot: the device was still
-///     in QPI from the previous session when the SDK's serial Read-ID ran.
+///     Adapts the boot-only POST report to the compact identity view consumed by
+///     IBIT. No command is sent: Read-ID is legal only in the POST's post-reset
+///     window, so runtime diagnostics always use this cached observation.
 /// </summary>
 /// <returns>
-///     The identity bytes and whether the QPI re-entry brought the window back.
+///     The cached identity bytes and whether boot restored the mapped window.
 /// </returns>
 bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void )
 {
-    bsp_memory_psram_identity_t identity = { 0 };
-
-#if FORGIX_QSPI_PSRAM
-    /* Quad-width reset first, to recover a device stuck in QPI -- serial
-       opcodes do not exist for it -- then the serial pair for a device already
-       in SPI mode. One of the two always applies, and the serial pair also
-       cleans up after the quad opcodes a serial device would have decoded as
-       noise. The whole sequence runs inside one XIP-down window: 66h/99h is an
-       atomic pair, and re-invoking the ROM between transfers used to fire an
-       XIP exit sequence at the device mid-pair, voiding the reset -- and
-       putting foreign traffic between the reset and the Read-ID that is only
-       legal straight after it. */
-    const uint8_t reset_enable[ 1 ] = { 0x66u };
-    const uint8_t reset[ 1 ] = { 0x99u };
-    const uint8_t read_id[ 8 ] = { 0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu };
-    uint8_t discard[ 1 ] = { 0 };
-    uint8_t response[ 8 ] = { 0 };
-
-    const bsp_memory_cs_operation_t operations[] = {
-        { reset_enable, NULL, 1u, true, 0u },
-        { reset, NULL, 1u, true, CS1_TRST_WAIT_CYCLES },
-        { reset_enable, discard, 1u, false, 0u },
-        { reset, discard, 1u, false, CS1_TRST_WAIT_CYCLES },
-        { read_id, response, sizeof read_id, false, 0u },
+    const bsp_memory_post_report_t report = BSP_MemoryPsramPostReport();
+    const bsp_memory_psram_identity_t identity = {
+        .kgd = report.kgd,
+        .eid = report.eid,
+        .restored = report.restored,
     };
-    BSP_MemoryCs1OperationSequence( operations,
-                                    (uint32_t) ( sizeof operations / sizeof operations[ 0 ] ),
-                                    CS1_PROBE_CLKDIV );
-
-    identity.kgd = response[ 5 ];
-    identity.eid = response[ 6 ];
-
-    /* The reset tore the device out of QPI; bring it back the same way boot
-       does. restored=false means no verified window is advertised -- either
-       re-entry failed before mapping anything, or the mapped window flunked
-       its probe and its size was zeroed. Nothing stores data there, so the
-       failure costs the rest of the firmware nothing, but it must be reported
-       rather than papered over -- and calling this again retries the whole
-       bring-up. */
-    identity.restored = BSP_MemoryPsramForceFromDatasheet();
-
-    /* Later reports now show bytes read in the legal window rather than
-       whatever runtime_init captured. */
-    BSP_MemoryPsramRecordIdentity( identity.kgd, identity.eid );
-#endif
-
     return identity;
-}
-
-
-/* The chip-select-0 read runs through the same engine at the same divisor as
-   the first PSRAM probe, so the two transactions differ in nothing but which
-   select fell: a correct flash ID is positive proof the controller's launch
-   and sample edges read a known device faithfully at these exact settings.
-   The reported bytes are left alone on purpose -- this call is a witness, not
-   a detector, and diag should keep showing what the production path read. */
-/// <summary>
-///     Captures the full Read-ID response from the boot flash as a sampling
-///     control and from the PSRAM at three clock rates, resetting the PSRAM
-///     first each time exactly as the production probe does, then re-enters
-///     QPI. Every extended read knowingly overstays tCEM; see the header note.
-/// </summary>
-/// <returns>
-///     Every response byte, the rate of each probe, and whether the QPI
-///     re-entry brought the memory window back.
-/// </returns>
-bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void )
-{
-    bsp_memory_identity_dump_t dump = { 0 };
-
-#if FORGIX_QSPI_PSRAM
-    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
-        0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
-        0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
-    };
-    const uint8_t reset_enable[ 1 ] = { 0x66u };
-    const uint8_t reset[ 1 ] = { 0x99u };
-    uint8_t discard[ 1 ] = { 0 };
-
-    const bsp_memory_cs_operation_t control[] = {
-        { read_id, dump.flash_response, sizeof read_id, false, 0u },
-    };
-    BSP_MemoryCs0OperationSequence( control,
-                                    (uint32_t) ( sizeof control / sizeof control[ 0 ] ),
-                                    CS1_PROBE_CLKDIV );
-
-    const uint32_t divisors[ BSP_MEMORY_IDENTITY_PROBE_RATES ] = {
-        CS1_PROBE_CLKDIV,
-        CS1_SLOW_PROBE_CLKDIV,
-        CS1_SLOWEST_PROBE_CLKDIV,
-    };
-    for ( uint32_t rate = 0; rate < (uint32_t) BSP_MEMORY_IDENTITY_PROBE_RATES; ++rate )
-    {
-        /* The full reset precedes every read: Read-ID is only legal straight
-           after one, at any clock. */
-        const bsp_memory_cs_operation_t operations[] = {
-            { reset_enable, NULL, 1u, true, 0u },
-            { reset, NULL, 1u, true, CS1_TRST_WAIT_CYCLES },
-            { reset_enable, discard, 1u, false, 0u },
-            { reset, discard, 1u, false, CS1_TRST_WAIT_CYCLES },
-            { read_id, dump.psram_response[ rate ], sizeof read_id, false, 0u },
-        };
-        BSP_MemoryCs1OperationSequence(
-            operations, (uint32_t) ( sizeof operations / sizeof operations[ 0 ] ),
-            divisors[ rate ] );
-        dump.probe_hz[ rate ] = SYS_CLK_HZ / divisors[ rate ];
-    }
-
-    dump.psram_probed = true;
-    /* Same closing move as the identify path: QPI re-entry brings the memory
-       window back, and its verification decides what restored may claim. */
-    dump.restored = BSP_MemoryPsramForceFromDatasheet();
-#else
-    /* No PSRAM support means no direct-mode engine, but the flash control
-       read still has value; the SDK's helper performs the identical transfer
-       at the QMI's reset-default clocking. Interrupts off because handlers
-       live in flash and the helper takes XIP down. */
-    const uint8_t read_id[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ] = {
-        0x9fu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
-        0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu, 0xffu,
-    };
-    const uint32_t interrupts = save_and_disable_interrupts();
-    flash_do_cmd_cs( read_id, dump.flash_response, sizeof read_id, 0 );
-    restore_interrupts( interrupts );
-#endif
-
-    return dump;
 }
 
 

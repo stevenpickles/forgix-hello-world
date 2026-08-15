@@ -25,6 +25,12 @@
 
 #define BYTES_PER_WORD ( (uint32_t) 4u )
 
+#define POST_MFID_AP_MEMORY ( (uint8_t) 0x0du )
+#define POST_KGD_PASS ( (uint8_t) 0x5du )
+#define POST_EID_DENSITY_MASK ( (uint8_t) 0xe0u )
+#define POST_MR0_DOCUMENTED_MASK ( (uint8_t) 0x63u )
+#define POST_MR0_RESET_VALUE ( (uint8_t) 0x60u )
+
 
 
 
@@ -74,4 +80,58 @@ bool BSP_MemoryVerdictProbeHeld( const bsp_memory_probe_plan_t *const ptr_plan,
 {
     return ptr_plan->viable && ( observedFirst == ptr_plan->first_pattern ) &&
            ( observedLast == ptr_plan->last_pattern );
+}
+
+
+/// <summary>
+///     Classifies the POST in bus order so the result names the first invalid
+///     observation rather than a downstream consequence of it. Reserved MR0
+///     and manufacturing-ID bits are deliberately excluded from comparisons.
+/// </summary>
+/// <returns>
+///     The first failure, or PASS when every check held.
+/// </returns>
+bsp_memory_post_result BSP_MemoryVerdictPostClassify( const uint8_t mfid, const uint8_t kgd,
+                                                      const uint8_t eid, const uint8_t mr0,
+                                                      const bool scratchOk, const bool restored )
+{
+    if ( mfid != POST_MFID_AP_MEMORY )
+    {
+        return BSP_MEMORY_POST_NO_DEVICE;
+    }
+    if ( kgd != POST_KGD_PASS )
+    {
+        return BSP_MEMORY_POST_KGD_FAIL;
+    }
+    if ( ( eid & POST_EID_DENSITY_MASK ) != 0u )
+    {
+        return BSP_MEMORY_POST_DENSITY_FAIL;
+    }
+    if ( ( mr0 & POST_MR0_DOCUMENTED_MASK ) != POST_MR0_RESET_VALUE )
+    {
+        return BSP_MEMORY_POST_MODE_REGISTER_FAIL;
+    }
+    if ( !scratchOk )
+    {
+        return BSP_MEMORY_POST_SCRATCH_FAIL;
+    }
+    if ( !restored )
+    {
+        return BSP_MEMORY_POST_CONTROLLER_FAIL;
+    }
+    return BSP_MEMORY_POST_PASS;
+}
+
+
+/// <summary>
+///     Derives one scratch byte from its absolute address, optionally inverted,
+///     so a misplaced write cannot agree with the expected byte by accident.
+/// </summary>
+/// <returns>
+///     The byte to write and later verify.
+/// </returns>
+uint8_t BSP_MemoryVerdictScratchByte( const uint32_t address, const bool inverted )
+{
+    const uint8_t pattern = (uint8_t) ( address & 0xffu );
+    return inverted ? (uint8_t) ~pattern : pattern;
 }
