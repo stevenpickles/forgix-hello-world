@@ -38,6 +38,11 @@
 #define KGD_INDEX ( (uint32_t) 5u )
 #define EID_INDEX ( (uint32_t) 6u )
 
+/* B5h, the 24-bit MR0 address, one byte spanning eight wait cycles, then one
+   byte clocking out MR0. Both voltage variants permit this well above 25 MHz. */
+#define MR0_READ_BYTES ( (uint32_t) 6u )
+#define MR0_INDEX ( (uint32_t) 5u )
+
 _Static_assert( SYS_CLK_HZ / POST_CLKDIV <= 33000000u,
                 "Read-ID must stay at or under 33 MHz" );
 _Static_assert( ( 8ull * READ_ID_BYTES * POST_CLKDIV * 1000000000ull ) / SYS_CLK_HZ < 3000ull,
@@ -65,9 +70,13 @@ static uint8_t _reset[ 1 ] = { 0x99u };
 static uint8_t _readId[ READ_ID_BYTES ] = {
     0x9fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
 };
+static uint8_t _mr0Read[ MR0_READ_BYTES ] = {
+    0xb5u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+};
 static uint8_t _discard[ 1 ];
 static uint8_t _idResponse[ READ_ID_BYTES ];
-static bsp_memory_cs_operation_t _operations[ 5 ];
+static uint8_t _mr0Response[ MR0_READ_BYTES ];
+static bsp_memory_cs_operation_t _operations[ 6 ];
 #endif
 
 
@@ -104,6 +113,8 @@ bsp_memory_post_report_t BSP_MemoryPsramPost( void )
         _reset, _discard, 1u, false, POST_TRST_WAIT_CYCLES };
     _operations[ 4 ] = ( bsp_memory_cs_operation_t ){
         _readId, _idResponse, READ_ID_BYTES, false, POST_DESELECT_WAIT_CYCLES };
+    _operations[ 5 ] = ( bsp_memory_cs_operation_t ){
+        _mr0Read, _mr0Response, MR0_READ_BYTES, false, POST_DESELECT_WAIT_CYCLES };
 
     BSP_MemoryCs1OperationSequence( _operations,
                                     (uint32_t) ( sizeof _operations / sizeof _operations[ 0 ] ),
@@ -113,6 +124,7 @@ bsp_memory_post_report_t BSP_MemoryPsramPost( void )
     _postReport.mfid = _idResponse[ MFID_INDEX ];
     _postReport.kgd = _idResponse[ KGD_INDEX ];
     _postReport.eid = _idResponse[ EID_INDEX ];
+    _postReport.mr0 = _mr0Response[ MR0_INDEX ];
     _postReport.restored = BSP_MemoryPsramForceFromDatasheet();
     BSP_MemoryPsramRecordIdentity( _postReport.kgd, _postReport.eid );
 #endif

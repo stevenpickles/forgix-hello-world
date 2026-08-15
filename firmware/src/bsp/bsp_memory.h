@@ -92,6 +92,7 @@ typedef struct bsp_memory_post_report_t_tag
     uint8_t mfid;
     uint8_t kgd;
     uint8_t eid;
+    uint8_t mr0;
     bool restored;
 } bsp_memory_post_report_t;
 
