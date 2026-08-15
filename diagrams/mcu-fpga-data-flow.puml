@@ -1,0 +1,84 @@
+@startuml
+title Data flow between RP2354 and FPGA
+
+hide footbox
+autonumber
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 105
+
+control "RP2354 application" as App
+control "RP2354 BSP / GPIO" as MCU
+participant "FPGA configuration logic" as Config
+participant "FPGA runtime SPI engine" as SPI
+collections "FPGA register file" as Regs
+participant "LED, button, tick counter, GPO0" as Logic
+boundary "CDONE / STATUS pins" as Pins
+
+group Configuration data - MCU to FPGA only
+  App -> MCU : BSP_FpgaInit()
+  MCU -> Config : Hold configuration CS low
+  MCU -> Config : Stream embedded bitstream, MSB first, at 8 MHz
+  MCU -> Config : Add trailing clocks until CDONE
+  Config -> Pins : Assert CDONE after configuration completes
+  Pins --> MCU : Dedicated level, independent of runtime SDIO
+end
+
+group Runtime register write - MCU to FPGA
+  App -> MCU : BSP_FpgaWriteRegister(address, value)
+  MCU -> SPI : CS low
+  MCU -> SPI : SDIO: command 0x02
+  MCU -> SPI : SDIO: 8-bit register address
+  MCU -> SPI : SDIO: 8-bit data value
+  SPI -> Regs : Pulse reg_write(address, value)
+  Regs -> Logic : Update LED, GPO0, acknowledgements or capture state
+  MCU -> SPI : CS high; release SDIO to input
+end
+
+group Runtime register read - request MCU to FPGA, result FPGA to MCU
+  App -> MCU : BSP_FpgaReadRegister(address)
+  MCU -> SPI : CS low
+  MCU -> SPI : SDIO: command 0x03
+  MCU -> SPI : SDIO: 8-bit register address
+  MCU -> MCU : Release SDIO on final address bit while SCK is high
+  SPI -> Regs : Select address through combinational readback mux
+  Regs --> SPI : One 8-bit value
+  SPI --> MCU : Enable SDIO after falling edge; return byte MSB first
+  MCU -> SPI : CS high; leave SDIO released
+  MCU --> App : Register value
+end
+
+group Ping - FPGA identity to MCU without an address byte
+  App -> MCU : BSP_FpgaPing()
+  MCU -> SPI : CS low; SDIO command 0x9F; then release SDIO
+  SPI -> Regs : Select design ID
+  Regs --> SPI : 0xB8
+  SPI --> MCU : Return ID byte
+  MCU -> SPI : CS high
+  MCU --> App : Design ID
+end
+
+group Reset command - MCU to FPGA register state
+  App -> MCU : BSP_FpgaReset()
+  MCU -> SPI : CS low; SDIO command 0x7F; CS high
+  SPI -> Regs : Pulse reset_regs
+  Regs -> Logic : Restore register defaults; GPO0 low; dim-blue LED
+  note over Regs, Logic
+    The free-running tick counter is not reset by this command.
+    A full FPGA reconfiguration resets the whole design.
+  end note
+end
+
+group Independent and transduced FPGA-to-MCU data paths
+  Pins --> MCU : CDONE configuration state and STATUS input
+  Logic -> Regs : Debounced SW1 level, sticky event and press count
+  Logic -> Regs : Latched 32-bit tick snapshot as four bytes
+  MCU -> SPI : Clock explicit reads for those registers
+  SPI --> MCU : Return one byte per read
+end
+
+note over MCU, SPI
+  Runtime link: CS=RP2354 GPIO1, SCK=GPIO2, half-duplex SDIO=GPIO3.
+  The MCU owns CS and SCK. SDIO direction changes only for read replies.
+end note
+
+@enduml

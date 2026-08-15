@@ -35,6 +35,7 @@ permissions:
 
 env:
   ARTIFACT_SUFFIX: run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+  BUILD_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -211,7 +212,8 @@ jobs:
       - name: Choose the image to embed
         id: image
         run: |
-          real="$GITHUB_WORKSPACE/dist/fpga/forgix_hello_world.bin"
+          short_sha="${BUILD_COMMIT_SHA:0:7}"
+          real="$GITHUB_WORKSPACE/dist/fpga/forgix-t8f49-$short_sha.bin"
           if [[ -s "$real" ]]; then
             echo "path=$real" >> "$GITHUB_OUTPUT"
             echo "real=true" >> "$GITHUB_OUTPUT"
@@ -224,18 +226,26 @@ jobs:
 
       - name: Configure RP2354 firmware
         run: |
-          # PICO_SDK_PATH and the Arm toolchain come from the image; the flag
-          # is kept explicit so the SDK in use is visible in the log.
-          # PICO_NO_PICOTOOL: CI only needs to know this compiles and links.
-          # release.yml omits it so the SDK emits a UF2 via the image's
-          # prebuilt picotool.
+          # PICO_SDK_PATH, the Arm toolchain and picotool come from the image.
+          # Pointing the SDK at the pinned prebuilt picotool makes an ordinary
+          # push or PR produce the same BOOTSEL-ready outputs as a release,
+          # without fetching and compiling picotool from git.
           cmake -S firmware -B build/firmware-ci -G Ninja \
             -DPICO_SDK_PATH="$PICO_SDK_PATH" \
-            -DFPGA_IMAGE="${{ steps.image.outputs.path }}" \
-            -DPICO_NO_PICOTOOL=1
+            -Dpicotool_DIR="$PICOTOOL_BIN_PATH" \
+            -DFPGA_IMAGE="${{ steps.image.outputs.path }}"
 
       - name: Compile and link
         run: cmake --build build/firmware-ci --parallel
+
+      - name: Verify BOOTSEL images
+        run: |
+          test -s build/firmware-ci/forgix_hello_world.uf2
+          test -s build/firmware-ci/forgix_led_only_diagnostic.uf2
+          echo "BOOTSEL images generated:"
+          wc -c \
+            build/firmware-ci/forgix_hello_world.uf2 \
+            build/firmware-ci/forgix_led_only_diagnostic.uf2
 
       - name: Report firmware size
         run: arm-none-eabi-size build/firmware-ci/forgix_hello_world.elf
@@ -272,14 +282,28 @@ jobs:
         env:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
 
-      - name: Upload firmware diagnostics
+      - name: Stage identified firmware artifacts
+        run: |
+          short_sha="${BUILD_COMMIT_SHA:0:7}"
+          mkdir -p dist/firmware
+          cp build/firmware-ci/forgix_hello_world.uf2 \
+            "dist/firmware/forgix-hello-world-$short_sha.uf2"
+          cp build/firmware-ci/forgix_hello_world.elf \
+            "dist/firmware/forgix-hello-world-$short_sha.elf"
+          cp build/firmware-ci/forgix_hello_world.elf.map \
+            "dist/firmware/forgix-hello-world-$short_sha.elf.map"
+          cp build/firmware-ci/forgix_hello_world.bin \
+            "dist/firmware/forgix-hello-world-$short_sha.bin"
+          cp build/firmware-ci/forgix_led_only_diagnostic.uf2 \
+            "dist/firmware/forgix-led-only-diagnostic-$short_sha.uf2"
+          cp build/firmware-ci/forgix_led_only_diagnostic.elf \
+            "dist/firmware/forgix-led-only-diagnostic-$short_sha.elf"
+
+      - name: Upload flashable firmware and diagnostics
         uses: actions/upload-artifact@v7
         with:
           name: forgix-rp2354-test-firmware-${{ env.ARTIFACT_SUFFIX }}
-          path: |
-            build/firmware-ci/forgix_hello_world.elf
-            build/firmware-ci/forgix_hello_world.elf.map
-            build/firmware-ci/forgix_hello_world.bin
+          path: dist/firmware/
           if-no-files-found: error
           retention-days: 7
 

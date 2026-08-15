@@ -1,0 +1,138 @@
+@startuml
+title Forgix power-on to steady state - detailed
+
+hide footbox
+autonumber
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 100
+
+actor Power
+boundary "PSRAM CS# / GPIO0\n(XIP_CS1n)" as CS1
+participant "RP2354 boot ROM" as ROM
+database "QSPI boot flash\nCS0" as Flash
+database "QSPI PSRAM\nCS1" as PSRAM
+control "RP2354 BSP / application" as MCU
+participant "Trion FPGA" as FPGA
+boundary "FPGA PIN13 / F5\nanalyzer trigger" as Trigger
+participant Watchdog as WD
+boundary "USB host" as Host
+
+Power -> CS1 : Power rails rise; RP2354 pad reset state applies
+Power -> ROM : Begin boot
+
+alt External 10 kOhm pull-up fitted to the PSRAM I/O rail
+  CS1 -> PSRAM : CS# held high (deselected)
+  ROM -> Flash : Fetch boot metadata and firmware via CS0
+  note over Flash, PSRAM
+    SCLK and SD0..SD3 are shared, but PSRAM does not
+    drive them while its independent CS# remains high.
+  end note
+else External pull-up missing
+  CS1 -> PSRAM : RP2354 power-on pull-down can assert CS# low
+  ROM -> Flash : Fetch boot metadata and firmware via CS0
+  PSRAM --> ROM : May drive shared SD0..SD3 during flash traffic
+  break Flash/XIP data is corrupted
+    ROM -x MCU : Firmware never starts
+    note over ROM, Trigger
+      The board wedges before the FPGA is configured.
+      GPO0 cannot mark this pre-firmware interval.
+    end note
+  end
+end
+
+ROM -> MCU : Enter firmware when flash reads succeeded
+
+group BSP_Init - protect the shared QSPI bus first
+  MCU -> CS1 : Clear pad isolation and enable the internal pull-up
+  CS1 -> PSRAM : Hold CS# inactive until QMI deliberately selects it
+  MCU -> Flash : Cache MCU/board identity
+  MCU -> MCU : Initialize ADC temperature sensing
+end
+
+group Configure and validate the FPGA before intentional PSRAM access
+  MCU -> FPGA : OSC_EN=1; CRESET_N=0
+  MCU -> MCU : Wait 2 ms
+  MCU -> FPGA : CRESET_N=1
+  MCU -> MCU : Wait 5 ms
+  loop Embedded bitstream bytes at 8 MHz
+    Flash --> MCU : XIP supplies fpga_image data
+    MCU -> FPGA : Hardware-SPI configuration data
+  end
+  loop 32-byte zero bursts until CDONE or 500 ms
+    MCU -> FPGA : Trailing configuration clocks
+    FPGA --> MCU : Sample CDONE
+  end
+  MCU -> FPGA : Configuration CS high; park runtime bus idle
+  alt CDONE rose
+    MCU -> MCU : Wait 1500 ms for fabric readiness
+    MCU -> FPGA : PING 0x9F
+    FPGA --> MCU : Design ID 0xB8
+    MCU -> MCU : Cache ready=true when ID matches
+  else Configuration failed
+    MCU -> MCU : Cache ready=false and continue degraded
+  end
+end
+
+MCU -> WD : Read retained boot reason and marker
+MCU -> WD : Marker=PSRAM_POST; start 15 s watchdog
+
+alt Previous reset was watchdog at PSRAM_POST
+  MCU -> PSRAM : Disable mapped PSRAM without issuing a CS1 command
+  MCU -> MCU : Cache watchdog-recovery POST result
+else Normal boot POST
+  opt FPGA ready
+    MCU -> FPGA : WRITE GPO0=1 at register 0x15
+    FPGA -> Trigger : Drive PIN13 / F5 high
+  end
+
+  group SRAM-resident direct-mode PSRAM operation list
+    MCU -> PSRAM : Serial reset-enable 0x66; reset 0x99
+    MCU -> PSRAM : Quad reset-enable 0x66; reset 0x99
+    MCU -> PSRAM : Read ID 0x9F
+    PSRAM --> MCU : MFID, KGD and EID bytes
+    MCU -> PSRAM : Read mode register 0 (0xB5)
+    PSRAM --> MCU : MR0 byte
+    loop Two complementary scratch passes
+      MCU -> PSRAM : Write 64-byte scratch pattern in chunks
+      MCU -> PSRAM : Fast-read the scratch region
+      PSRAM --> MCU : Scratch data
+    end
+  end
+
+  MCU -> MCU : Verify scratch data and classify POST result
+  MCU -> PSRAM : Restore mapped QPI configuration from datasheet timings
+  opt FPGA ready and POST returned
+    MCU -> FPGA : WRITE GPO0=0 at register 0x15
+    FPGA -> Trigger : Drive PIN13 / F5 low
+  end
+  note over MCU, Trigger
+    If the POST wedges, the watchdog resets the MCU and
+    GPO0 deliberately remains high until FPGA reconfiguration.
+  end note
+end
+
+MCU -> WD : Feed; marker=STARTUP
+MCU -> Host : Initialize USB console
+MCU -> Host : Print cached POST, memory and FPGA boot reports
+MCU -> MCU : Start diagnostics and banner UI
+MCU -> WD : Narrow watchdog to the foreground-loop window
+
+loop Steady state - foreground loop never returns
+  MCU -> WD : Feed and marker=LOOP
+  MCU -> Host : Service TinyUSB
+  MCU -> Host : Read at most one UI character (1 ms timeout)
+  opt Heartbeat or one-second sample due
+    MCU -> FPGA : Update/read LED registers
+    FPGA --> MCU : LED register readback
+  end
+  opt One-second FPGA health sample
+    FPGA --> MCU : Dedicated CDONE level
+    MCU -> FPGA : PING 0x9F
+    FPGA --> MCU : Design ID 0xB8
+    alt Three consecutive failures and auto-reconfigure enabled
+      MCU -> FPGA : Reload bitstream and revalidate design ID
+    end
+  end
+end
+
+@enduml

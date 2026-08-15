@@ -1,0 +1,41 @@
+@startuml
+title Initiated built-in test - simplified
+
+hide footbox
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 90
+
+actor User
+boundary "USB terminal" as Terminal
+control "UI and IBIT state machine" as MCU
+participant "Board resources" as Board
+participant "Trion FPGA" as FPGA
+
+User -> Terminal : Press any key to leave banner
+Terminal -> MCU : Character
+MCU -> Terminal : Display menu
+User -> Terminal : Press 1 - Built-in test
+Terminal -> MCU : Selection
+MCU -> MCU : Release heartbeat LED and start IBIT activity
+MCU -> Terminal : Announce initiated built-in test
+
+loop 15 ordered steps, one non-pending result at a time
+  MCU -> Board : Test MCU identity, clocks, memories, temperature, USB and watchdog
+  Board --> MCU : Measurement or verdict data
+  MCU -> FPGA : Test configuration, register bus, LED, button and 32 MHz counter
+  FPGA --> MCU : Pin levels and register data
+  MCU -> Terminal : Print PASS, FAIL, TIMEOUT, SKIP or INFO
+end
+
+alt All steps complete
+  MCU -> Terminal : Print outcome totals and elapsed time
+else User presses any key during the activity
+  User -> Terminal : Abort key
+  Terminal -> MCU : Character
+  MCU -> Terminal : Print aborted
+end
+
+MCU -> MCU : Restore saved LED state, then return heartbeat ownership
+MCU -> Terminal : Redraw menu
+
+@enduml

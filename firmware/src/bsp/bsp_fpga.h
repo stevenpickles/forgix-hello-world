@@ -30,7 +30,7 @@ extern "C" {
 /* Identity byte the loaded FPGA design answers a ping with. A mismatch here is
    treated as "this is not the design we expect" rather than a bus fault, since
    the bus itself is clearly working well enough to return something. */
-#define BSP_FPGA_DESIGN_ID ( (uint8_t) 0xb7u )
+#define BSP_FPGA_DESIGN_ID ( (uint8_t) 0xb8u )
 
 
 
@@ -97,6 +97,12 @@ void BSP_FpgaReset( void );
 uint8_t BSP_FpgaReadRegister( const uint8_t address );
 
 void BSP_FpgaWriteRegister( const uint8_t address, const uint8_t value );
+
+/* One-bit general-purpose FPGA output on board-edge PIN13 / Trion ball F5.
+   This is distinct from RP2354 GPIO13, which is never driven. */
+void BSP_FpgaGpoSet( const bool high );
+
+bool BSP_FpgaGpoGet( void );
 
 /* Latches the FPGA's free-running 32 MHz counter and returns the snapshot.
    The register addresses stay private to the BSP; callers get one coherent

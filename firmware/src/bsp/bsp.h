@@ -24,6 +24,8 @@ extern "C" {
 #include "bsp_led.h"
 #include "bsp_mcu.h"
 #include "bsp_memory.h"
+#include "bsp_memory_bist.h"
+#include "bsp_memory_bist_logic.h"
 #include "bsp_memory_verdict.h"
 #include "bsp_time.h"
 #include "bsp_types.h"

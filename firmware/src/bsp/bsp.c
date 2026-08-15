@@ -49,6 +49,12 @@
 #define FORGIX_QSPI_CS1_GPIO 0
 #endif
 
+/* Below RP2354's 16.777-second hardware maximum, but long enough to span each
+   pass of the USB-free retained-evidence blink report. That report feeds once
+   per pass; application_diagnostics_start then narrows the timer to its normal
+   five-second foreground window. */
+#define BOOT_WATCHDOG_TIMEOUT_MS ( (uint32_t) 15000u )
+
 
 
 
@@ -73,8 +79,9 @@ static void _ConfigureQspiCs1( void );
 
 /// <summary>
 ///     Brings the board up in the one order that works: the chip select fix
-///     first, because it decides whether flash reads stay coherent at all, then
-///     the console so later failures can be reported, then the FPGA.
+///     first, because it decides whether flash reads stay coherent at all; the
+///     FPGA next; then the boot-only PSRAM transaction while USB does not yet
+///     exist; and the console only after XIP is permanently back in service.
 /// </summary>
 /// <returns>
 ///     What the FPGA bring-up found, which the application uses to decide
@@ -83,7 +90,6 @@ static void _ConfigureQspiCs1( void );
 bsp_init_result_t BSP_Init( void )
 {
     _ConfigureQspiCs1();
-    BSP_ConsoleInit();
 
     /* Both of these sample once and cache. The MCU identity costs a flash
        command on the bus the chip select fix above protects, so it belongs
@@ -92,7 +98,40 @@ bsp_init_result_t BSP_Init( void )
     BSP_McuInit();
     BSP_AdcInit();
 
-    return BSP_FpgaInit();
+    const bsp_init_result_t result = BSP_FpgaInit();
+    const bsp_boot_reason bootReason = BSP_WatchdogBootReason();
+    const uint32_t bootMarker = BSP_WatchdogBootMarker();
+
+    BSP_WatchdogMarkerSet( BSP_WATCHDOG_MARKER_PSRAM_POST );
+    BSP_WatchdogStart( BOOT_WATCHDOG_TIMEOUT_MS );
+    if ( bootReason == BSP_BOOT_WATCHDOG && bootMarker == BSP_WATCHDOG_MARKER_PSRAM_POST )
+    {
+        (void) BSP_MemoryPsramPostWatchdogRecovery();
+    }
+    else
+    {
+#if FORGIX_QSPI_PSRAM
+        /* A rising edge on board-edge FPGA PIN13 arms an external logic
+           analyzer before the first CS1 transition. It remains high through
+           reset, identity, MR0, both scratch passes and QPI restoration. If
+           the POST wedges, it deliberately remains high as evidence. */
+        if ( result.ready )
+        {
+            BSP_FpgaGpoSet( true );
+        }
+#endif
+        (void) BSP_MemoryPsramPost();
+#if FORGIX_QSPI_PSRAM
+        if ( result.ready )
+        {
+            BSP_FpgaGpoSet( false );
+        }
+#endif
+    }
+    BSP_WatchdogFeed();
+    BSP_WatchdogMarkerSet( BSP_WATCHDOG_MARKER_STARTUP );
+    BSP_ConsoleInit();
+    return result;
 }
 
 

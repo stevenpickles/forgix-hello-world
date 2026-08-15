@@ -65,8 +65,8 @@ enum
 ***************************************************************************************/
 
 
-/* Reports the previous boot and arms the watchdog. Must run before the
-   foreground loop starts, and before anything overwrites the retained scratch. */
+/* Reports the previous boot and narrows the BSP's early watchdog window for the
+   foreground loop. Must run before that loop starts. */
 void application_diagnostics_start( void );
 
 /* First call of every foreground iteration: feeds the watchdog, drives the

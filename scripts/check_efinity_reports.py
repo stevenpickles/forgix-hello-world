@@ -18,6 +18,7 @@ EXPECTED_PINS = {
     "led_r_n": "E1",
     "led_g_n": "F1",
     "led_b_n": "G1",
+    "gpo_0": "F5",
 }
 
 

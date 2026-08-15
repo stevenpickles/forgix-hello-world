@@ -64,7 +64,10 @@ add_library(forgix_bsp STATIC
   src/bsp/bsp_led.c
   src/bsp/bsp_mcu.c
   src/bsp/bsp_memory.c
+  src/bsp/bsp_memory_bist.c
+  src/bsp/bsp_memory_bist_logic.c
   src/bsp/bsp_memory_identity.c
+  src/bsp/bsp_memory_post.c
   src/bsp/bsp_memory_verdict.c
   src/bsp/bsp_time.c
   src/bsp/bsp_watchdog.c
@@ -123,6 +126,7 @@ add_library(forgix_application STATIC
   src/application/application_ibit.c
   src/application/application_ibit_steps_board.c
   src/application/application_ibit_steps_fpga.c
+  src/application/application_memtest.c
   src/application/application_runner.c
   src/application/application_time.c
   src/application/application_ui.c

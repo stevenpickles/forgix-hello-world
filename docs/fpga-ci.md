@@ -170,9 +170,13 @@ That runs three jobs in order:
 2. **firmware** — build the RP2354 image against *that* bitstream (not the
    `tests/fixtures/fpga-test.bin` compile fixture that `ci.yml` uses), enforce the
    2 MB flash budget, and confirm the bitstream appears byte-for-byte in the
-   linked binary. Unlike `ci.yml` this build does not set `PICO_NO_PICOTOOL`;
-   `picotool_DIR` points the SDK at the picotool 2.3.0 prebuilt in the image,
-   so a flashable UF2 is emitted without fetching and compiling picotool.
+   linked binary. As in `ci.yml`, `picotool_DIR` points the SDK at the picotool
+   2.3.0 prebuilt in the image, so flashable UF2s are emitted without fetching
+   and compiling picotool. CI appends the seven-character commit SHA to every
+   firmware and FPGA build-output filename and retains its per-run firmware
+   artifact for seven days. The release workflow substitutes the tag for the
+   short SHA, retains its artifacts for 90 days, and passes them to the
+   publisher below.
 3. **publish** — assemble `dist/`, write `SHA256SUMS`, and create the GitHub
    release.
 
@@ -181,7 +185,8 @@ USB-free `forgix-led-only-diagnostic-<tag>.uf2`, the `forgix-t8f49-<tag>.bin` an
 `.hex` bitstreams, the pinout and timing reports, and `SHA256SUMS`.
 
 `workflow_dispatch` with no tag input rehearses the whole build and uploads the
-artifacts without publishing anything.
+artifacts without publishing anything. Because that dry run is not associated
+with a release tag, its build-output filenames use the short commit SHA.
 
 ## Notes
 

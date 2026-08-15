@@ -88,6 +88,17 @@ void application_ui_enter_menu( void )
 
 
 /// <summary>
+///     Takes the terminal back from the shell and starts an activity through the
+///     same ownership path used by menu actions.
+/// </summary>
+void application_ui_enter_activity( const application_activity_t *activity )
+{
+    application_console_release();
+    application_ui_start_activity( activity );
+}
+
+
+/// <summary>
 ///     One pass of the foreground loop. Reads at most one character, with the 1 ms
 ///     timeout that paces the whole loop, and gives it to whoever owns the terminal
 ///     in the current mode. Shell and activity modes consume it and return, so the

@@ -13,6 +13,7 @@
 #include "application_console.h"
 #include "application_effects.h"
 #include "application_ibit.h"
+#include "application_memtest.h"
 #include "application_ui.h"
 #include "application_ui_internal.h"
 #include "bsp.h"
@@ -63,6 +64,8 @@ static void action_blinker( void );
 
 static void action_advanced( void );
 
+static void action_memtest( void );
+
 static void action_shell( void );
 
 static void action_reboot( void );
@@ -82,6 +85,7 @@ static const menu_entry_t MENU[] = {
     { '4', "Board report", "what this board is, without judging it", action_report },
     { '5', "Blinker", "red, green, blue at 1 Hz until a key is pressed", action_blinker },
     { '6', "Advanced blinker", "heartbeat, colour wheel, aurora", action_advanced },
+    { '7', "PSRAM memory test", "destructive mapped-QPI test of the whole 2 MiB", action_memtest },
     { 'c', "Command shell", "the forgix> prompt; `menu` returns here", action_shell },
     { 'r', "Reboot", "restart the board and reconfigure the FPGA", action_reboot },
     { 'b', "Reboot to BOOTSEL", "hand the board to the USB loader for reflashing", action_bootsel },
@@ -288,6 +292,15 @@ static void action_blinker( void )
 static void action_advanced( void )
 {
     application_ui_start_activity( application_effects_advanced() );
+}
+
+
+/// <summary>
+///     Starts the full PSRAM pattern test with the standard activity contract.
+/// </summary>
+static void action_memtest( void )
+{
+    application_ui_start_activity( application_memtest_activity() );
 }
 
 

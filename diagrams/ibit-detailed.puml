@@ -1,0 +1,159 @@
+@startuml
+title Initiated built-in test - detailed
+
+hide footbox
+autonumber
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 105
+
+actor User
+boundary "USB terminal" as Terminal
+control "Foreground loop / UI" as UI
+control "IBIT state machine" as IBIT
+participant "RP2354 peripherals" as MCU
+database "Boot flash" as Flash
+database "QSPI PSRAM" as PSRAM
+participant "Trion FPGA" as FPGA
+participant "RGB LED / SW1" as Panel
+participant Watchdog as WD
+
+User -> Terminal : Press any key during the repeating banner
+Terminal -> UI : Character
+UI -> Terminal : Draw menu
+User -> Terminal : Press 1
+Terminal -> UI : Select full built-in test
+UI -> UI : Release diagnostics heartbeat ownership of LED
+UI -> IBIT : start(); reset phase, tally and cached memory sample
+IBIT -> Terminal : "Initiated built-in test"
+
+note over UI, WD
+  Every foreground pass still runs diagnostics first,
+  feeding the watchdog before USB service and IBIT polling.
+  At most one completed IBIT step is reported per pass.
+end note
+
+group Steps 1-5 - MCU identity and configuration facts
+  IBIT -> MCU : 1. Read cached SYSINFO chip identity
+  MCU --> IBIT : Manufacturer, part, revision, architecture, cores
+  IBIT -> Terminal : PASS/FAIL Chip identity
+  IBIT -> MCU : 2. Read cached 64-bit flash unique ID
+  MCU --> IBIT : Unique ID
+  IBIT -> Terminal : PASS/FAIL Board identity
+  IBIT -> MCU : 3. Measure clk_sys and clk_usb
+  MCU --> IBIT : Frequencies and configured reference clock
+  IBIT -> Terminal : PASS/FAIL Clocks (1 percent tolerance)
+  IBIT -> MCU : 4. Read linked flash and SRAM sizes
+  MCU --> IBIT : 2048 KiB flash; 520 KiB SRAM expected
+  IBIT -> Terminal : PASS/FAIL Memory sizing
+  IBIT -> MCU : 5. Read cached OTP FLASH_DEVINFO size codes
+  MCU --> IBIT : CS0 and CS1 codes
+  IBIT -> Terminal : INFO only - values are not used for sizing
+end
+
+group Steps 6-7 - memories sharing SCLK and SD0..SD3
+  IBIT -> MCU : BSP_MemoryCheck() once for this run
+  MCU -> Flash : Read reset vectors through the uncached alias
+  Flash --> MCU : Stack pointer and reset vector
+  MCU -> PSRAM : Write/read three uncached probe words at first, middle and last
+  PSRAM --> MCU : Probe readback
+  MCU --> IBIT : One cached memory report used by both steps
+  IBIT -> Terminal : 6. PASS/FAIL Boot flash
+
+  IBIT -> MCU : Read cached boot-only PSRAM identity
+  loop Full 2 MiB moving-inversion sweep, one chunk per foreground pass
+    IBIT -> PSRAM : Mapped uncached write or verify operation
+    PSRAM --> IBIT : Read data for verification
+  end
+  note over IBIT, PSRAM
+    IBIT does not reset PSRAM or issue Read-ID.
+    It uses the ordinary mapped-QPI window.
+  end note
+  IBIT -> Terminal : 7. PASS/FAIL QSPI PSRAM
+end
+
+group Steps 8-10 - board services
+  IBIT -> MCU : 8. Sample on-die ADC temperature
+  MCU --> IBIT : Raw ADC and milli-degrees C
+  IBIT -> Terminal : PASS/FAIL range -20 C to +85 C
+
+  IBIT -> MCU : 9. Capture USB health and frame number
+  IBIT -> IBIT : Yield until at least 20 ms elapsed
+  IBIT -> MCU : Capture USB health again
+  MCU --> IBIT : DTR, suspend, SOF movement, TX space
+  IBIT -> Terminal : PASS/FAIL USB link
+
+  IBIT -> WD : 10. Write self-test marker and read it back
+  WD --> IBIT : Marker value
+  IBIT -> WD : Restore marker=IBIT
+  IBIT -> Terminal : PASS/FAIL marker and previous boot reason
+end
+
+group Step 11 - establish FPGA reachability
+  FPGA --> IBIT : Dedicated CDONE and STATUS pin levels
+  IBIT -> FPGA : PING 0x9F
+  FPGA --> IBIT : Design ID
+  IBIT -> Terminal : PASS only for CDONE high and ID 0xB8
+end
+
+group Steps 12-15 - each checks CDONE and PING before it begins
+  loop Before each FPGA-dependent step
+    FPGA --> IBIT : CDONE level
+    IBIT -> FPGA : PING 0x9F
+    FPGA --> IBIT : Design ID
+    alt CDONE low or ID is not 0xB8
+      IBIT -> Terminal : SKIP - FPGA not responding
+    else FPGA reachable
+      note over IBIT, FPGA : Run the selected dependent step below.
+    end
+  end
+
+  IBIT -> FPGA : 12. Read status and save LED registers
+  IBIT -> FPGA : Write 5A,A5,3C,C3 walking pattern
+  FPGA --> IBIT : Read LED register values back
+  IBIT -> FPGA : Restore saved LED registers
+  IBIT -> Terminal : PASS/FAIL FPGA register bus
+
+  loop 13. Red, green, blue, white and off phases
+    IBIT -> FPGA : Write RGB/brightness/enable registers
+    FPGA -> Panel : Drive PWM LED outputs
+    FPGA --> IBIT : Register readback
+    IBIT -> IBIT : Return PENDING until the next phase
+  end
+  IBIT -> FPGA : Restore pre-test LED state
+  IBIT -> Terminal : PASS/FAIL RGB LED
+
+  IBIT -> FPGA : 14. Clear button count and read baseline
+  IBIT -> Terminal : Prompt to press SW1 within 15 s
+  User -> Panel : Press SW1 (optional)
+  Panel -> FPGA : Active-low button input
+  FPGA -> FPGA : Debounce; latch event; increment saturating count
+  loop Poll level and count every 50 ms
+    IBIT -> FPGA : Read button level and count registers
+    FPGA --> IBIT : Current level and count
+  end
+  alt Count changed before 15 s
+    IBIT -> Terminal : PASS Button SW1
+  else No press
+    IBIT -> Terminal : TIMEOUT (not a hardware failure)
+  end
+
+  IBIT -> FPGA : 15. Latch and read 32-bit tick snapshot
+  IBIT -> IBIT : Return PENDING for at least 500 ms
+  IBIT -> FPGA : Latch and read second tick snapshot
+  FPGA --> IBIT : Four byte-wide registers per snapshot
+  IBIT -> Terminal : PASS/FAIL 32 MHz within 1 percent
+end
+
+alt Sequence reaches the final result
+  IBIT -> Terminal : Print PASS/FAIL/TIMEOUT/SKIP/INFO totals and duration
+else Any key arrives while activity is running
+  User -> Terminal : Abort key
+  Terminal -> UI : Character
+  UI -> IBIT : stop(); restore saved LED state if necessary
+  UI -> Terminal : "aborted"
+end
+
+UI -> UI : Reclaim diagnostics heartbeat LED
+UI -> Terminal : Redraw menu
+
+@enduml

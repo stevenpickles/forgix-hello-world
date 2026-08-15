@@ -101,3 +101,49 @@ void test_probe_held_is_false_for_a_plan_that_was_never_viable( void )
        patterns must not pass: the probe never ran. */
     TEST_ASSERT_FALSE( BSP_MemoryVerdictProbeHeld( &plan, plan.first_pattern, plan.last_pattern ) );
 }
+
+
+void test_post_classify_passes_datasheet_values_and_ignores_reserved_bits( void )
+{
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_PASS,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0x1fu, 0xfcu, true, true ) );
+}
+
+
+void test_post_classify_names_each_failure_in_bus_order( void )
+{
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_NO_DEVICE,
+                       BSP_MemoryVerdictPostClassify( 0xffu, 0x0bu, 0xe0u, 0x00u, false, false ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_KGD_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x0bu, 0xe0u, 0x00u, false, false ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_DENSITY_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0xe0u, 0x00u, false, false ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_MODE_REGISTER_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0x03u, 0x00u, false, false ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_SCRATCH_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0x03u, 0x60u, false, false ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_CONTROLLER_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0x03u, 0x60u, true, false ) );
+}
+
+
+void test_post_classify_rejects_each_documented_field_independently( void )
+{
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_NO_DEVICE,
+                       BSP_MemoryVerdictPostClassify( 0x00u, 0x5du, 0x03u, 0x60u, true, true ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_KGD_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x0bu, 0x03u, 0x60u, true, true ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_DENSITY_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0x20u, 0x60u, true, true ) );
+    TEST_ASSERT_EQUAL( BSP_MEMORY_POST_MODE_REGISTER_FAIL,
+                       BSP_MemoryVerdictPostClassify( 0x0du, 0x5du, 0x03u, 0x61u, true, true ) );
+}
+
+
+void test_scratch_byte_uses_the_low_address_bits_and_their_inverse( void )
+{
+    TEST_ASSERT_EQUAL_UINT8( 0xc0u, BSP_MemoryVerdictScratchByte( 0x1fffc0u, false ) );
+    TEST_ASSERT_EQUAL_UINT8( 0xffu, BSP_MemoryVerdictScratchByte( 0x1fffffu, false ) );
+    TEST_ASSERT_EQUAL_UINT8( 0x3fu, BSP_MemoryVerdictScratchByte( 0x1fffc0u, true ) );
+    TEST_ASSERT_EQUAL_UINT8( 0x00u, BSP_MemoryVerdictScratchByte( 0x1fffffu, true ) );
+}

@@ -33,7 +33,8 @@ entity forgix_hello_world is
     spi_sdio_oe  : out   std_ulogic;
     led_r_n      : out   std_ulogic;
     led_g_n      : out   std_ulogic;
-    led_b_n      : out   std_ulogic
+    led_b_n      : out   std_ulogic;
+    gpo_0        : out   std_ulogic
   );
 end entity forgix_hello_world;
 
@@ -57,6 +58,7 @@ architecture rtl of forgix_hello_world is
   signal blue         : byte_t                := x"20";
   signal brightness   : byte_t                := x"40";
   signal led_enable   : std_ulogic            := '1';
+  signal gpo_0_state  : std_ulogic            := '0';
   signal raw_button   : std_ulogic            := '0';
   signal button       : std_ulogic            := '0';
   signal button_press : std_ulogic            := '0';
@@ -139,6 +141,12 @@ begin
       led_b_n    => led_b_n
     );
 
+  -- Board-edge FPGA PIN13 (Trion ball F5). This is intentionally a plain
+  -- firmware-controlled output: unlike RP2354 GPIO13/UART RX, it is safe to
+  -- drive and gives external instruments a stable trigger independent of the
+  -- QSPI bus under observation.
+  gpo_0 <= gpo_0_state;
+
   -- The writable state. reset_regs is CMD_RESET arriving over SPI and is treated
   -- identically to power-on reset, so a host can restore the device to its
   -- out-of-configuration appearance without reloading the bitstream.
@@ -152,6 +160,7 @@ begin
         blue         <= x"20";
         brightness   <= x"40";
         led_enable   <= '1';
+        gpo_0_state  <= '0';
         button_event <= '0';
         button_count <= x"00";
       else
@@ -209,6 +218,10 @@ begin
             when REG_LED_ENABLE =>
 
               led_enable <= wdata(0);
+
+            when REG_GPO =>
+
+              gpo_0_state <= wdata(0);
 
             -- Only a write of zero does anything, so the register cannot be set to an
             -- arbitrary count and a host cannot fabricate presses. Clearing the count
@@ -305,7 +318,7 @@ begin
 
       when REG_FEATURES =>
 
-        rdata <= x"03";
+        rdata <= x"07";
 
       when REG_LED_R =>
 
@@ -326,6 +339,10 @@ begin
       when REG_LED_ENABLE =>
 
         rdata <= (0 => led_enable, others => '0');
+
+      when REG_GPO =>
+
+        rdata <= (0 => gpo_0_state, others => '0');
 
       when REG_BUTTON =>
 
@@ -360,4 +377,3 @@ begin
   end process readback_mux;
 
 end architecture rtl;
-

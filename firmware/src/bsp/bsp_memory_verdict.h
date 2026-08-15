@@ -42,6 +42,20 @@ typedef struct bsp_memory_probe_plan_t_tag
 } bsp_memory_probe_plan_t;
 
 
+typedef enum bsp_memory_post_result_tag
+{
+    BSP_MEMORY_POST_PASS = 0,
+    BSP_MEMORY_POST_NO_DEVICE,
+    BSP_MEMORY_POST_KGD_FAIL,
+    BSP_MEMORY_POST_DENSITY_FAIL,
+    BSP_MEMORY_POST_MODE_REGISTER_FAIL,
+    BSP_MEMORY_POST_SCRATCH_FAIL,
+    BSP_MEMORY_POST_CONTROLLER_FAIL,
+    BSP_MEMORY_POST_WATCHDOG_RECOVERY,
+    BSP_MEMORY_POST_SKIPPED,
+} bsp_memory_post_result;
+
+
 
 
 /***************************************************************************************
@@ -55,6 +69,11 @@ bsp_memory_probe_plan_t BSP_MemoryVerdictProbePlan( const uint32_t sizeBytes );
 
 bool BSP_MemoryVerdictProbeHeld( const bsp_memory_probe_plan_t *const ptr_plan,
                                  const uint32_t observedFirst, const uint32_t observedLast );
+
+bsp_memory_post_result BSP_MemoryVerdictPostClassify( uint8_t mfid, uint8_t kgd, uint8_t eid,
+                                                      uint8_t mr0, bool scratchOk, bool restored );
+
+uint8_t BSP_MemoryVerdictScratchByte( uint32_t address, bool inverted );
 
 #ifdef __cplusplus
 }

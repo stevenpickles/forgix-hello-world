@@ -16,6 +16,11 @@ on:
         description: Name of the uploaded bitstream artifact
         required: true
         type: string
+      build-identifier:
+        description: Filename identifier; defaults to the seven-character commit SHA
+        required: false
+        type: string
+        default: ''
       retention-days:
         description: Artifact retention in days
         required: false
@@ -82,12 +87,30 @@ jobs:
             printf '<li>Pinout and setup/hold slack: verified</li></ul>\n'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload bitstream and reports
+      - name: Choose the artifact filename identifier
         if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ inputs.artifact-name }}
-          path: |
+        id: identifier
+        env:
+          REQUESTED_BUILD_IDENTIFIER: ${{ inputs.build-identifier }}
+          BUILD_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          identifier="$REQUESTED_BUILD_IDENTIFIER"
+          if [[ -z "$identifier" ]]; then
+            identifier="${BUILD_COMMIT_SHA:0:7}"
+          fi
+          if [[ ! "$identifier" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "Invalid artifact filename identifier: $identifier" >&2
+            exit 1
+          fi
+          echo "value=$identifier" >> "$GITHUB_OUTPUT"
+
+      - name: Stage identified bitstream artifacts
+        if: always() && steps.identifier.outcome == 'success'
+        env:
+          BUILD_IDENTIFIER: ${{ steps.identifier.outputs.value }}
+        run: |
+          mkdir -p dist/bitstream
+          sources=(
             fpga/outflow/forgix_hello_world.bin
             fpga/outflow/forgix_hello_world.hex
             fpga/outflow/forgix_hello_world.pinout.rpt
@@ -95,6 +118,21 @@ jobs:
             fpga/outflow/forgix_hello_world.pt_timing.rpt
             fpga/outflow/forgix_hello_world.map.rpt
             fpga/outflow/forgix_hello_world.res.csv
-            fpga/outflow/*.log
+            fpga/outflow/forgix_hello_world.*.log
+            fpga/outflow/forgix_hello_world.log
+          )
+          for source in "${sources[@]}"; do
+            [[ -f "$source" ]] || continue
+            suffix="${source##*/}"
+            suffix="${suffix#forgix_hello_world}"
+            cp "$source" "dist/bitstream/forgix-t8f49-$BUILD_IDENTIFIER$suffix"
+          done
+
+      - name: Upload bitstream and reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist/bitstream/
           if-no-files-found: warn
           retention-days: ${{ inputs.retention-days }}

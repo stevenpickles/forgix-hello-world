@@ -229,12 +229,10 @@ application_ibit_outcome_t application_ibit_step_boot_flash( char *detail, size_
    not the APS1604M-3SQR-SN on the schematic. Reading the package marking is
    what would settle it, and no test can.
 
-   The identity is re-read every run in the one window the datasheet allows --
-   straight after a global reset -- because the boot capture is only meaningful
-   on a cold start. After a warm reboot the device was still in QPI when the
-   SDK's serial Read-ID ran, and the bytes it kept are nonsense. */
+   The identity is the boot POST's cached post-reset capture. IBIT never resets
+   the device or issues Read-ID at runtime. */
 /// <summary>
-///     Reads the identity in its legal window, then drives a moving-inversion
+///     Reads the cached boot identity, then drives a moving-inversion
 ///     sweep over the whole device one chunk per pass: the full range is written
 ///     before any of it is verified, which is what catches a smaller die
 ///     aliasing the window. The verdict is the sweep and nothing but the sweep;
@@ -268,13 +266,12 @@ application_ibit_outcome_t application_ibit_step_psram( char *detail, size_t cap
             return APPLICATION_IBIT_FAIL;
         }
 
-        /* Identity before sweep, because the read begins with a global reset
-           that tears the device out of QPI; the same call re-enters it. A
-           failed re-entry means there is no window to sweep. */
+        /* The legacy identity view is now the boot POST's cached observation.
+           restored says that boot handed back a verified mapped window. */
         application_ibit_state.psram_identity = BSP_MemoryPsramIdentify();
         if ( !application_ibit_state.psram_identity.restored )
         {
-            snprintf( detail, capacity, "kgd=%02X eid=%02X read but QPI re-entry/verify failed",
+            snprintf( detail, capacity, "kgd=%02X eid=%02X; boot POST restore failed",
                       application_ibit_state.psram_identity.kgd,
                       application_ibit_state.psram_identity.eid );
             return APPLICATION_IBIT_FAIL;

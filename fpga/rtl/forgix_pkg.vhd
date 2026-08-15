@@ -18,7 +18,7 @@ package forgix_pkg is
 
   subtype byte_t is unsigned(7 downto 0);
 
-  constant DESIGN_ID        : byte_t := x"B7";
+  constant DESIGN_ID        : byte_t := x"B8";
   constant CMD_WRITE        : byte_t := x"02";
   constant CMD_READ         : byte_t := x"03";
   constant CMD_RESET        : byte_t := x"7F";
@@ -31,6 +31,7 @@ package forgix_pkg is
   constant REG_LED_B        : byte_t := x"12";
   constant REG_LED_GLOBAL   : byte_t := x"13";
   constant REG_LED_ENABLE   : byte_t := x"14";
+  constant REG_GPO          : byte_t := x"15";
   constant REG_BUTTON       : byte_t := x"20";
   constant REG_BUTTON_COUNT : byte_t := x"21";
   -- REG_TICK_CAPTURE and REG_TICK_0 share an address on purpose, the same way
@@ -45,4 +46,3 @@ package forgix_pkg is
   constant REG_TICK_3       : byte_t := x"33";
 
 end package forgix_pkg;
-

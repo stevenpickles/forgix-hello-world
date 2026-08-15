@@ -44,7 +44,7 @@
     # they exist precisely to make BSP decision logic host-testable, so untested
     # lines there defeat their purpose. The rest of the BSP stays include-only --
     # it needs hardware, and mocking the SDK to inflate a number proves nothing.
-    :report_include: "^src/(application/|bsp/bsp_fpga_health\\.c|bsp/bsp_memory_verdict\\.c)"
+    :report_include: "^src/(application/|bsp/bsp_fpga_health\\.c|bsp/bsp_memory_bist_logic\\.c|bsp/bsp_memory_verdict\\.c)"
     :fail_under_line: 100
     :fail_under_branch: 100
     :exception_on_fail: true
@@ -80,6 +80,7 @@
   # sources that compile without the Pico SDK, and a glob would drag the rest in.
   :source:
     - +:src/bsp/bsp_fpga_health.c
+    - +:src/bsp/bsp_memory_bist_logic.c
     - +:src/bsp/bsp_memory_verdict.c
 
 :defines:

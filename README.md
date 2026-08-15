@@ -149,6 +149,7 @@ something.
   4  Board report           what this board is, without judging it
   5  Blinker                red, green, blue at 1 Hz until a key is pressed
   6  Advanced blinker       heartbeat, colour wheel, aurora
+  7  PSRAM memory test      destructive mapped-QPI test of the whole 2 MiB
   c  Command shell          the forgix> prompt; `menu` returns here
   r  Reboot                 restart the board and reconfigure the FPGA
   b  Reboot to BOOTSEL      hand the board to the USB loader for reflashing
@@ -178,7 +179,8 @@ reset                           Reset and reconfigure the FPGA
 ```text
 status                  One-line snapshot: FPGA id, status register, button, press count, status pin
 diag                    Full diagnostics report, both QSPI memories included
-memid                   Re-read PSRAM and flash identity in the datasheet's legal window
+memid                   Print the cached boot-only PSRAM POST result
+memtest                 Run 23 destructive pattern pairs through the uncached QPI window
 menu                    Leave the shell and redraw the menu
 help                    Print this command list
 ```
@@ -190,12 +192,12 @@ quiet                   Disable echo, prompts, and unsolicited status
 interactive             Restore the default interactive behavior
 ```
 
-`status`, `diag`, `memid`, `menu`, and `help` all sit above the FPGA-ready gate
+`status`, `diag`, `memid`, `memtest`, `menu`, and `help` all sit above the FPGA-ready gate
 that `hello`, `color`, `off`, and `reset` sit behind: diagnosing a dead FPGA, and
 getting back to the tests that do, must not be one of the things a dead FPGA
 takes away. For what `diag` and `memid` actually report, see
 [the diagnostics reference](docs/diagnostics-reference.md#the-diag-command) and
-[the memid command](docs/diagnostics-reference.md#the-memid-command).
+[the PSRAM POST and memid command](docs/diagnostics-reference.md#the-psram-boot-post-and-memid-command).
 
 An active `watch` stops as soon as a key is received so its output cannot
 interrupt the next command. `scripts/test_hardware.sh` sends `CR` then `c` to
@@ -233,14 +235,14 @@ and occasional boot-time failures remain possible. Fitting a 10K pull-up from
 GPIO 0 to 3V3 is the actual fix and is a board respin item.
 
 The secondary memory is 2 MByte of QSPI PSRAM at `0x11000000`, enabled by
-default through `FORGIX_QSPI_PSRAM`. It is sized by the SDK and verified at boot
-by a pattern written across the start, middle and end of its range, through the
-uncached alias so the answer describes the DRAM rather than the XIP cache; the
-built-in test goes further and runs a moving-inversion sweep over the whole
-device. `diag` reports both memories. The built-in test also re-reads the
-identity every run in the datasheet's legal window -- global reset, then Read-ID
--- which is the only capture that stays meaningful after a warm reboot; the
-boot-time bytes come from a device still in QPI mode and are nonsense then. One
+default through `FORGIX_QSPI_PSRAM`. A pre-USB boot POST performs the only
+PSRAM Read-ID transaction, reads MR0, verifies a 64-byte scratch area twice,
+and restores the QPI mapping. FPGA `PIN13` (Trion ball `F5`) is high around
+that transaction sequence as a logic-analyzer trigger. `memid` only prints
+that cached result. The
+built-in test and the separate 23-pair `memtest` exercise the uncached mapped
+window without resetting the device or entering QMI direct mode. `diag`
+reports both memories. One
 open question remains about the device's identity — see
 [the built-in test reference](docs/ibit.md#what-it-reports-but-does-not-judge).
 
@@ -277,8 +279,10 @@ GitHub Actions summary renders color-coded line and branch totals (plus
 functions when the report carries them; gcovr 8.x dropped that Cobertura
 extension) and links to the detailed annotated HTML report in the downloadable
 test artifact.
-CI artifact names include the workflow run ID and attempt number so downloaded
-reports and firmware images can be traced back to an exact execution.
+CI artifact bundle names include the workflow run ID and attempt number. Every
+downloadable firmware and FPGA build-output filename also includes the
+seven-character commit SHA, so an extracted file remains traceable without its
+bundle.
 
 Pico SDK 2.3.0 must include its TinyUSB submodule. If the SDK came from a
 source archive without submodules, set `PICO_TINYUSB_PATH` to a compatible
@@ -299,8 +303,11 @@ BSP mocks and enforced coverage), the Efinity synthesis job, and an RP2354 USB
 firmware compile with a 2 MB flash-budget gate against Pico SDK 2.3.0 — the
 last linking the bitstream that same run produced, falling back to the
 `tests/fixtures/fpga-test.bin` compile fixture only if synthesis failed. The
+firmware job publishes seven-day `forgix-hello-world-<short-sha>.uf2` and
+`forgix-led-only-diagnostic-<short-sha>.uf2` BOOTSEL images alongside identified
+ELF, map, and raw binary files; the FPGA outputs use the same short SHA. The
 verify job publishes its JUnit, detailed HTML, Cobertura XML, and text reports
-as a workflow artifact. Hardware tests remain local. A push or pull request
+as a separate workflow artifact. Hardware tests remain local. A push or pull request
 confined to Markdown, `docs/`, or the license skips the entire workflow —
 nothing in CI reads those files — so a documentation-only pull request arrives
 with no checks at all.

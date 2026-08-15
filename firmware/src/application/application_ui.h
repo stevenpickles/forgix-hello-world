@@ -74,6 +74,10 @@ void application_ui_poll( void );
    UI layer, not the other way round. */
 void application_ui_enter_menu( void );
 
+/* Hands the terminal to an activity from outside the UI module; the activity
+   then gets the standard any-key abort and returns to the menu. */
+void application_ui_enter_activity( const application_activity_t *activity );
+
 #ifdef __cplusplus
 }
 #endif

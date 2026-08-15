@@ -36,6 +36,8 @@ enum
     APPLICATION_DIAGNOSTICS_MARKER_MENU = 7,
     APPLICATION_DIAGNOSTICS_MARKER_IBIT = 8,
     APPLICATION_DIAGNOSTICS_MARKER_EFFECT = 9,
+    /* One ordinary mapped-QPI slice of the destructive PSRAM test. */
+    APPLICATION_DIAGNOSTICS_MARKER_MEMTEST = 10,
     /* Not a code path. Written and read straight back by the built-in test's
        watchdog step to prove the scratch register holds a value, then replaced
        by MARKER_IBIT. A reset caught inside that window -- a few microseconds --

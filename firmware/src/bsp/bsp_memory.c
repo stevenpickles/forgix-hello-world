@@ -383,6 +383,17 @@ bool BSP_MemoryPsramForceFromDatasheet( void )
 
 
 /// <summary>
+///     Advertises no chip-select-1 window after the early watchdog attributes a
+///     reset to the POST. This performs no PSRAM transaction: the whole point of
+///     recovery is to reach the console without retrying the suspect bus path.
+/// </summary>
+void BSP_MemoryPsramDisable( void )
+{
+    flash_devinfo_set_cs_size( 1, FLASH_DEVINFO_SIZE_NONE );
+}
+
+
+/// <summary>
 ///     Takes the identity bytes an identity probe read in the datasheet's legal
 ///     window and makes them what every later report shows. The storage lives
 ///     here rather than with the probe because BSP_MemoryCheck reports it and

@@ -15,6 +15,7 @@ extern "C" {
 ***************************************************************************************/
 
 
+#include "bsp_memory_verdict.h"
 #include "bsp_types.h"
 
 
@@ -52,23 +53,17 @@ typedef struct bsp_memory_report_t_tag
        even if the readback verification then failed: it records "brought up by
        forcing", not "verified working". */
     bool psram_forced;
-    /* Vendor known-good-die and device-ID bytes as the chip reported them over
-       QSPI. Captured during the SDK's own detection at boot, and refreshed by
-       every BSP_MemoryPsramIdentify call, which reads them in the datasheet's
-       legal window. The boot capture alone is only trustworthy on a cold start:
-       after a warm reboot the device is still in QPI from the previous session
-       and the SDK's serial Read-ID returns nonsense. Both zero means neither
-       path has run. */
+    /* Vendor known-good-die and device-ID bytes captured by the boot POST in
+       the datasheet's legal post-reset window. Runtime diagnostics only read
+       the cached capture and never put another Read-ID transaction on CS1.
+       Both zero means the POST did not run. */
     uint8_t psram_kgd;
     uint8_t psram_eid;
 } bsp_memory_report_t;
 
 
-/* The identity bytes read in the one window the datasheet allows: straight
-   after a global reset. The read tears the device out of QPI, so the same call
-   re-enters it before returning -- restored is whether that re-entry worked
-   AND an uncached two-word write/readback in the re-entered window held. The
-   SDK call succeeding alone proves nothing about the device. */
+/* The identity bytes cached by the boot POST. The legacy function name remains
+   because IBIT consumes this small view, but calling it never touches QSPI. */
 typedef struct bsp_memory_psram_identity_t_tag
 {
     uint8_t kgd; /* byte 5 of the Read-ID response */
@@ -83,6 +78,23 @@ typedef struct bsp_memory_psram_identity_t_tag
 } bsp_memory_psram_identity_t;
 
 
+/* Boot-only identity capture. Read-ID is legal only immediately after the
+   global reset inside BSP_MemoryPsramPost; later callers retrieve this cached
+   report and never put another 9Fh transaction on CS1. */
+typedef struct bsp_memory_post_report_t_tag
+{
+    bsp_memory_post_result result;
+    bool ran;
+    uint8_t mfid;
+    uint8_t kgd;
+    uint8_t eid;
+    uint8_t mr0;
+    bool scratch_ok;
+    uint32_t scratch_fail_address;
+    bool restored;
+} bsp_memory_post_report_t;
+
+
 enum
 {
     /* One sweep pass's worth of traffic: 64 KiB is a few milliseconds through
@@ -90,43 +102,6 @@ enum
        watchdog period. */
     BSP_MEMORY_PSRAM_SWEEP_CHUNK_BYTES = 64 * 1024,
 };
-
-
-enum
-{
-    /* Read-ID as one 128-clock transfer: opcode, three address bytes the
-       datasheet ignores, then twelve response bytes -- four past the full
-       MF + KGD + 45-bit EID, so the capture shows whether the device keeps
-       driving, repeats its ID, or goes quiet once the documented bytes are
-       out. The production probe in BSP_MemoryPsramIdentify keeps its own
-       shorter, tCEM-compliant transfer. */
-    BSP_MEMORY_IDENTITY_RESPONSE_BYTES = 16,
-    /* The production rate plus two slower confirmations. */
-    BSP_MEMORY_IDENTITY_PROBE_RATES = 3,
-};
-
-
-/* Raw material for the identity investigation: every byte of the Read-ID
-   response, from both chip selects, at several bus clocks. The flash on chip
-   select 0 is the control -- a known device read through the same direct-mode
-   engine at the same clock and sample settings, so a correct flash ID
-   exonerates the controller's sampling. Identical PSRAM bytes across a 25x
-   clock spread then rule out marginal timing on the device side. Reading the
-   PSRAM identity resets the device, so the call re-enters QPI before
-   returning. */
-typedef struct bsp_memory_identity_dump_t_tag
-{
-    uint8_t flash_response[ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ];
-    /* False when the image was built without PSRAM support: the chip-select-1
-       probes did not run and the bytes and rates below are meaningless. */
-    bool psram_probed;
-    uint32_t probe_hz[ BSP_MEMORY_IDENTITY_PROBE_RATES ];
-    uint8_t psram_response[ BSP_MEMORY_IDENTITY_PROBE_RATES ][ BSP_MEMORY_IDENTITY_RESPONSE_BYTES ];
-    /* False means the window is unusable until the next successful identify --
-       re-entry failed or the readback verification did not hold, exactly as
-       bsp_memory_psram_identity_t reports it. */
-    bool restored;
-} bsp_memory_identity_dump_t;
 
 
 /* The three passes of a moving-inversion sweep. Every chunk of a pass runs
@@ -164,22 +139,24 @@ typedef struct bsp_memory_sweep_result_t_tag
 
 bsp_memory_report_t BSP_MemoryCheck( void );
 
-/* Global reset, Read-ID in the legal window, then QPI re-entry, all in one call
-   so an abort can never leave the device reset but not re-initialised. Costs a
-   few bus transactions with interrupts briefly off; safe to call every run. */
+/* Runs once from BSP_Init, before USB is initialized. The complete reset and
+   Read-ID sequence is one direct-mode window at 25 MHz. */
+bsp_memory_post_report_t BSP_MemoryPsramPost( void );
+
+/* Records that a watchdog caught the previous POST and contains CS1 by
+   advertising no mapped size. Used only by BSP_Init's one-boot recovery path. */
+bsp_memory_post_report_t BSP_MemoryPsramPostWatchdogRecovery( void );
+
+/* Returns the boot capture without touching the QSPI bus. */
+bsp_memory_post_report_t BSP_MemoryPsramPostReport( void );
+
+/* Returns the boot POST's cached identity and restoration result without
+   touching the QSPI bus. */
 bsp_memory_psram_identity_t BSP_MemoryPsramIdentify( void );
 
 /* One chunk of one sweep pass. Chunk state lives with the caller, so the BSP
    holds nothing that can go stale if a run is aborted between chunks. */
 bsp_memory_sweep_result_t BSP_MemoryPsramSweepChunk( bsp_memory_sweep_op op, uint32_t chunk_index );
-
-/* The identity investigation behind the `memid` command: the full Read-ID
-   response from the boot flash as a sampling control, then from the PSRAM at
-   the production clock and two slower ones. Every extended read deliberately
-   holds chip select past tCEM -- the ID register is static logic with no
-   refresh dependency, and the array contents are rewritten by the next sweep
-   -- so their only cost is to the DRAM data nobody is keeping. */
-bsp_memory_identity_dump_t BSP_MemoryIdentityDump( void );
 
 #ifdef __cplusplus
 }

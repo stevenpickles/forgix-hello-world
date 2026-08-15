@@ -100,6 +100,8 @@ void test_usb_free_heartbeat_keeps_reporting_the_boot_reason_while_it_runs( void
     start_led_only( BSP_BOOT_WATCHDOG, APPLICATION_DIAGNOSTICS_MARKER_LOOP, 255, 0, 0, 1, 255, 0,
                     0 );
 
+    TEST_ASSERT_EQUAL_UINT32( BOOT_REPEATS, MOCK_BSP_WatchdogFeedCount() );
+
     BSP_LedOff_Expect();
     poll_at( 250 );
     BSP_LedSet_Expect( 255, 0, 0, BRIGHTNESS );
